@@ -8,12 +8,15 @@ import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
+import '../../data/jam.dart';
+import '../../data/online_lyrics.dart';
 import '../../playback/audio_device.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
 import 'radio.dart';
+import 'jam.dart';
 
 /// Colours taken from the current album art (Material You from the cover).
 final artSchemeProvider = FutureProvider.autoDispose.family<ColorScheme?, String>((ref, coverArt) async {
@@ -123,7 +126,12 @@ class _TopBar extends ConsumerWidget {
     final set = ref.watch(settingsProvider);
     final fmt = wifi ? set.wifiFormat : set.mobileFormat;
     final radio = audioHandler.radioSeed;
-    final from = radio != null ? 'Song radio · ${radio.title}' : (s?.album ?? '');
+    final station = audioHandler.radioStation;
+    final from = station != null
+        ? 'Internet radio · ${station.name}'
+        : radio != null
+        ? 'Song radio · ${radio.title}'
+        : (s?.album ?? '');
     final quality = s == null
         ? ''
         : local
@@ -149,6 +157,14 @@ class _TopBar extends ConsumerWidget {
                 Text(quality, style: t.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: 'Jam',
+            icon: Icon(
+              Icons.groups_rounded,
+              color: ref.watch(jamProvider).active ? Theme.of(context).colorScheme.primary : null,
+            ),
+            onPressed: () => showJamSheet(context),
           ),
           IconButton(
             icon: const Icon(Icons.more_vert_rounded),
@@ -762,7 +778,22 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('$e')),
       data: (l) {
-        if (l.isEmpty) return const Center(child: Text('No lyrics for this song'));
+        if (l.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('No lyrics for this song'),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  icon: const Icon(Icons.search_rounded),
+                  label: const Text('Search lyrics'),
+                  onPressed: () => showChooseLyrics(context, ref, widget.song),
+                ),
+              ],
+            ),
+          );
+        }
         var cur = -1;
         if (l.synced) {
           for (var i = 0; i < l.lines.length; i++) {
@@ -789,8 +820,27 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
           child: ListView.builder(
             controller: _scroll,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
-            itemCount: l.lines.length,
+            itemCount: l.lines.length + 1,
             itemBuilder: (_, i) {
+              if (i == l.lines.length) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 24),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          l.source.isEmpty ? 'Lyrics from your server' : 'Lyrics from ${l.source}',
+                          style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => showChooseLyrics(context, ref, widget.song),
+                        child: const Text('Wrong lyrics?'),
+                      ),
+                    ],
+                  ),
+                );
+              }
               final line = l.lines[i];
               final active = l.synced && i == cur;
               return InkWell(
@@ -812,6 +862,123 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Pick lyrics by hand from every online source (remembered for this song).
+Future<void> showChooseLyrics(BuildContext context, WidgetRef ref, Song song) => showModalBottomSheet(
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (_) => FractionallySizedBox(heightFactor: 0.85, child: _ChooseLyrics(song)),
+);
+
+class _ChooseLyrics extends ConsumerStatefulWidget {
+  const _ChooseLyrics(this.song);
+  final Song song;
+  @override
+  ConsumerState<_ChooseLyrics> createState() => _ChooseLyricsState();
+}
+
+class _ChooseLyricsState extends ConsumerState<_ChooseLyrics> {
+  late final _title = TextEditingController(text: widget.song.title);
+  late final _artist = TextEditingController(text: widget.song.artist);
+  late Future<List<LyricsCandidate>> _results = searchLyrics(widget.song.title, widget.song.artist);
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _artist.dispose();
+    super.dispose();
+  }
+
+  void _search() => setState(() => _results = searchLyrics(_title.text.trim(), _artist.text.trim()));
+
+  void _choose(String? key) {
+    pickLyrics(widget.song.id, key);
+    ref.invalidate(lyricsProvider(widget.song.id));
+    Navigator.pop(context);
+  }
+
+  String _len(int? s) => s == null ? '' : ' · ${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final picked = pickedLyrics(widget.song.id);
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Row(
+              children: [
+                Expanded(child: Text('Choose lyrics', style: t.titleLarge)),
+                if (picked != null) TextButton(onPressed: () => _choose(null), child: const Text('Back to automatic')),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _title,
+                    decoration: const InputDecoration(labelText: 'Title', isDense: true),
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _search(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _artist,
+                    decoration: const InputDecoration(labelText: 'Artist', isDense: true),
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _search(),
+                  ),
+                ),
+                IconButton(icon: const Icon(Icons.search_rounded), onPressed: _search),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: FutureBuilder<List<LyricsCandidate>>(
+              future: _results,
+              builder: (_, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final list = snap.data ?? const <LyricsCandidate>[];
+                if (list.isEmpty) return const Center(child: Text('Nothing found. Try a shorter title.'));
+                return ListView(
+                  children: [
+                    for (final c in list)
+                      ListTile(
+                        selected: c.key == picked,
+                        leading: Icon(c.synced ? Icons.lyrics_rounded : Icons.notes_rounded),
+                        title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(
+                          '${c.artist}${_len(c.seconds)} · ${lyricsSourceNames[c.source] ?? c.source}'
+                          '${c.synced ? ' · synced' : ''}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                        onTap: () => _choose(c.key),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

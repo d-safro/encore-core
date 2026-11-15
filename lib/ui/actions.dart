@@ -1,10 +1,12 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/account.dart';
 import '../data/library.dart';
 import '../data/models.dart';
+import '../data/share_links.dart';
 import '../playback/handler.dart';
 import 'screens/radio.dart';
 import 'state.dart';
@@ -15,6 +17,23 @@ void toast(BuildContext context, String text) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(text), behavior: SnackBarBehavior.floating));
+}
+
+/// Make a song.link-style page for something and open Android's share sheet with it.
+Future<void> shareLink(BuildContext context, String label, Future<String?> Function() make) async {
+  toast(context, 'Making a link…');
+  try {
+    final url = await make();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    if (url == null) {
+      toast(context, "Couldn't find $label on streaming services");
+      return;
+    }
+    await SharePlus.instance.share(ShareParams(text: '$label\n$url', subject: label));
+  } catch (e) {
+    if (context.mounted) toast(context, "Couldn't make a link: $e");
+  }
 }
 
 /// Heart / unheart a song. On a song you don't have yet (⬇), the heart asks the server to download it.
@@ -353,6 +372,16 @@ Future<void> showSongMenu(
                   onTap: () {
                     close();
                     context.push('/artist/${song.artistId}');
+                  },
+                ),
+              if (online)
+                ListTile(
+                  leading: const Icon(Icons.share_outlined),
+                  title: const Text('Share'),
+                  subtitle: const Text('A link that opens in any music app'),
+                  onTap: () {
+                    close();
+                    shareLink(context, '${song.title} · ${song.artist}', () => songLink(song));
                   },
                 ),
               ListTile(

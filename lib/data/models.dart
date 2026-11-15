@@ -40,6 +40,7 @@ class ReplayGain {
 
 class Song {
   final String id, title, album, albumId, artist, artistId, genre, coverArt, suffix, contentType, path;
+  final String isrc; // recording code, for finding the song on other services (share links)
   final int? track, disc, year, duration, bitRate, size, userRating, playCount;
   final bool starred;
   final ReplayGain replayGain;
@@ -58,6 +59,7 @@ class Song {
     this.suffix = '',
     this.contentType = '',
     this.path = '',
+    this.isrc = '',
     this.track,
     this.disc,
     this.year,
@@ -89,6 +91,7 @@ class Song {
       suffix: _str(j['suffix']),
       contentType: _str(j['contentType']),
       path: _str(j['path']),
+      isrc: j['isrc'] is List ? ((j['isrc'] as List).isEmpty ? '' : _str((j['isrc'] as List).first)) : _str(j['isrc']),
       track: _int(j['track']),
       disc: _int(j['discNumber']),
       year: _int(j['year']),
@@ -116,6 +119,7 @@ class Song {
     'suffix': suffix,
     'contentType': contentType,
     'path': path,
+    if (isrc.isNotEmpty) 'isrc': isrc,
     'track': track,
     'discNumber': disc,
     'year': year,
@@ -140,6 +144,7 @@ class Song {
     suffix: suffix,
     contentType: contentType,
     path: path,
+    isrc: isrc,
     track: track,
     disc: disc,
     year: year,
@@ -339,8 +344,10 @@ class Lyrics {
   final bool synced;
   final List<LyricLine> lines;
   final String lang;
-  const Lyrics({this.synced = false, this.lines = const [], this.lang = ''});
+  final String source; // where they came from when not your server ("LRCLIB", "NetEase", ...)
+  const Lyrics({this.synced = false, this.lines = const [], this.lang = '', this.source = ''});
   bool get isEmpty => lines.isEmpty;
+  Lyrics withSource(String s) => Lyrics(synced: synced, lines: lines, lang: lang, source: s);
 
   factory Lyrics.fromStructured(Map<String, dynamic> j) {
     final synced = j['synced'] == true;

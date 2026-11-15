@@ -4,12 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/settings.dart';
 import '../../data/ai.dart';
+import '../../data/jam.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import 'jam.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -140,6 +142,12 @@ class _QuickPills extends ConsumerWidget {
               final ai = ref.read(aiProvider);
               if (ai != null) await audioHandler.playSongs(await ai.forYou());
             }),
+          if (online)
+            pill(
+              Icons.groups_rounded,
+              ref.watch(jamProvider).active ? 'Jam is on' : 'Start a Jam',
+              () => showJamSheet(context),
+            ),
           if (online)
             pill(Icons.devices_rounded, 'Continue from another device', () async {
               final ok = await audioHandler.loadServerQueue();

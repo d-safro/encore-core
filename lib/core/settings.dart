@@ -29,7 +29,8 @@ class Settings {
   final bool endlessRadio; // keep the music going with sound-alikes when the queue ends
   final bool scrobble;
   final bool syncPlayQueue; // save the queue on the server (continue on another device)
-  final bool onlineLyrics; // LRCLIB when the server has no lyrics
+  final bool onlineLyrics; // look online when the server has no lyrics
+  final List<String> lyricsSources; // enabled online lyrics sources, in order (see online_lyrics.dart)
   final bool onlineCovers; // iTunes / Deezer art when the server has none
   final double pitch;
   final bool showLookup; // show songs you don't have (music-lookup) in search and album pages
@@ -61,6 +62,7 @@ class Settings {
     this.scrobble = true,
     this.syncPlayQueue = true,
     this.onlineLyrics = true,
+    this.lyricsSources = const ['lrclib', 'netease', 'ovh'],
     this.onlineCovers = true,
     this.pitch = 1.0,
     this.showLookup = true,
@@ -95,6 +97,7 @@ class Settings {
     'scrobble': scrobble,
     'syncPlayQueue': syncPlayQueue,
     'onlineLyrics': onlineLyrics,
+    'lyricsSources': lyricsSources,
     'onlineCovers': onlineCovers,
     'pitch': pitch,
     'showLookup': showLookup,
@@ -131,6 +134,7 @@ class Settings {
       scrobble: j['scrobble'] ?? d.scrobble,
       syncPlayQueue: j['syncPlayQueue'] ?? d.syncPlayQueue,
       onlineLyrics: j['onlineLyrics'] ?? d.onlineLyrics,
+      lyricsSources: (j['lyricsSources'] as List?)?.map((e) => '$e').toList() ?? d.lyricsSources,
       onlineCovers: j['onlineCovers'] ?? d.onlineCovers,
       pitch: (j['pitch'] as num?)?.toDouble() ?? d.pitch,
       showLookup: j['showLookup'] ?? d.showLookup,

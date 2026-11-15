@@ -84,8 +84,14 @@ final lyricsProvider = FutureProvider.autoDispose.family<Lyrics, String>((ref, i
     orElse: () => Song(id: id, title: ''),
   );
   if (!repo.online) return const Lyrics();
+  final picked = pickedLyrics(id); // chosen by hand: wins over the server's
+  if (picked != null) {
+    final p = await loadCandidate(picked);
+    if (!p.isEmpty) return p;
+  }
   final l = await repo.client!.lyrics(song);
-  if (l.isEmpty && ref.read(settingsProvider).onlineLyrics) return lrclibLyrics(song);
+  final set = ref.read(settingsProvider);
+  if (l.isEmpty && set.onlineLyrics) return onlineLyrics(song, set.lyricsSources);
   return l;
 });
 final radiosProvider = FutureProvider.autoDispose<List<InternetRadio>>((ref) async {

@@ -157,14 +157,12 @@ class Repo {
 
   Future<List<Song>> songsByGenre(String g) => _either((c) => c.songsByGenre(g), () => db.songsByGenre(g));
 
-  Future<List<Song>> randomSongs({int size = 50, String? genre}) => _either(
-    (c) => c.randomSongs(size: size, genre: genre),
-    () async {
-      // Offline: shuffle what's downloaded; only fall back to everything if nothing is.
-      final downloaded = [for (final (song, _, _) in await db.downloads()) song];
-      return (downloaded.isNotEmpty ? downloaded : await db.allSongs())..shuffle();
-    },
-  ).then((l) => l.take(size).toList());
+  Future<List<Song>> randomSongs({int size = 50, String? genre}) =>
+      _either((c) => c.randomSongs(size: size, genre: genre), () async {
+        // Offline: shuffle what's downloaded; only fall back to everything if nothing is.
+        final downloaded = [for (final (song, _, _) in await db.downloads()) song];
+        return (downloaded.isNotEmpty ? downloaded : await db.allSongs())..shuffle();
+      }).then((l) => l.take(size).toList());
 
   /// Songs by id, in the same order: from the phone's copy first, the server for the rest.
   Future<List<Song>> resolveSongs(List<String> ids) async {
@@ -274,6 +272,42 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   final _pending = <String, Song>{};
   StreamSubscription? _sub;
 
+  // No duplicate files: the same recording that's in your library twice (album + compilation, a single and its
+  // album...) is stored once, and every copy of it points at that file.
+  final _copies = <String, List<(int?, String)>>{}; // artist|title -> (length, file) of what's on the phone
+  final _inFlight = <String, List<(int?, String)>>{}; // artist|title -> (length, song id) downloading now
+  final _waiting = <String, List<Song>>{}; // song id downloading -> other copies waiting for its file
+
+  static String _norm(String x) => x
+      .toLowerCase()
+      .replaceAll(RegExp(r'\(.*?(remaster|version|edit|mono|stereo).*?\)|\s-\s.*(remaster|version).*$'), '')
+      .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ')
+      .trim();
+  static String _recording(Song s) => '${_norm(s.artist)}|${_norm(s.title)}';
+  static bool _sameLength(int? a, int? b) => a == null || b == null || (a - b).abs() <= 2;
+
+  String? _copyOf(Song s) {
+    for (final (len, path) in _copies[_recording(s)] ?? const <(int?, String)>[]) {
+      if (_sameLength(len, s.duration)) return path;
+    }
+    return null;
+  }
+
+  String? _downloadingCopyOf(Song s) {
+    for (final (len, id) in _inFlight[_recording(s)] ?? const <(int?, String)>[]) {
+      if (_sameLength(len, s.duration)) return id;
+    }
+    return null;
+  }
+
+  void _addCopy(Song s, String path) => (_copies[_recording(s)] ??= []).add((s.duration, path));
+
+  /// Another song becomes downloaded by pointing at a file we already have (takes no space).
+  Future<void> _alias(Song s, String path) async {
+    await ref.read(dbProvider).addDownload(s, path, 0);
+    state = state.copy(files: {...state.files, s.id: path}, progress: {...state.progress}..remove(s.id));
+  }
+
   @override
   DownloadsState build() {
     _sub ??= FileDownloader().updates.listen(_onUpdate);
@@ -285,10 +319,15 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   /// Loads the saved downloads, dropping any whose file is gone or isn't audio (e.g. a server error page).
   Future<void> _loadFiles() async {
     try {
-      final m = await ref.read(dbProvider).downloadPaths();
+      final rows = await ref.read(dbProvider).downloads();
+      final m = {for (final (song, path, _) in rows) song.id: path};
       final bad = <String>[];
+      final ok = <String, bool>{};
       for (final e in m.entries) {
-        if (!await _isAudio(e.value)) bad.add(e.key);
+        if (!(ok[e.value] ??= await _isAudio(e.value))) bad.add(e.key);
+      }
+      for (final (song, path, _) in rows) {
+        if (ok[path] == true) _addCopy(song, path);
       }
       for (final id in bad) {
         try {
@@ -333,7 +372,24 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     final c = ref.read(clientProvider);
     if (c == null) return;
     final s = ref.read(settingsProvider);
+    Set<String> queued; // downloads still running from before (e.g. the app was closed meanwhile)
+    try {
+      queued = (await FileDownloader().allTaskIds()).toSet();
+    } catch (_) {
+      queued = {};
+    }
     for (final song in songs.where((x) => !x.isLookup && !has(x.id))) {
+      if (_pending.containsKey(song.id) || queued.contains('song-${song.id}')) continue; // already on its way
+      final copy = _copyOf(song);
+      if (copy != null) {
+        await _alias(song, copy); // the same recording is already on the phone
+        continue;
+      }
+      final twin = _downloadingCopyOf(song);
+      if (twin != null) {
+        (_waiting[twin] ??= []).add(song); // gets that file when it arrives
+        continue;
+      }
       final raw = s.downloadFormat == 'raw';
       final url = raw
           ? c.downloadUrl(song.id)
@@ -352,6 +408,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         displayName: '${song.artist} - ${song.title}',
       );
       _pending[song.id] = song;
+      (_inFlight[_recording(song)] ??= []).add((song.duration, song.id));
       state = state.copy(progress: {...state.progress, song.id: 0});
       await FileDownloader().enqueue(task);
     }
@@ -373,7 +430,9 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         final path = await u.task.filePath();
         if (!await _isAudio(path)) {
           // The server answered with an error instead of the song; don't keep it as a download.
-          _pending.remove(id);
+          final song = _pending.remove(id);
+          if (song != null) _inFlight[_recording(song)]?.removeWhere((e) => e.$2 == id);
+          _waiting.remove(id);
           try {
             await File(path).delete();
           } catch (_) {}
@@ -381,25 +440,40 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
           return;
         }
         final song = _pending.remove(id) ?? await ref.read(clientProvider)?.song(id);
-        if (song != null) await ref.read(dbProvider).addDownload(song, path, await File(path).length());
+        if (song != null) {
+          await ref.read(dbProvider).addDownload(song, path, await File(path).length());
+          _addCopy(song, path);
+          _inFlight[_recording(song)]?.removeWhere((e) => e.$2 == id);
+        }
         state = state.copy(files: {...state.files, id: path}, progress: {...state.progress}..remove(id));
+        for (final twin in _waiting.remove(id) ?? const <Song>[]) {
+          await _alias(twin, path);
+        }
       } else if (u.status.isFinalState) {
-        _pending.remove(id);
+        final song = _pending.remove(id);
+        if (song != null) _inFlight[_recording(song)]?.removeWhere((e) => e.$2 == id);
         state = state.copy(progress: {...state.progress}..remove(id));
+        final twins = _waiting.remove(id);
+        if (twins != null && twins.isNotEmpty) await download(twins); // that copy failed: try the others
       }
     }
   }
 
   Future<void> remove(Iterable<String> ids) async {
     final files = {...state.files};
+    final gone = <String>{};
     for (final id in ids) {
       final path = files.remove(id);
-      if (path != null) {
-        try {
-          await File(path).delete();
-        } catch (_) {}
-      }
       await ref.read(dbProvider).removeDownload(id);
+      if (path != null && !files.containsValue(path)) gone.add(path); // no other copy uses the file
+    }
+    for (final path in gone) {
+      try {
+        await File(path).delete();
+      } catch (_) {}
+      for (final l in _copies.values) {
+        l.removeWhere((e) => e.$2 == path);
+      }
     }
     final manual = (prefs.getStringList('manualDownloads') ?? const <String>[]).toSet()..removeAll(ids);
     prefs.setStringList('manualDownloads', manual.toList());

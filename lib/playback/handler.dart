@@ -9,8 +9,10 @@ import 'package:just_audio/just_audio.dart';
 
 import '../core/settings.dart';
 import '../data/account.dart';
+import '../data/ai.dart';
 import '../data/library.dart';
 import '../data/models.dart';
+import '../data/subsonic.dart';
 
 /// Extra state the UI shows next to the standard playback state.
 class PlayerExtras {
@@ -75,6 +77,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   PlayContext? playContext;
   String? playSource; // which page's songs are playing (album:<id>, playlist:<id>, …), for its play button
   bool _rearranging = false, _filling = false, _smartNoticeShown = false;
+  InternetRadio? radioStation; // set while an internet radio station plays
+  Timer? _reportTimer;
+  bool _reportsWork = true; // the server understands playback reports
+  String? _reportedId, _reportedState;
   bool isSuggested(String id) => _suggested.contains(id);
 
   Settings get _settings => container.read(settingsProvider);
@@ -93,13 +99,28 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     player.currentIndexStream.listen(_onIndex);
     player.sequenceStream.listen((_) => _onIndex(player.currentIndex)); // same index, different song
     player.positionStream.listen(_onPosition);
+    player.icyMetadataStream.listen((m) {
+      // stations that send song titles: show "Artist - Song" under the station's name
+      final t = m?.info?.title?.trim() ?? '';
+      final item = mediaItem.value;
+      if (radioStation != null && t.isNotEmpty && item != null && item.id.startsWith('radio-')) {
+        mediaItem.add(item.copyWith(artist: t));
+      }
+    });
     player.playingStream.distinct().listen((playing) {
       _periodicSave?.cancel();
-      _periodicSave = playing ? Timer.periodic(const Duration(seconds: 30), (_) => _saveQueue()) : null;
+      _periodicSave = playing
+          ? Timer.periodic(const Duration(seconds: 30), (_) {
+              _saveQueue();
+              _reportSoon(); // keeps the server's position honest
+            })
+          : null;
       if (!playing) _scheduleSave(); // remember where it was paused
+      _reportSoon();
     });
     player.processingStateStream.listen((s) {
       if (s == ProcessingState.completed && _extras.sleepAfterTrack) _sleepNow();
+      if (s == ProcessingState.completed || s == ProcessingState.idle) _reportSoon();
     });
     container.listen(settingsProvider, (prev, next) => _applySettings(prev, next), fireImmediately: true);
     await _restoreQueue();
@@ -214,6 +235,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     String? source,
   }) async {
     radioSeed = radio;
+    radioStation = null;
     playContext = context;
     playSource = source ?? context?.key;
     var list = songs.where((s) => (allowLookup || !s.isLookup) && canPlay(s)).toList();
@@ -267,11 +289,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
   }
 
-  Future<void> playNext(List<Song> songs) async {
+  Future<void> playNext(List<Song> songs) => insertSongs((player.currentIndex ?? -1) + 1, songs);
+
+  /// Put songs into the queue at [at] (clamped to after the playing song and the end).
+  Future<void> insertSongs(int at, List<Song> songs) async {
     final add = songs.where((s) => !s.isLookup && canPlay(s)).toList();
     if (add.isEmpty) return;
-    if (_songs.isEmpty) return playSongs(add);
-    final at = (player.currentIndex ?? -1) + 1;
+    if (_songs.isEmpty || radioStation != null) return playSongs(add);
+    at = at.clamp((player.currentIndex ?? -1) + 1, _songs.length);
     _original?.addAll(add);
     _songs.insertAll(at, add);
     await player.insertAudioSources(at, add.map(_source).toList());
@@ -313,6 +338,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   Future<void> clearQueue() async {
     _songs.clear();
+    radioStation = null;
     _resetShuffle();
     await player.stop();
     await player.clearAudioSources();
@@ -333,6 +359,28 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Song? get currentSong {
     final i = player.currentIndex;
     return i != null && i < _songs.length ? _songs[i] : null;
+  }
+
+  /// Play an internet radio station (a live stream; the queue is cleared).
+  Future<void> playRadio(InternetRadio r, {Uri? art}) async {
+    await clearQueue();
+    radioStation = r;
+    final item = MediaItem(id: 'radio-${r.id}', title: r.name, artist: 'Internet radio', artUri: art);
+    try {
+      await player.setAudioSource(AudioSource.uri(Uri.parse(r.streamUrl), tag: item));
+    } on PlayerException catch (_) {
+      radioStation = null;
+      playerNotices.add("${r.name} isn't answering right now");
+      return;
+    } on PlayerInterruptedException catch (_) {
+      return;
+    } on FormatException catch (_) {
+      radioStation = null;
+      playerNotices.add("That station's address isn't valid");
+      return;
+    }
+    mediaItem.add(item);
+    player.play();
   }
 
   // ── Mixes ──
@@ -644,6 +692,41 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _maybeExtendRadio();
     _smartFill();
     _scheduleSave();
+    _reportSoon();
+  }
+
+  // ── Playback reports (exact play / pause / position for other apps, e.g. the Discord status) ──
+  void _reportSoon() {
+    _reportTimer?.cancel();
+    _reportTimer = Timer(const Duration(milliseconds: 600), _report);
+  }
+
+  Future<void> _report() async {
+    if (!_reportsWork || !_settings.scrobble) return;
+    final c = container.read(clientProvider);
+    if (c == null || container.read(offlineProvider)) return;
+    final s = radioStation == null ? currentSong : null;
+    final ps = player.processingState;
+    final ended = s == null || ps == ProcessingState.completed || ps == ProcessingState.idle;
+    final id = s?.id ?? _reportedId;
+    if (id == null || (s != null && s.isLookup)) return;
+    final state = ended
+        ? 'stopped'
+        : !player.playing
+        ? 'paused'
+        : (_reportedId != id ? 'starting' : 'playing');
+    if (state == 'stopped' && _reportedState == 'stopped') return;
+    try {
+      await c.reportPlayback(id, state: state, positionMs: player.position.inMilliseconds, rate: player.speed);
+      if (state == 'starting' && player.playing) {
+        await c.reportPlayback(id, state: 'playing', positionMs: player.position.inMilliseconds, rate: player.speed);
+      }
+      _reportedId = ended ? null : id;
+      _reportedState = state;
+    } on SubsonicException catch (e) {
+      // an older server without playback reports: stop trying (not for passing errors like a 502)
+      if (e.code == 70 || e.message.contains(' 404')) _reportsWork = false;
+    } catch (_) {}
   }
 
   /// Counts real listening time (not seeking) and submits the play after half the song or 4 minutes.
@@ -808,7 +891,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   @override
-  Future<void> seek(Duration position) => player.seek(position);
+  Future<void> seek(Duration position) async {
+    await player.seek(position);
+    _reportSoon();
+  }
+
   @override
   Future<void> skipToNext() => player.seekToNext();
   @override
@@ -878,6 +965,19 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
             label: starred ? 'Unfavourite' : 'Favourite',
             name: 'toggleStar',
           ),
+          MediaControl.custom(
+            androidIcon: switch (_shuffleKind) {
+              ShuffleKind.off => 'drawable/ic_aa_shuffle_off',
+              ShuffleKind.on => 'drawable/ic_aa_shuffle',
+              ShuffleKind.smart => 'drawable/ic_aa_shuffle_smart',
+            },
+            label: switch (_shuffleKind) {
+              ShuffleKind.off => 'Shuffle',
+              ShuffleKind.on => 'Smart shuffle',
+              ShuffleKind.smart => 'Shuffle off',
+            },
+            name: 'cycleShuffle',
+          ),
         ],
         systemActions: const {
           MediaAction.seek,
@@ -918,54 +1018,98 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       final s = currentSong;
       if (s != null) await setRating(Rating.newHeartRating(!s.starred));
     }
+    if (name == 'cycleShuffle') {
+      await setShuffleKind(switch (_shuffleKind) {
+        ShuffleKind.off => ShuffleKind.on,
+        ShuffleKind.on => ShuffleKind.smart,
+        ShuffleKind.smart => ShuffleKind.off,
+      });
+    }
   }
 
   // ── Android Auto / media browsers ──
   static const _root = AudioService.browsableRootId;
+  static const _grid = {AndroidContentStyle.browsableHintKey: AndroidContentStyle.gridItemHintValue};
 
   @override
   Future<List<MediaItem>> getChildren(String parentMediaId, [Map<String, dynamic>? options]) async {
     final repo = container.read(repoProvider);
     final c = container.read(clientProvider);
-    MediaItem folder(String id, String title) => MediaItem(id: id, title: title, playable: false);
-    MediaItem albumItem(Album a) => MediaItem(
-      id: 'album:${a.id}',
-      title: a.name,
-      artist: a.artist,
-      playable: false,
-      artUri: c != null && a.coverArt.isNotEmpty ? c.coverUrl(a.coverArt, size: 300) : null,
-    );
+    Uri? art(String id, [int size = 300]) => c != null && id.isNotEmpty ? c.coverUrl(id, size: size) : null;
+    MediaItem folder(String id, String title, {Map<String, dynamic>? extras, String? subtitle}) =>
+        MediaItem(id: id, title: title, playable: false, extras: extras, displaySubtitle: subtitle);
+    MediaItem action(String id, String title, {String? subtitle, Uri? artUri}) =>
+        MediaItem(id: id, title: title, playable: true, displaySubtitle: subtitle, artUri: artUri);
+    MediaItem albumItem(Album a) =>
+        MediaItem(id: 'album:${a.id}', title: a.name, artist: a.artist, playable: false, artUri: art(a.coverArt));
     try {
       switch (parentMediaId) {
         case AudioService.recentRootId:
           final cur = currentSong;
           return cur == null ? const [] : [_mediaItem(cur).copyWith(id: 'resume:${cur.id}', playable: true)];
-        case _root:
+        case _root: // up to four tabs in the car
           return [
-            folder('list:recent', 'Recently played'),
-            folder('list:newest', 'Recently added'),
-            folder('list:starred', 'Favourites'),
+            folder('home', 'Home'),
             folder('playlists', 'Playlists'),
-            const MediaItem(id: 'mix:random', title: 'Shuffle everything', playable: true),
+            folder('albums', 'Albums', extras: _grid),
+            folder('radio', 'Radio'),
+          ];
+        case 'home':
+          final online = repo.online;
+          return [
+            action('mix:liked', 'Liked songs', subtitle: 'Shuffle'),
+            if (online) action('mix:liked-smart', 'Liked songs · smart shuffle', subtitle: 'With songs that fit'),
+            if (online && container.read(aiProvider) != null)
+              action('mix:foryou', 'Made for you', subtitle: 'From what you play most'),
+            action('mix:downloads', 'Downloaded songs', subtitle: 'Shuffle, works offline'),
+            action('mix:random', 'Shuffle everything'),
+            folder('list:recent', 'Recently played', extras: _grid),
+            folder('list:newest', 'Recently added', extras: _grid),
+          ];
+        case 'albums':
+          return [
+            folder('list:starred', 'Favourite albums', extras: _grid),
+            folder('list:frequent', 'Most played', extras: _grid),
+            folder('list:newest', 'Recently added', extras: _grid),
+            folder('list:random', 'Something different', extras: _grid),
           ];
         case 'playlists':
-          return (await repo.playlists())
-              .map((p) => MediaItem(id: 'playlist:${p.id}', title: p.name, playable: true))
-              .toList();
+          return [
+            for (final p in await repo.playlists())
+              MediaItem(
+                id: 'pl:${p.id}',
+                title: p.name,
+                displaySubtitle: '${p.songCount ?? 0} songs',
+                playable: false,
+                artUri: art(p.coverArt),
+              ),
+          ];
+        case 'radio':
+          final stations = repo.online && c != null ? await c.radios() : const <InternetRadio>[];
+          return [
+            for (final r in stations) action('station:${r.id}', r.name, subtitle: 'Internet radio'),
+            if (stations.isEmpty) MediaItem(id: 'none', title: 'No stations yet', playable: false),
+          ];
       }
       if (parentMediaId.startsWith('list:')) {
         final type = parentMediaId.substring(5);
-        if (type == 'starred') {
-          final r = await repo.starred();
-          return r.albums.map(albumItem).toList();
-        }
+        if (type == 'starred') return (await repo.starred()).albums.map(albumItem).toList();
         return (await repo.albums(type, size: 40)).where((a) => !a.isLookup).map(albumItem).toList();
       }
       if (parentMediaId.startsWith('album:')) {
         final a = await repo.album(parentMediaId.substring(6));
         return [
-          for (final s in a.songs.where((s) => !s.isLookup))
+          for (final s in a.songs.where((s) => !s.isLookup && canPlay(s)))
             _mediaItem(s).copyWith(id: 'song:${a.id}:${s.id}', playable: true),
+        ];
+      }
+      if (parentMediaId.startsWith('pl:')) {
+        final id = parentMediaId.substring(3);
+        final p = await repo.playlist(id);
+        return [
+          action('plshuffle:$id', 'Shuffle', subtitle: p.name),
+          for (final s in p.songs.where((s) => !s.isLookup && canPlay(s)).take(300))
+            _mediaItem(s).copyWith(id: 'plsong:$id:${s.id}', playable: true),
         ];
       }
     } catch (_) {}
@@ -975,22 +1119,68 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   @override
   Future<void> playFromMediaId(String mediaId, [Map<String, dynamic>? extras]) async {
     final repo = container.read(repoProvider);
-    if (mediaId.startsWith('resume:')) return play(); // the restored queue is already loaded
-    if (mediaId == 'mix:random') return playSongs(await repo.randomSongs(size: 100));
-    if (mediaId.startsWith('playlist:')) return playSongs((await repo.playlist(mediaId.substring(9))).songs);
-    if (mediaId.startsWith('song:')) {
-      final p = mediaId.split(':');
-      final a = await repo.album(p[1]);
-      final songs = a.songs.where((s) => !s.isLookup).toList();
-      return playSongs(songs, index: max(0, songs.indexWhere((s) => s.id == p[2])));
+    final p = mediaId.split(':');
+    switch (p.first) {
+      case 'resume':
+        return play(); // the restored queue is already loaded
+      case 'mix':
+        switch (p.length > 1 ? p[1] : '') {
+          case 'random':
+            return playSongs(await repo.randomSongs(size: 200), shuffle: true);
+          case 'liked' || 'liked-smart':
+            await playSongs((await repo.starred()).songs, shuffle: true, context: const PlayContext.liked());
+            final want = p[1] == 'liked-smart' ? ShuffleKind.smart : ShuffleKind.on;
+            if (_shuffleKind != want) await setShuffleKind(want);
+            return;
+          case 'foryou':
+            final ai = container.read(aiProvider);
+            if (ai != null) return playSongs(await ai.forYou());
+            return;
+          case 'downloads':
+            final songs = [for (final (s, _, _) in await container.read(dbProvider).downloads()) s];
+            return playSongs(songs, shuffle: true, source: 'downloads');
+        }
+      case 'station':
+        final c = container.read(clientProvider);
+        final r = (await c?.radios() ?? const <InternetRadio>[]).where((x) => x.id == p[1]).firstOrNull;
+        if (r != null) return playRadio(r);
+      case 'playlist' || 'plshuffle':
+        final pl = await repo.playlist(p[1]);
+        return playSongs(pl.songs, shuffle: p.first == 'plshuffle', context: PlayContext.playlist(pl.id, pl.name));
+      case 'plsong':
+        final pl = await repo.playlist(p[1]);
+        final songs = pl.songs.where((s) => !s.isLookup).toList();
+        return playSongs(
+          songs,
+          index: max(0, songs.indexWhere((s) => s.id == p[2])),
+          context: PlayContext.playlist(pl.id, pl.name),
+        );
+      case 'song':
+        final a = await repo.album(p[1]);
+        final songs = a.songs.where((s) => !s.isLookup).toList();
+        return playSongs(
+          songs,
+          index: max(0, songs.indexWhere((s) => s.id == p[2])),
+          context: PlayContext.album(a.id, a.name),
+        );
     }
   }
 
   @override
   Future<void> playFromSearch(String query, [Map<String, dynamic>? extras]) async {
-    final r = await container.read(repoProvider).search(query);
-    if (r.songs.isNotEmpty) return playSongs(r.songs);
-    if (r.albums.isNotEmpty) return playSongs((await container.read(repoProvider).album(r.albums.first.id)).songs);
+    final repo = container.read(repoProvider);
+    if (query.trim().isEmpty) return playSongs(await repo.randomSongs(size: 200), shuffle: true); // "play music"
+    final r = await repo.search(query);
+    if (r.songs.isNotEmpty) return playSongs(r.songs.where((s) => !s.isLookup).toList());
+    if (r.albums.isNotEmpty) return playSongs((await repo.album(r.albums.first.id)).songs);
+    if (r.artists.isNotEmpty) {
+      final a = await repo.artist(r.artists.first.id);
+      final songs = <Song>[];
+      for (final al in a.albums.take(10)) {
+        songs.addAll((await repo.album(al.id)).songs.where((s) => !s.isLookup));
+      }
+      return playSongs(songs, shuffle: true);
+    }
   }
 }
 

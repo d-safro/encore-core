@@ -8,6 +8,7 @@ import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
+import '../../data/online_lyrics.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../widgets.dart';
@@ -89,10 +90,21 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             secondary: const Icon(Icons.lyrics_outlined),
             title: const Text('Find lyrics online'),
-            subtitle: const Text('From LRCLIB when your server has none (sends title, artist, album)'),
+            subtitle: const Text('When your server has none (sends title, artist, album)'),
             value: s.onlineLyrics,
             onChanged: (v) => set('onlineLyrics', v),
           ),
+          if (s.onlineLyrics)
+            ListTile(
+              leading: const SizedBox(width: 24),
+              title: const Text('Lyrics sources'),
+              subtitle: Text(
+                s.lyricsSources.isEmpty
+                    ? 'None'
+                    : s.lyricsSources.map((k) => lyricsSourceNames[k] ?? k).join(' → '),
+              ),
+              onTap: () => showDialog(context: context, builder: (_) => const _LyricsSourcesDialog()),
+            ),
           SwitchListTile(
             secondary: const Icon(Icons.history),
             title: const Text('Scrobble plays'),
@@ -707,6 +719,72 @@ class _PinnedRow extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+
+/// Which online lyrics sources to use, and in what order (drag to reorder).
+class _LyricsSourcesDialog extends ConsumerStatefulWidget {
+  const _LyricsSourcesDialog();
+  @override
+  ConsumerState<_LyricsSourcesDialog> createState() => _LyricsSourcesDialogState();
+}
+
+class _LyricsSourcesDialogState extends ConsumerState<_LyricsSourcesDialog> {
+  late final List<String> _order;
+  late final Set<String> _on;
+
+  @override
+  void initState() {
+    super.initState();
+    final cur = ref.read(settingsProvider).lyricsSources;
+    _on = {...cur};
+    _order = [...cur, ...defaultLyricsSources.where((k) => !cur.contains(k))];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Lyrics sources'),
+      contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
+      content: SizedBox(
+        width: 320,
+        height: 220,
+        child: ReorderableListView(
+          buildDefaultDragHandles: false,
+          onReorder: (a, b) => setState(() {
+            if (b > a) b--;
+            _order.insert(b, _order.removeAt(a));
+          }),
+          children: [
+            for (var i = 0; i < _order.length; i++)
+              CheckboxListTile(
+                key: ValueKey(_order[i]),
+                value: _on.contains(_order[i]),
+                onChanged: (v) => setState(() => v == true ? _on.add(_order[i]) : _on.remove(_order[i])),
+                title: Text(lyricsSourceNames[_order[i]] ?? _order[i]),
+                subtitle: Text(switch (_order[i]) {
+                  'lrclib' => 'Synced, open database',
+                  'netease' => 'Synced, big catalogue',
+                  _ => 'Plain text',
+                }),
+                secondary: ReorderableDragStartListener(index: i, child: const Icon(Icons.drag_handle)),
+                controlAffinity: ListTileControlAffinity.leading,
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () {
+            ref.read(settingsProvider.notifier).update({'lyricsSources': _order.where(_on.contains).toList()});
+            Navigator.pop(context);
+          },
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

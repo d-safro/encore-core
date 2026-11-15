@@ -337,6 +337,29 @@ class SubsonicClient {
     }
   }
 
+  /// Tell the server what's playing, paused or stopped and where (OpenSubsonic playbackReport). Encore counts
+  /// plays itself, so this only updates "now playing" (Discord status on the laptop, other apps).
+  Future<void> reportPlayback(String id, {required String state, required int positionMs, double rate = 1}) =>
+      call('reportPlayback', {
+        'mediaId': id,
+        'mediaType': 'song',
+        'positionMs': '$positionMs',
+        'state': state,
+        'playbackRate': '$rate',
+        'ignoreScrobble': 'true',
+      }, null, const Duration(seconds: 10));
+
+  /// Add / change / remove a station (Navidrome allows this for admin accounts).
+  Future<void> createRadio(String name, String streamUrl, {String homePageUrl = ''}) => call(
+    'createInternetRadioStation',
+    {'name': name, 'streamUrl': streamUrl, if (homePageUrl.isNotEmpty) 'homepageUrl': homePageUrl},
+  );
+  Future<void> updateRadio(String id, String name, String streamUrl, {String homePageUrl = ''}) => call(
+    'updateInternetRadioStation',
+    {'id': id, 'name': name, 'streamUrl': streamUrl, if (homePageUrl.isNotEmpty) 'homepageUrl': homePageUrl},
+  );
+  Future<void> deleteRadio(String id) => call('deleteInternetRadioStation', {'id': id});
+
   // ── Discovery (music-lookup on the server): songs you don't have yet, as ⬇ items ──
   Future<List<(String, List<Song>)>> discoveries({bool refresh = false}) async {
     final r = await call('getDiscoveries', {if (refresh) 'refresh': 1}, null, const Duration(seconds: 120));

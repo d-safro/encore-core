@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:just_audio/just_audio.dart';
-import 'package:audio_service/audio_service.dart';
 
 import '../../data/account.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
+import '../../data/share_links.dart';
+import '../../data/radio_browser.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
@@ -184,6 +184,12 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                       ),
                       onPressed: () => toggleStarAlbum(context, ref, a),
                     ),
+                    if (ref.watch(repoProvider).online)
+                      IconButton(
+                        tooltip: 'Share',
+                        icon: const Icon(Icons.share_outlined),
+                        onPressed: () => shareLink(context, '${a.name} · ${a.artist}', () => albumLink(a)),
+                      ),
                     IconButton(
                       icon: const Icon(Icons.more_vert_rounded),
                       onPressed: () => showCollectionMenu(context, ref, a.name, () async => playable),
@@ -265,6 +271,11 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
                     color: a.starred ? Theme.of(context).colorScheme.primary : null,
                   ),
                   onPressed: () => toggleStarArtist(context, ref, a),
+                ),
+                IconButton(
+                  tooltip: 'Share',
+                  icon: const Icon(Icons.share_outlined),
+                  onPressed: () => shareLink(context, a.name, () => artistLink(a.id, a.name)),
                 ),
                 IconButton(
                   tooltip: 'Artist radio',
@@ -645,48 +656,308 @@ class _FoldersScreenState extends ConsumerState<FoldersScreen> {
 // ── Internet radio (stations saved in Navidrome) ──
 class RadioScreen extends ConsumerWidget {
   const RadioScreen({super.key});
+
+  static Widget art(String streamUrl, {double size = 48}) {
+    final pic = stationArt(streamUrl);
+    final fallback = Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      child: Icon(Icons.radio_rounded, size: size * 0.5),
+    );
+    if (pic == null) return fallback;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(pic, width: size, height: size, fit: BoxFit.cover, errorBuilder: (_, _, _) => fallback),
+    );
+  }
+
+  Future<void> _menu(BuildContext context, WidgetRef ref, InternetRadio r) async {
+    final v = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(title: Text(r.name, style: Theme.of(ctx).textTheme.titleMedium)),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit'),
+              onTap: () => Navigator.pop(ctx, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Delete'),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted || v == null) return;
+    final c = ref.read(clientProvider);
+    if (c == null) return;
+    try {
+      if (v == 'delete') {
+        if (!await confirm(context, 'Delete "${r.name}"?', 'It is removed from your server for every app.')) return;
+        await c.deleteRadio(r.id);
+      } else {
+        final edited = await showStationForm(context, initial: r);
+        if (edited == null) return;
+        await c.updateRadio(r.id, edited.name, edited.streamUrl, homePageUrl: edited.homePageUrl);
+      }
+      ref.invalidate(radiosProvider);
+    } catch (e) {
+      if (context.mounted) toast(context, "Couldn't change the station: $e");
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final online = ref.watch(repoProvider).online;
+    final playing = ref.watch(mediaItemProvider).value?.id;
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Internet radio')),
+      floatingActionButton: online
+          ? FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text('Add station'),
+              onPressed: () async {
+                await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddStationScreen()));
+                ref.invalidate(radiosProvider);
+              },
+            )
+          : null,
       body: AsyncView(ref.watch(radiosProvider), (List<InternetRadio> list) {
         if (list.isEmpty) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.all(32),
               child: Text(
-                'No radio stations yet. Add them in Navidrome (Settings → Radio).',
+                'No radio stations yet. Tap Add station to find one or paste its address.',
                 textAlign: TextAlign.center,
               ),
             ),
           );
         }
-        return ListView(
-          children: [
-            for (final r in list)
-              ListTile(
-                leading: const Icon(Icons.radio),
-                title: Text(r.name),
-                subtitle: Text(
-                  r.homePageUrl.isNotEmpty ? r.homePageUrl : r.streamUrl,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(radiosProvider),
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 96),
+            children: [
+              for (final r in list)
+                ListTile(
+                  leading: art(r.streamUrl),
+                  title: Text(
+                    r.name,
+                    style: playing == 'radio-${r.id}'
+                        ? TextStyle(color: cs.primary, fontWeight: FontWeight.w600)
+                        : null,
+                  ),
+                  subtitle: Text(
+                    r.homePageUrl.isNotEmpty ? r.homePageUrl : r.streamUrl,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: IconButton(icon: const Icon(Icons.more_vert), onPressed: () => _menu(context, ref, r)),
+                  onLongPress: () => _menu(context, ref, r),
+                  onTap: () {
+                    final pic = stationArt(r.streamUrl);
+                    audioHandler.playRadio(r, art: pic == null ? null : Uri.tryParse(pic));
+                  },
                 ),
-                onTap: () async {
-                  await audioHandler.clearQueue();
-                  await audioHandler.player.setAudioSource(
-                    AudioSource.uri(
-                      Uri.parse(r.streamUrl),
-                      tag: MediaItem(id: 'radio-${r.id}', title: r.name, artist: 'Internet radio'),
-                    ),
-                  );
-                  audioHandler.mediaItem.add(MediaItem(id: 'radio-${r.id}', title: r.name, artist: 'Internet radio'));
-                  audioHandler.player.play();
-                },
-              ),
-          ],
+            ],
+          ),
         );
       }),
+    );
+  }
+}
+
+/// Name / stream address / homepage form for a station. Returns null when cancelled.
+Future<InternetRadio?> showStationForm(BuildContext context, {InternetRadio? initial}) {
+  final name = TextEditingController(text: initial?.name ?? '');
+  final url = TextEditingController(text: initial?.streamUrl ?? '');
+  final home = TextEditingController(text: initial?.homePageUrl ?? '');
+  return showDialog<InternetRadio>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(initial == null ? 'Add a station' : 'Edit station'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: name,
+              decoration: const InputDecoration(labelText: 'Name'),
+              textInputAction: TextInputAction.next,
+            ),
+            TextField(
+              controller: url,
+              decoration: const InputDecoration(labelText: 'Stream address', hintText: 'https://…'),
+              keyboardType: TextInputType.url,
+              textInputAction: TextInputAction.next,
+            ),
+            TextField(
+              controller: home,
+              decoration: const InputDecoration(labelText: 'Website (optional)'),
+              keyboardType: TextInputType.url,
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () {
+            final u = url.text.trim();
+            if (name.text.trim().isEmpty || !(u.startsWith('http://') || u.startsWith('https://'))) {
+              toast(ctx, 'Give it a name and an http(s) stream address');
+              return;
+            }
+            Navigator.pop(ctx, InternetRadio(initial?.id ?? '', name.text.trim(), u, home.text.trim()));
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Find stations in the Radio Browser directory (or paste an address) and save them to your server.
+class AddStationScreen extends ConsumerStatefulWidget {
+  const AddStationScreen({super.key});
+  @override
+  ConsumerState<AddStationScreen> createState() => _AddStationScreenState();
+}
+
+class _AddStationScreenState extends ConsumerState<AddStationScreen> {
+  final _ctl = TextEditingController();
+  late Future<List<RadioBrowserStation>> _results = searchStations('');
+  final _added = <String>{};
+  Timer? _debounce;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  void _search(String q) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) setState(() => _results = searchStations(q));
+    });
+  }
+
+  Future<void> _add(String name, String url, String homepage, String favicon) async {
+    final c = ref.read(clientProvider);
+    if (c == null) return;
+    try {
+      await c.createRadio(name, url, homePageUrl: homepage);
+      rememberStationArt(url, favicon);
+      if (mounted) setState(() => _added.add(url));
+      if (mounted) toast(context, 'Added $name');
+    } catch (e) {
+      if (mounted) toast(context, "Couldn't add it (your account must be a Navidrome admin): $e");
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add station'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.link),
+            label: const Text('By address'),
+            onPressed: () async {
+              final r = await showStationForm(context);
+              if (r != null) await _add(r.name, r.streamUrl, r.homePageUrl, '');
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: SearchBar(
+              controller: _ctl,
+              hintText: 'Search stations (name, city, genre…)',
+              leading: const Icon(Icons.search),
+              elevation: const WidgetStatePropertyAll(0),
+              onChanged: _search,
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<List<RadioBrowserStation>>(
+              future: _results,
+              builder: (_, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snap.hasError) return Center(child: Text('${snap.error}'));
+                final list = snap.data ?? const <RadioBrowserStation>[];
+                if (list.isEmpty) return const Center(child: Text('No stations found'));
+                return ListView(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                      child: Text(
+                        _ctl.text.trim().isEmpty ? 'Most listened' : 'Results from Radio Browser',
+                        style: t.labelLarge?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                    ),
+                    for (final st in list)
+                      ListTile(
+                        leading: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: st.favicon.startsWith('http')
+                              ? Image.network(
+                                  st.favicon,
+                                  width: 48,
+                                  height: 48,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) =>
+                                      const SizedBox(width: 48, height: 48, child: Icon(Icons.radio_rounded)),
+                                )
+                              : const SizedBox(width: 48, height: 48, child: Icon(Icons.radio_rounded)),
+                        ),
+                        title: Text(st.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(st.details, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        onTap: () => audioHandler.playRadio(
+                          InternetRadio('preview', st.name, st.url, st.homepage),
+                          art: Uri.tryParse(st.favicon),
+                        ),
+                        trailing: _added.contains(st.url)
+                            ? Icon(Icons.check_circle, color: cs.primary)
+                            : IconButton(
+                                tooltip: 'Add to my stations',
+                                icon: const Icon(Icons.add_circle_outline),
+                                onPressed: () => _add(st.name, st.url, st.homepage, st.favicon),
+                              ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'Tap a station to listen first. Stations come from radio-browser.info.',
+                        style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

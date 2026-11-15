@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,7 +8,67 @@ import 'package:go_router/go_router.dart';
 import '../../core/settings.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
+import '../../playback/handler.dart';
+import '../actions.dart';
 import '../widgets.dart';
+
+/// One entry in "Recent searches": a song, album or artist you opened from search, or a search you typed.
+class RecentItem {
+  RecentItem(this.kind, this.id, this.title, {this.subtitle = '', this.cover = '', this.song});
+  final String kind; // song, album, artist, query
+  final String id, title, subtitle, cover;
+  final Song? song;
+
+  Map<String, dynamic> toJson() => {
+    'kind': kind,
+    'id': id,
+    'title': title,
+    'subtitle': subtitle,
+    'cover': cover,
+    if (song != null) 'song': song!.toJson(),
+  };
+
+  static RecentItem? fromJson(Object? j) {
+    if (j is! Map) return null;
+    final kind = '${j['kind'] ?? ''}', id = '${j['id'] ?? ''}';
+    if (kind.isEmpty || id.isEmpty) return null;
+    final sj = j['song'];
+    return RecentItem(
+      kind,
+      id,
+      '${j['title'] ?? ''}',
+      subtitle: '${j['subtitle'] ?? ''}',
+      cover: '${j['cover'] ?? ''}',
+      song: sj is Map ? Song.fromJson(sj.cast<String, dynamic>()) : null,
+    );
+  }
+}
+
+/// Recent searches, newest first (at most 30), kept on the phone. Older apps saved only typed text.
+List<RecentItem> recentSearches() {
+  final out = <RecentItem>[];
+  try {
+    for (final e in jsonDecode(prefs.getString('recentSearch') ?? '[]') as List) {
+      final r = RecentItem.fromJson(e);
+      if (r != null) out.add(r);
+    }
+  } catch (_) {}
+  if (out.isEmpty) {
+    for (final q in prefs.getStringList('searchHistory') ?? const <String>[]) {
+      out.add(RecentItem('query', q, q));
+    }
+  }
+  return out;
+}
+
+void _saveRecents(List<RecentItem> l) =>
+    prefs.setString('recentSearch', jsonEncode(l.take(30).map((e) => e.toJson()).toList()));
+
+void addRecent(RecentItem r) =>
+    _saveRecents([r, ...recentSearches().where((x) => !(x.kind == r.kind && x.id == r.id))]);
+
+void removeRecent(RecentItem r) =>
+    _saveRecents(recentSearches().where((x) => !(x.kind == r.kind && x.id == r.id)).toList());
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -34,8 +95,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     _ctl.dispose();
     super.dispose();
   }
-
-  List<String> get _history => prefs.getStringList('searchHistory') ?? const [];
 
   void _changed(String q) {
     _debounce?.cancel();
@@ -67,9 +126,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _remember(String q) {
     if (q.length < 2) return;
-    final h = [q, ..._history.where((x) => x != q)].take(15).toList();
-    prefs.setStringList('searchHistory', h);
+    addRecent(RecentItem('query', q, q));
   }
+
+  void _rememberSong(Song x) =>
+      addRecent(RecentItem('song', x.id, x.title, subtitle: 'Song · ${x.artist}', cover: x.coverArt, song: x));
 
   @override
   Widget build(BuildContext context) {
@@ -113,23 +174,62 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _body(SearchResult? r, bool showLookup) {
     if (_error != null) return Center(child: Text(_error!));
     if (r == null) {
+      final recents = recentSearches();
+      final cs = Theme.of(context).colorScheme;
       return ListView(
         children: [
-          if (_history.isNotEmpty)
+          if (recents.isNotEmpty)
             SectionTitle(
               'Recent searches',
               trailing: TextButton(
-                onPressed: () => _safeSetState(() => prefs.remove('searchHistory')),
-                child: const Text('Clear'),
+                onPressed: () => _safeSetState(() {
+                  prefs.remove('recentSearch');
+                  prefs.remove('searchHistory');
+                }),
+                child: const Text('Clear all'),
               ),
             ),
-          for (final h in _history)
+          for (final h in recents)
             ListTile(
-              leading: const Icon(Icons.history),
-              title: Text(h),
+              leading: switch (h.kind) {
+                'query' => const SizedBox(width: 48, height: 48, child: Icon(Icons.history)),
+                'artist' => Cover(h.cover, size: 48, circle: true, icon: Icons.person),
+                _ => Cover(h.cover, size: 48, radius: 6, icon: Icons.music_note_outlined),
+              },
+              title: Text(h.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: h.subtitle.isEmpty
+                  ? null
+                  : Text(
+                      h.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: cs.onSurfaceVariant),
+                    ),
+              trailing: IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                tooltip: 'Remove',
+                onPressed: () => _safeSetState(() => removeRecent(h)),
+              ),
               onTap: () {
-                _ctl.text = h;
-                _run(h);
+                addRecent(h); // back to the top
+                switch (h.kind) {
+                  case 'query':
+                    _ctl.text = h.title;
+                    _run(h.title);
+                  case 'artist':
+                    context.push('/artist/${h.id}');
+                  case 'album':
+                    context.push('/album/${h.id}');
+                  case 'song':
+                    final x = h.song;
+                    if (x == null) return;
+                    if (x.isLookup) {
+                      showSongMenu(context, ref, x);
+                    } else {
+                      audioHandler.playSongs([x]);
+                    }
+                }
+                _safeSetState(() {});
               },
             ),
         ],
@@ -160,6 +260,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     child: InkWell(
                       onTap: () {
                         remember();
+                        addRecent(RecentItem('artist', a.id, a.name, subtitle: 'Artist', cover: a.coverArt));
                         context.push('/artist/${a.id}');
                       },
                       child: Column(
@@ -182,11 +283,27 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             const SectionTitle('Songs'),
             for (var i = 0; i < songs.length && i < 30; i++)
               GestureDetector(
-                onTapDown: (_) => remember(),
+                onTapDown: (_) {
+                  remember();
+                  _rememberSong(songs[i]);
+                },
                 child: SongTile(songs[i], list: songs, index: i),
               ),
           ],
-          if (albums.isNotEmpty) Shelf(title: 'Albums', children: [for (final a in albums) AlbumCard(a)]),
+          if (albums.isNotEmpty)
+            Shelf(
+              title: 'Albums',
+              children: [
+                for (final a in albums)
+                  GestureDetector(
+                    onTapDown: (_) {
+                      remember();
+                      addRecent(RecentItem('album', a.id, a.name, subtitle: 'Album · ${a.artist}', cover: a.coverArt));
+                    },
+                    child: AlbumCard(a),
+                  ),
+              ],
+            ),
           if (lookupSongs.isNotEmpty || lookupAlbums.isNotEmpty) ...[
             const Divider(height: 32),
             const SectionTitle('Not in your library'),
@@ -197,7 +314,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-            for (final s in lookupSongs.take(30)) SongTile(s),
+            for (final x in lookupSongs.take(30))
+              GestureDetector(
+                onTapDown: (_) {
+                  remember();
+                  _rememberSong(x);
+                },
+                child: SongTile(x),
+              ),
             if (lookupAlbums.isNotEmpty)
               Shelf(title: 'Albums to get', children: [for (final a in lookupAlbums) AlbumCard(a)]),
           ],
