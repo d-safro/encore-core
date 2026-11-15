@@ -492,11 +492,12 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
           // The server answered with an error instead of the song; don't keep it as a download.
           final song = _pending.remove(id);
           if (song != null) _inFlight[_recording(song)]?.removeWhere((e) => e.$2 == id);
-          _waiting.remove(id);
+          final twins = _waiting.remove(id);
           try {
             await File(path).delete();
           } catch (_) {}
           state = state.copy(progress: {...state.progress}..remove(id));
+          if (twins != null && twins.isNotEmpty) await download(twins); // the other copies try on their own
           return;
         }
         final song = _pending.remove(id) ?? await ref.read(clientProvider)?.song(id);

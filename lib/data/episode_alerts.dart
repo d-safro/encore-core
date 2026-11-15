@@ -44,6 +44,7 @@ bool alertsOn(SharedPreferences p) => p.getBool('podcastAlerts') ?? true;
 /// there are many). The first check only remembers what's there, so following a show doesn't flood you.
 Future<int> checkNewEpisodes({SharedPreferences? p, bool notify = true}) async {
   p ??= await SharedPreferences.getInstance();
+  await p.reload(); // the background check and the app keep separate copies: read what the other one saw
   const storage = FlutterSecureStorage();
   final server = await storage.read(key: 'server');
   final user = await storage.read(key: 'user');

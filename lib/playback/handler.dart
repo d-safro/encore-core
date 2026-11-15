@@ -1246,7 +1246,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (query.trim().isEmpty) return playSongs(await repo.randomSongs(size: 200), shuffle: true); // "play music"
     final r = await repo.search(query);
     if (r.songs.isNotEmpty) return playSongs(r.songs.where((s) => !s.isLookup).toList());
-    if (r.albums.isNotEmpty) return playSongs((await repo.album(r.albums.first.id)).songs);
+    final album = r.albums.where((a) => !a.isLookup).firstOrNull;
+    if (album != null) return playSongs((await repo.album(album.id)).songs);
     if (r.artists.isNotEmpty) {
       final a = await repo.artist(r.artists.first.id);
       final songs = <Song>[];
