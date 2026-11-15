@@ -223,8 +223,10 @@ class SongTile extends ConsumerWidget {
     this.showTrack = false,
     this.queueIndex,
     this.trailing,
+    this.playContext,
   });
   final Song song;
+  final PlayContext? playContext; // the album / playlist this list is, for smart shuffle
   final List<Song>? list;
   final int? index, queueIndex;
   final bool showCover, showTrack;
@@ -250,7 +252,7 @@ class SongTile extends ConsumerWidget {
                 showSongMenu(context, ref, song);
               } else {
                 final l = list ?? [song];
-                audioHandler.playSongs(l, index: index ?? l.indexOf(song));
+                audioHandler.playSongs(l, index: index ?? l.indexOf(song), context: playContext);
               }
             },
       onLongPress: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
@@ -288,6 +290,14 @@ class SongTile extends ConsumerWidget {
                     children: [
                       if (song.isLookup)
                         Padding(padding: const EdgeInsets.only(right: 6), child: LookupBadge(song.lookup, size: 15)),
+                      if (queueIndex != null && audioHandler.isSuggested(song.id))
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Tooltip(
+                            message: 'Smart shuffle pick',
+                            child: Icon(Icons.auto_awesome, size: 15, color: cs.primary),
+                          ),
+                        ),
                       Expanded(
                         child: Text(
                           song.title,

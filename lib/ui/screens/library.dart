@@ -141,7 +141,10 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
   Widget build(BuildContext context) {
     final grid = ref.watch(settingsProvider.select((s) => s.albumGrid));
     final sort = ref.watch(settingsProvider.select((s) => s.albumSort));
-    ref.listen(repoProvider.select((r) => (r.online, r.client)), (_, _) => _reset()); // went on/offline, or another server
+    ref.listen(
+      repoProvider.select((r) => (r.online, r.client)),
+      (_, _) => _reset(),
+    ); // went on/offline, or another server
     final header = widget.fixedType != null
         ? null
         : Padding(
@@ -412,10 +415,7 @@ class _GenresTab extends ConsumerWidget {
               leading: const Icon(Icons.label_outline),
               title: Text(g.name),
               subtitle: Text(
-                [
-                  if (g.albumCount > 0) '${g.albumCount} albums',
-                  if (g.songCount > 0) nSongs(g.songCount),
-                ].join(' · '),
+                [if (g.albumCount > 0) '${g.albumCount} albums', if (g.songCount > 0) nSongs(g.songCount)].join(' · '),
               ),
               onTap: () => context.push('/genre/${Uri.encodeComponent(g.name)}'),
             ),
@@ -437,8 +437,8 @@ class _FavouritesTab extends ConsumerWidget {
           children: [
             if (songs.isNotEmpty)
               PlayButtons(
-                onPlay: () => audioHandler.playSongs(songs),
-                onShuffle: () => audioHandler.playSongs(songs, shuffle: true),
+                onPlay: () => audioHandler.playSongs(songs, context: const PlayContext.liked()),
+                onShuffle: () => audioHandler.playSongs(songs, shuffle: true, context: const PlayContext.liked()),
                 leading: [DownloadToggle(pinKey: 'starred', songs: () async => songs)],
               ),
             if (r.artists.isNotEmpty) ...[
@@ -453,7 +453,8 @@ class _FavouritesTab extends ConsumerWidget {
             if (r.albums.isNotEmpty) Shelf(title: 'Albums', children: [for (final a in r.albums) AlbumCard(a)]),
             if (songs.isNotEmpty) ...[
               SectionTitle('Liked songs', subtitle: nSongs(songs.length)),
-              for (var i = 0; i < songs.length; i++) SongTile(songs[i], list: songs, index: i),
+              for (var i = 0; i < songs.length; i++)
+                SongTile(songs[i], list: songs, index: i, playContext: const PlayContext.liked()),
             ],
             if (r.isEmpty)
               const Padding(

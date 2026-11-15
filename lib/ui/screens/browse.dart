@@ -123,7 +123,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
             lastDisc = s.disc;
             children.add(SectionTitle('Disc ${s.disc ?? 1}'));
           }
-          children.add(SongTile(s, list: playable, showTrack: true));
+          children.add(SongTile(s, list: playable, showTrack: true, playContext: PlayContext.album(a.id, a.name)));
         }
         final t = Theme.of(context).textTheme;
         return RefreshIndicator(
@@ -170,8 +170,9 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                 ),
               if (playable.isNotEmpty)
                 PlayButtons(
-                  onPlay: () => audioHandler.playSongs(playable),
-                  onShuffle: () => audioHandler.playSongs(playable, shuffle: true),
+                  onPlay: () => audioHandler.playSongs(playable, context: PlayContext.album(a.id, a.name)),
+                  onShuffle: () =>
+                      audioHandler.playSongs(playable, shuffle: true, context: PlayContext.album(a.id, a.name)),
                   leading: [
                     DownloadToggle(pinKey: 'album:${a.id}', songs: () async => playable),
                     IconButton(
@@ -508,11 +509,13 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
               ),
               if (songs.isNotEmpty)
                 PlayButtons(
-                  onPlay: () => audioHandler.playSongs(songs),
-                  onShuffle: () => audioHandler.playSongs(songs, shuffle: true),
+                  onPlay: () => audioHandler.playSongs(songs, context: PlayContext.playlist(p.id, p.name)),
+                  onShuffle: () =>
+                      audioHandler.playSongs(songs, shuffle: true, context: PlayContext.playlist(p.id, p.name)),
                   leading: [DownloadToggle(pinKey: 'playlist:${p.id}', songs: () async => songs)],
                 ),
-              for (var i = 0; i < p.songs.length; i++) SongTile(p.songs[i], list: songs),
+              for (var i = 0; i < p.songs.length; i++)
+                SongTile(p.songs[i], list: songs, playContext: PlayContext.playlist(p.id, p.name)),
               const SizedBox(height: 24),
             ],
           ),

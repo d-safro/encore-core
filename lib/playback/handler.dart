@@ -20,6 +20,25 @@ class PlayerExtras {
   const PlayerExtras({this.sleepAt, this.sleepAfterTrack = false, this.speed = 1.0});
 }
 
+/// Off, normal shuffle, or smart shuffle (shuffle plus songs that fit, about one every three songs).
+enum ShuffleKind { off, on, smart }
+
+/// Where the queue came from, so a smart-shuffle pick can be saved into it.
+class PlayContext {
+  const PlayContext(this.kind, {this.id = '', this.name = ''});
+  const PlayContext.playlist(String id, String name) : this('playlist', id: id, name: name);
+  const PlayContext.album(String id, String name) : this('album', id: id, name: name);
+  const PlayContext.liked() : this('starred', name: 'Liked songs');
+
+  final String kind; // playlist, album, starred
+  final String id, name;
+  String get key => '$kind:$id';
+
+  Map<String, dynamic> toJson() => {'kind': kind, 'id': id, 'name': name};
+  static PlayContext? fromJson(Object? j) =>
+      j is Map ? PlayContext('${j['kind'] ?? ''}', id: '${j['id'] ?? ''}', name: '${j['name'] ?? ''}') : null;
+}
+
 /// The one playback engine: a just_audio player behind audio_service, so playback keeps going in the
 /// background with the media notification, lock-screen and Bluetooth controls and Android Auto.
 class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
@@ -39,13 +58,23 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   PlayerExtras get currentExtras => _extras;
 
   Timer? _sleepTimer, _saveTimer, _periodicSave;
-  int? _lastIndex;
   String? _lastSongId;
   String? _scrobbledNow, _submitted;
   Duration _listened = Duration.zero;
   DateTime? _lastTick;
   bool _fetchingRadio = false;
   Song? radioSeed; // set while a song radio is playing: the queue keeps growing with songs like it
+
+  // ── Shuffle (done by reordering the queue, so the queue always shows the real play order) ──
+  ShuffleKind _shuffleKind = ShuffleKind.off;
+  ShuffleKind get shuffleKind => _shuffleKind;
+  List<Song>? _original; // the order to go back to when shuffle is switched off
+  final Set<String> _suggested = {}; // songs smart shuffle added
+  final Set<String> _usedPicks = {}; // picked already this session (not suggested twice)
+  final List<Song> _pickPool = []; // fetched picks not placed yet
+  PlayContext? playContext;
+  bool _rearranging = false, _filling = false, _smartNoticeShown = false;
+  bool isSuggested(String id) => _suggested.contains(id);
 
   Settings get _settings => container.read(settingsProvider);
 
@@ -62,7 +91,6 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     );
     player.currentIndexStream.listen(_onIndex);
     player.sequenceStream.listen((_) => _onIndex(player.currentIndex)); // same index, different song
-    player.shuffleModeEnabledStream.distinct().listen((_) => _broadcastQueue());
     player.positionStream.listen(_onPosition);
     player.playingStream.distinct().listen((playing) {
       _periodicSave?.cancel();
@@ -181,13 +209,17 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     bool shuffle = false,
     bool allowLookup = false,
     Song? radio,
+    PlayContext? context,
   }) async {
     radioSeed = radio;
+    playContext = context;
     var list = songs.where((s) => (allowLookup || !s.isLookup) && canPlay(s)).toList();
     if (list.isEmpty) {
       if (songs.isNotEmpty) {
         playerNotices.add(
-          !container.read(offlineProvider) ? 'Nothing here can be played' : "You're offline and none of these songs are downloaded",
+          !container.read(offlineProvider)
+              ? 'Nothing here can be played'
+              : "You're offline and none of these songs are downloaded",
         );
       }
       return;
@@ -198,9 +230,16 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     } else {
       index = 0;
     }
+    _suggested.clear();
+    _pickPool.clear();
     if (shuffle) {
+      _original = list;
       list = [...list]..shuffle();
       index = 0;
+      _shuffleKind = radio == null && smartShufflePreferred ? ShuffleKind.smart : ShuffleKind.on;
+    } else {
+      _original = null;
+      _shuffleKind = ShuffleKind.off;
     }
     _songs
       ..clear()
@@ -208,8 +247,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     await player.setShuffleModeEnabled(false);
     await _load(list, index.clamp(0, list.length - 1));
     _broadcastQueue();
+    _rebroadcast();
     player.play();
     _scheduleSave();
+    if (_shuffleKind == ShuffleKind.smart) _smartFill();
   }
 
   /// Load a new queue. If the first song can't be loaded (server down, file gone), move on to the next.
@@ -228,6 +269,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (add.isEmpty) return;
     if (_songs.isEmpty) return playSongs(add);
     final at = (player.currentIndex ?? -1) + 1;
+    _original?.addAll(add);
     _songs.insertAll(at, add);
     await player.insertAudioSources(at, add.map(_source).toList());
     _broadcastQueue();
@@ -238,6 +280,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final add = songs.where((s) => !s.isLookup && canPlay(s)).toList();
     if (add.isEmpty) return;
     if (_songs.isEmpty) return playSongs(add);
+    _original?.addAll(add);
     _songs.addAll(add);
     await player.addAudioSources(add.map(_source).toList());
     _broadcastQueue();
@@ -247,7 +290,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   @override
   Future<void> removeQueueItemAt(int index) async {
     if (index < 0 || index >= _songs.length) return;
-    _songs.removeAt(index);
+    final gone = _songs.removeAt(index);
+    _suggested.remove(gone.id);
+    final o = _original?.indexWhere((s) => s.id == gone.id) ?? -1;
+    if (o >= 0) _original!.removeAt(o);
     await player.removeAudioSourceAt(index);
     _broadcastQueue();
     _scheduleSave();
@@ -264,6 +310,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   Future<void> clearQueue() async {
     _songs.clear();
+    _resetShuffle();
     await player.stop();
     await player.clearAudioSources();
     mediaItem.add(null);
@@ -326,14 +373,261 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
   }
 
+  // ── Shuffle and smart shuffle ──
+  /// What the shuffle buttons on album / playlist pages start: the last kind picked in the player.
+  bool get smartShufflePreferred => prefs.getBool('smartShuffle') ?? false;
+
+  void _resetShuffle() {
+    _shuffleKind = ShuffleKind.off;
+    _original = null;
+    _suggested.clear();
+    _pickPool.clear();
+    playContext = null;
+    _rebroadcast();
+  }
+
+  void _rebroadcast() => _broadcast(player.playbackEvent);
+
+  /// Switch between off, shuffle and smart shuffle without interrupting the song that's playing.
+  Future<void> setShuffleKind(ShuffleKind k) async {
+    if (k != ShuffleKind.off) prefs.setBool('smartShuffle', k == ShuffleKind.smart);
+    final i = player.currentIndex;
+    if (k == _shuffleKind || _songs.isEmpty || i == null || i >= _songs.length) {
+      _shuffleKind = k;
+      _rebroadcast();
+      return;
+    }
+    final cur = _songs[i];
+    if (k == ShuffleKind.off) {
+      // back to the original order, continuing from the song that's playing; picks leave the queue
+      final orig = _original ?? _songs.where((s) => !_suggested.contains(s.id)).toList();
+      final at = orig.indexWhere((s) => s.id == cur.id);
+      _suggested.removeWhere((id) => id != cur.id);
+      _original = null;
+      _pickPool.clear();
+      _shuffleKind = k;
+      await _replaceAround(i, at >= 0 ? orig.sublist(0, at) : const [], at >= 0 ? orig.sublist(at + 1) : orig);
+    } else if (_shuffleKind == ShuffleKind.off) {
+      // a fresh shuffle of everything except the song that's playing
+      _original = [..._songs];
+      final rest = [..._songs]..removeAt(i);
+      rest.shuffle();
+      _shuffleKind = k;
+      await _replaceAround(i, const [], rest);
+    } else if (k == ShuffleKind.on) {
+      _shuffleKind = k;
+      await _removePicks();
+    } else {
+      _shuffleKind = k; // shuffle → smart: same order, picks get added
+    }
+    _rebroadcast();
+    if (k == ShuffleKind.smart) {
+      _smartNoticeShown = false;
+      _smartFill();
+    }
+  }
+
+  /// Replace everything around the playing song (index [i]) with [before] and [after]; it keeps playing.
+  Future<void> _replaceAround(int i, List<Song> before, List<Song> after) async {
+    final cur = _songs[i];
+    _rearranging = true;
+    try {
+      if (i + 1 < _songs.length) await player.removeAudioSourceRange(i + 1, _songs.length);
+      if (i > 0) await player.removeAudioSourceRange(0, i);
+      if (before.isNotEmpty) await player.insertAudioSources(0, before.map(_source).toList());
+      if (after.isNotEmpty) await player.addAudioSources(after.map(_source).toList());
+      _songs
+        ..clear()
+        ..addAll(before)
+        ..add(cur)
+        ..addAll(after);
+      _lastSongId = cur.id;
+    } finally {
+      _rearranging = false;
+    }
+    _broadcastQueue();
+    _rebroadcast();
+    _scheduleSave();
+  }
+
+  /// Take smart-shuffle picks out of the queue (but not the one playing).
+  Future<void> _removePicks() async {
+    final cur = player.currentIndex ?? -1;
+    _rearranging = true;
+    try {
+      for (var k = _songs.length - 1; k >= 0; k--) {
+        if (k != cur && _suggested.contains(_songs[k].id)) {
+          _songs.removeAt(k);
+          await player.removeAudioSourceAt(k);
+        }
+      }
+    } finally {
+      _rearranging = false;
+    }
+    final now = player.currentIndex;
+    _suggested.removeWhere((id) => now == null || now >= _songs.length || _songs[now].id != id);
+    _pickPool.clear();
+    if (now != null && now < _songs.length) {
+      _lastSongId = _songs[now].id;
+    }
+    _broadcastQueue();
+    _scheduleSave();
+  }
+
+  /// Keeps smart-shuffle picks lined up ahead: one after every three songs of the list.
+  Future<void> _smartFill() async {
+    if (_shuffleKind != ShuffleKind.smart || _filling || _songs.isEmpty) return;
+    final c = container.read(clientProvider);
+    if (c == null || container.read(offlineProvider)) {
+      if (!_smartNoticeShown) {
+        _smartNoticeShown = true;
+        playerNotices.add("Smart shuffle needs the server, so this is a normal shuffle for now");
+      }
+      return;
+    }
+    (int, int) where() {
+      final i = min(player.currentIndex ?? 0, _songs.length - 1);
+      var last = i;
+      for (var k = _songs.length - 1; k > i; k--) {
+        if (_suggested.contains(_songs[k].id)) {
+          last = k;
+          break;
+        }
+      }
+      return (i, last);
+    }
+
+    var (i, last) = where();
+    final plainAfter = _songs.skip(last + 1).where((s) => !_suggested.contains(s.id)).length;
+    if (plainAfter < 3 || last - i > 12) return;
+    _filling = true;
+    try {
+      final picks = await _smartPicks(6);
+      if (_shuffleKind != ShuffleKind.smart || picks.isEmpty) return;
+      (i, last) = where(); // the queue may have moved on while fetching
+      var pos = last + 1;
+      _rearranging = true;
+      try {
+        for (final p in picks) {
+          var plain = 0;
+          while (pos < _songs.length && plain < 3) {
+            if (!_suggested.contains(_songs[pos].id)) plain++;
+            pos++;
+          }
+          if (plain < 3) {
+            _pickPool.insert(0, p); // no room yet; use it later
+            continue;
+          }
+          _songs.insert(pos, p);
+          _suggested.add(p.id);
+          _usedPicks.add(p.id);
+          await player.insertAudioSource(pos, _source(p));
+          pos++;
+        }
+      } finally {
+        _rearranging = false;
+      }
+      _broadcastQueue();
+      _scheduleSave();
+    } catch (_) {
+      // a failed fetch just means no picks this time
+    } finally {
+      _filling = false;
+    }
+  }
+
+  /// Songs that sound like the list: sound-alikes of a few random songs from it, mixed, one per artist.
+  Future<List<Song>> _smartPicks(int n) async {
+    final c = container.read(clientProvider);
+    final base = (_original ?? _songs).where((s) => !_suggested.contains(s.id) && !s.isLookup).toList();
+    if (c == null || base.isEmpty) return const [];
+    final inQueue = _songs.map((s) => s.id).toSet();
+    final hidden = _hiddenPicks(playContext?.key ?? '');
+    bool ok(Song s) =>
+        !s.isLookup && !inQueue.contains(s.id) && !_usedPicks.contains(s.id) && !hidden.contains(s.id) && canPlay(s);
+    _pickPool.removeWhere((s) => !ok(s));
+    if (_pickPool.length < n) {
+      final seeds = ([...base]..shuffle()).take(4).toList();
+      final lists = await Future.wait(
+        seeds.map((s) => c.similarSongs(s.id, count: 20).catchError((_) => const <Song>[])),
+      );
+      final seen = {for (final s in _pickPool) s.id};
+      for (var r = 0; r < 20; r++) {
+        for (final l in lists) {
+          if (r < l.length && ok(l[r]) && seen.add(l[r].id)) _pickPool.add(l[r]);
+        }
+      }
+    }
+    final out = <Song>[];
+    final artists = <String>{};
+    for (final s in [..._pickPool]) {
+      if (out.length >= n) break;
+      if (artists.add(s.artist.toLowerCase())) {
+        out.add(s);
+        _pickPool.remove(s);
+      }
+    }
+    return out;
+  }
+
+  Set<String> _hiddenPicks(String key) {
+    try {
+      final m = jsonDecode(prefs.getString('smartShuffleHidden') ?? '{}') as Map<String, dynamic>;
+      return {...((m[key] as List?) ?? const []).map((e) => '$e')};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Keep a smart-shuffle pick: it becomes part of the list. Saved into the playlist (or liked songs) it came
+  /// from; returns what happened, or null when the app should ask which playlist.
+  Future<String?> keepSuggestion(Song s) async {
+    final ctx = playContext;
+    final c = container.read(clientProvider);
+    String? done;
+    if (c != null && ctx?.kind == 'playlist') {
+      await c.updatePlaylist(ctx!.id, add: [s.id]);
+      done = 'Added to ${ctx.name}';
+    } else if (c != null && ctx?.kind == 'starred') {
+      await c.star(id: s.id);
+      updateSong(s.copyWith(starred: true));
+      done = 'Added to Liked songs';
+    }
+    markKept(s);
+    return done;
+  }
+
+  /// The pick is part of the list now (no sparkle; it stays when shuffle is switched off).
+  void markKept(Song s) {
+    if (_suggested.remove(s.id)) _original?.add(s);
+    _broadcastQueue();
+    _scheduleSave();
+  }
+
+  /// Drop a pick: it leaves the queue and isn't suggested for this list again.
+  Future<void> dropSuggestion(Song s) async {
+    final key = playContext?.key ?? '';
+    try {
+      final m = jsonDecode(prefs.getString('smartShuffleHidden') ?? '{}') as Map<String, dynamic>;
+      final l = [...((m[key] as List?) ?? const []).map((e) => '$e'), s.id];
+      m[key] = l.length > 500 ? l.sublist(l.length - 500) : l;
+      if (m.length > 200) m.remove(m.keys.first);
+      prefs.setString('smartShuffleHidden', jsonEncode(m));
+    } catch (_) {}
+    final idx = _songs.indexWhere((x) => x.id == s.id);
+    if (idx < 0) return;
+    if (idx == player.currentIndex && player.hasNext) await player.seekToNext();
+    await removeQueueItemAt(idx);
+    _smartFill();
+  }
+
   // ── Track change: metadata, ReplayGain, scrobbling, radio ──
   /// Runs when the playing song changes. (The player repeats the same index with every playback event,
   /// so only a real change counts.)
   void _onIndex(int? i) {
-    if (i == null || i >= _songs.length) return;
+    if (_rearranging || i == null || i >= _songs.length) return;
     final s = _songs[i];
-    if (i == _lastIndex && s.id == _lastSongId) return;
-    _lastIndex = i;
+    if (s.id == _lastSongId) return; // same song, maybe moved by a queue edit: not a new track
     _lastSongId = s.id;
     mediaItem.add(_mediaItem(s));
     _applyReplayGain();
@@ -345,6 +639,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       container.read(clientProvider)?.scrobble(s.id, submission: false).catchError((_) {});
     }
     _maybeExtendRadio();
+    _smartFill();
     _scheduleSave();
   }
 
@@ -405,7 +700,15 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final pos = player.position.inMilliseconds;
     prefs.setString(
       'queue',
-      jsonEncode({'songs': _songs.map((s) => s.toJson()).toList(), 'index': i, 'position': pos}),
+      jsonEncode({
+        'songs': _songs.map((s) => s.toJson()).toList(),
+        'index': i,
+        'position': pos,
+        'shuffle': _shuffleKind.name,
+        if (_original != null) 'original': _original!.map((s) => s.id).toList(),
+        'suggested': _suggested.toList(),
+        if (playContext != null) 'context': playContext!.toJson(),
+      }),
     );
     final c = container.read(clientProvider);
     if (_settings.syncPlayQueue && c != null && !container.read(offlineProvider) && _songs.length <= 1000) {
@@ -428,8 +731,17 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (songs.isEmpty) return;
       final index = ((j['index'] as num?)?.toInt() ?? 0).clamp(0, songs.length - 1);
       _songs.addAll(songs);
+      final byId = {for (final s in songs) s.id: s};
+      _shuffleKind = ShuffleKind.values.firstWhere((k) => k.name == j['shuffle'], orElse: () => ShuffleKind.off);
+      final orig = j['original'];
+      if (_shuffleKind != ShuffleKind.off && orig is List) {
+        _original = [for (final id in orig) ?byId['$id']];
+      }
+      _suggested.addAll(((j['suggested'] as List?) ?? const []).map((e) => '$e').where(byId.containsKey));
+      playContext = PlayContext.fromJson(j['context']);
       await _load(songs, index, position: Duration(milliseconds: (j['position'] as num?)?.toInt() ?? 0));
       _broadcastQueue();
+      _rebroadcast();
     } catch (_) {
       _songs.clear();
     }
@@ -443,6 +755,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (songs.isEmpty) return false;
     final idx = max(0, songs.indexWhere((s) => s.id == current));
     radioSeed = null;
+    _resetShuffle();
     _songs
       ..clear()
       ..addAll(songs);
@@ -511,11 +824,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   @override
-  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
-    final on = shuffleMode != AudioServiceShuffleMode.none;
-    if (on) await player.shuffle();
-    await player.setShuffleModeEnabled(on);
-  }
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) => setShuffleKind(switch (shuffleMode) {
+    AudioServiceShuffleMode.none => ShuffleKind.off,
+    AudioServiceShuffleMode.group => ShuffleKind.smart,
+    AudioServiceShuffleMode.all => ShuffleKind.on,
+  });
 
   @override
   Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) => player.setLoopMode(switch (repeatMode) {
@@ -578,7 +891,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         bufferedPosition: player.bufferedPosition,
         speed: player.speed,
         queueIndex: event.currentIndex,
-        shuffleMode: player.shuffleModeEnabled ? AudioServiceShuffleMode.all : AudioServiceShuffleMode.none,
+        shuffleMode: switch (_shuffleKind) {
+          ShuffleKind.off => AudioServiceShuffleMode.none,
+          ShuffleKind.on => AudioServiceShuffleMode.all,
+          ShuffleKind.smart => AudioServiceShuffleMode.group,
+        },
         repeatMode: switch (player.loopMode) {
           LoopMode.one => AudioServiceRepeatMode.one,
           LoopMode.all => AudioServiceRepeatMode.all,

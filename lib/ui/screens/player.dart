@@ -203,6 +203,105 @@ class _Art extends StatelessWidget {
   }
 }
 
+/// Shuffle button with three states, like Spotify's: off → shuffle → smart shuffle → off.
+class ShuffleButton extends StatelessWidget {
+  const ShuffleButton({super.key, required this.kind});
+  final ShuffleKind kind;
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final on = kind != ShuffleKind.off;
+    return IconButton(
+      tooltip: switch (kind) {
+        ShuffleKind.off => 'Shuffle',
+        ShuffleKind.on => 'Smart shuffle',
+        ShuffleKind.smart => 'Shuffle off',
+      },
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Icon(Icons.shuffle_rounded, color: on ? cs.primary : cs.onSurfaceVariant),
+          if (kind == ShuffleKind.smart)
+            Positioned(right: -6, top: -6, child: Icon(Icons.auto_awesome, size: 13, color: cs.primary)),
+        ],
+      ),
+      onPressed: () {
+        final next = switch (kind) {
+          ShuffleKind.off => ShuffleKind.on,
+          ShuffleKind.on => ShuffleKind.smart,
+          ShuffleKind.smart => ShuffleKind.off,
+        };
+        audioHandler.setShuffleKind(next);
+        toast(context, switch (next) {
+          ShuffleKind.on => 'Shuffle on',
+          ShuffleKind.smart => 'Smart shuffle on: songs that fit are mixed in, marked with ✦',
+          ShuffleKind.off => 'Shuffle off',
+        });
+      },
+    );
+  }
+}
+
+/// Shown under the title while a smart-shuffle pick plays: keep it (save to the list) or drop it.
+class SmartPickBar extends ConsumerWidget {
+  const SmartPickBar(this.song, {super.key});
+  final Song song;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    final ctx = audioHandler.playContext;
+    final keepLabel = switch (ctx?.kind) {
+      'playlist' => 'Add to ${ctx!.name}',
+      'starred' => 'Add to Liked songs',
+      _ => 'Add to a playlist',
+    };
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+        decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)),
+        child: Row(
+          children: [
+            Icon(Icons.auto_awesome, size: 16, color: cs.primary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Smart shuffle pick',
+                style: t.labelLarge?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
+              ),
+            ),
+            IconButton(
+              tooltip: keepLabel,
+              icon: Icon(Icons.add_circle_outline_rounded, color: cs.primary),
+              onPressed: () async {
+                try {
+                  final done = await audioHandler.keepSuggestion(song);
+                  if (done != null) {
+                    if (context.mounted) toast(context, done);
+                  } else if (context.mounted) {
+                    await addToPlaylist(context, ref, [song]);
+                  }
+                } catch (e) {
+                  if (context.mounted) toast(context, "Couldn't save it: $e");
+                }
+              },
+            ),
+            IconButton(
+              tooltip: 'Not for this mix',
+              icon: Icon(Icons.remove_circle_outline_rounded, color: cs.onSurfaceVariant),
+              onPressed: () async {
+                await audioHandler.dropSuggestion(song);
+                if (context.mounted) toast(context, "Removed. It won't be suggested for this list again");
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Titles extends ConsumerWidget {
   const _Titles({required this.item, required this.song});
   final MediaItem item;
@@ -212,7 +311,7 @@ class _Titles extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final s = song;
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.fromLTRB(24, 12, 12, 0),
       child: Row(
         children: [
@@ -251,6 +350,8 @@ class _Titles extends ConsumerWidget {
         ],
       ),
     );
+    if (s == null || !audioHandler.isSuggested(s.id)) return row;
+    return Column(mainAxisSize: MainAxisSize.min, children: [row, SmartPickBar(s)]);
   }
 }
 
@@ -317,7 +418,11 @@ class _Controls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final st = ref.watch(playbackStateProvider).value;
     final playing = st?.playing ?? false;
-    final shuffle = st?.shuffleMode == AudioServiceShuffleMode.all;
+    final shuffle = switch (st?.shuffleMode) {
+      AudioServiceShuffleMode.group => ShuffleKind.smart,
+      AudioServiceShuffleMode.all => ShuffleKind.on,
+      _ => ShuffleKind.off,
+    };
     final repeat = st?.repeatMode ?? AudioServiceRepeatMode.none;
     final cs = Theme.of(context).colorScheme;
     final loading =
@@ -327,11 +432,7 @@ class _Controls extends ConsumerWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          IconButton(
-            icon: Icon(Icons.shuffle_rounded, color: shuffle ? cs.primary : cs.onSurfaceVariant),
-            onPressed: () =>
-                audioHandler.setShuffleMode(shuffle ? AudioServiceShuffleMode.none : AudioServiceShuffleMode.all),
-          ),
+          ShuffleButton(kind: shuffle),
           IconButton(
             iconSize: 42,
             icon: const Icon(Icons.skip_previous_rounded),
@@ -647,6 +748,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
     _scroll.dispose();
     super.dispose();
   }
+
   final _keys = <int, GlobalKey>{};
   int _current = -1;
 

@@ -133,7 +133,7 @@ class _QuickPills extends ConsumerWidget {
           ),
           pill(Icons.favorite_rounded, 'Liked songs', () async {
             final r = await ref.read(repoProvider).starred();
-            await audioHandler.playSongs(r.songs, shuffle: true);
+            await audioHandler.playSongs(r.songs, shuffle: true, context: const PlayContext.liked());
           }),
           if (online)
             pill(Icons.auto_awesome, 'Made for you', () async {
