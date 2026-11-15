@@ -258,7 +258,7 @@ class SettingsScreen extends ConsumerWidget {
 
           const SectionTitle('About'),
           const ListTile(
-            leading: Icon(Icons.graphic_eq_rounded),
+            leading: EncoreLogo(size: 28),
             title: Text('Encore'),
             subtitle: Text('A music player for Navidrome and other Subsonic servers'),
           ),

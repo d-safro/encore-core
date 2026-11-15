@@ -1,3 +1,4 @@
+import '../widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -56,7 +57,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(Icons.graphic_eq_rounded, size: 64, color: Theme.of(context).colorScheme.primary),
+                    const Center(child: EncoreLogo(size: 88)),
                     const SizedBox(height: 12),
                     Text('Encore', textAlign: TextAlign.center, style: t.displaySmall),
                     Text(

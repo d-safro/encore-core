@@ -692,3 +692,51 @@ class DownloadToggle extends ConsumerWidget {
 
 /// "1 song" / "12 songs".
 String nSongs(int n) => n == 1 ? '1 song' : '$n songs';
+
+/// Encore's logo: a record whose label is a lowercase "e". Drawn in code, so it's sharp at any size
+/// (the same geometry as the launcher icon: record r 29.5, grooves every 3, label r 17.5, e r 9.5).
+class EncoreLogo extends StatelessWidget {
+  const EncoreLogo({super.key, this.size = 64});
+  final double size;
+  @override
+  Widget build(BuildContext context) => SizedBox.square(dimension: size, child: CustomPaint(painter: _LogoPainter()));
+}
+
+class _LogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.shortestSide / 59; // the record (diameter 59) fills the box
+    final c = Offset(size.width / 2, size.height / 2);
+    final rect = Rect.fromCircle(center: c, radius: 29.5 * s);
+    final gradient = const LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [Color(0xFFDCE3FF), Color(0xFF7C90FF)],
+    ).createShader(rect);
+    const ink = Color(0xFF0D0E15);
+    canvas.drawCircle(c, 29.5 * s, Paint()..shader = gradient);
+    final groove = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1 * s
+      ..color = ink.withValues(alpha: 0.22);
+    for (final r in [26.5, 23.5, 20.5]) {
+      canvas.drawCircle(c, r * s, groove);
+    }
+    canvas.drawCircle(c, 17.5 * s, Paint()..color = ink);
+    final e = Path()
+      ..moveTo(c.dx - 9.5 * s, c.dy)
+      ..lineTo(c.dx + 9.5 * s, c.dy)
+      ..arcTo(Rect.fromCircle(center: c, radius: 9.5 * s), 0, -(2 * 3.141592653589793 - 3.141592653589793 / 4), false);
+    canvas.drawPath(
+      e,
+      Paint()
+        ..shader = gradient
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4.6 * s
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LogoPainter oldDelegate) => false;
+}
