@@ -14,7 +14,7 @@ const lyricsSourceNames = {'lrclib': 'LRCLIB', 'netease': 'NetEase', 'ovh': 'lyr
 const defaultLyricsSources = ['lrclib', 'netease', 'ovh'];
 
 const _ua = {'User-Agent': 'Encore music player (https://github.com/d-safro/encore)'};
-const _timeout = Duration(seconds: 10);
+const _timeout = Duration(seconds: 6);
 
 /// One possible lyrics match, for the "Choose lyrics" list.
 class LyricsCandidate {
@@ -41,9 +41,11 @@ Future<Lyrics> onlineLyrics(Song s, List<String> sources) async {
     if (!l.isEmpty) return l;
   }
   if (s.title.isEmpty) return const Lyrics();
+  // every source asked at once (the answer is still taken in your order): as slow as the slowest, not the sum
+  final asked = [for (final src in sources) _bestFrom(src, s)];
   Lyrics? plain;
-  for (final src in sources) {
-    final l = await _bestFrom(src, s);
+  for (final f in asked) {
+    final l = await f;
     if (l.isEmpty) continue;
     if (l.synced) return l;
     plain ??= l;

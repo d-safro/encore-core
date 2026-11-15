@@ -135,14 +135,21 @@ class _QuickPills extends ConsumerWidget {
             'Shuffle all',
             () async => audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 200)),
           ),
-          pill(Icons.favorite_rounded, 'Liked songs', () async {
-            final r = await ref.read(repoProvider).starred();
-            await audioHandler.playSongs(r.songs, shuffle: true, context: const PlayContext.liked());
-          }),
+          pill(Icons.favorite_rounded, 'Liked songs', () async => context.push('/liked')),
           if (online)
             pill(Icons.auto_awesome, 'Made for you', () async {
               final ai = ref.read(aiProvider);
-              if (ai != null) await audioHandler.playSongs(await ai.forYou());
+              if (ai == null) {
+                toast(context, 'Made for you needs AudioMuse-AI on the server');
+                return;
+              }
+              toast(context, 'Making your mix…');
+              final songs = await ai.forYou();
+              if (songs.isEmpty) {
+                if (context.mounted) toast(context, 'Not enough listening history yet');
+                return;
+              }
+              await audioHandler.playSongs(songs, source: 'ai:Made for you');
             }),
           if (online)
             pill(

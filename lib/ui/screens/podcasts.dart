@@ -359,13 +359,16 @@ class EpisodeTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
-    final playing = ref.watch(mediaItemProvider).value?.id == e.id;
-    final dl = ref.watch(downloadsProvider);
-    final onPhone = dl.files.containsKey(e.id);
-    final progress = dl.progress[e.id];
+    final playing = ref.watch(mediaItemProvider.select((m) => m.value?.id == e.id));
+    final (progress, onPhone) = ref.watch(
+      downloadsProvider.select((d) => (d.progress[e.id], d.files.containsKey(e.id))),
+    );
+    final offline = ref.watch(offlineProvider);
     final left = e.inProgress && e.duration > 0 ? e.duration - e.position ~/ 1000 : null;
     return InkWell(
-      onTap: () => audioHandler.playEpisode(e),
+      onTap: () => offline && !onPhone
+          ? toast(context, "This episode isn't downloaded, and your server can't be reached")
+          : audioHandler.playEpisode(e),
       onLongPress: () => showEpisodeMenu(context, ref, e),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 4, 10),
@@ -379,7 +382,7 @@ class EpisodeTile extends ConsumerWidget {
               ),
             Expanded(
               child: Opacity(
-                opacity: e.played ? 0.55 : 1,
+                opacity: e.played || (offline && !onPhone) ? 0.55 : 1,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

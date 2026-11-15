@@ -17,6 +17,7 @@ import '../state.dart';
 import '../widgets.dart';
 import 'podcasts.dart';
 import 'radio.dart';
+import '../../data/cover_cache.dart';
 import 'jam.dart';
 
 /// Colours taken from the current album art (Material You from the cover).
@@ -28,6 +29,7 @@ final artSchemeProvider = FutureProvider.autoDispose.family<ColorScheme?, String
       provider: CachedNetworkImageProvider(
         c.coverUrl(coverArt, size: 200).toString(),
         cacheKey: '${c.creds.base}|$coverArt|200',
+        cacheManager: coverCache,
       ),
       brightness: Brightness.dark,
     );

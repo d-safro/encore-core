@@ -49,7 +49,7 @@ class _SongRadioScreenState extends ConsumerState<SongRadioScreen> {
     final more = ref.watch(_moreLikeProvider(s.id));
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(backgroundColor: Colors.transparent, forceMaterialTransparency: true),
+      appBar: AppBar(backgroundColor: overArtBar(context), surfaceTintColor: Colors.transparent),
       body: FutureBuilder<bool>(
         future: _started,
         builder: (ctx, snap) {

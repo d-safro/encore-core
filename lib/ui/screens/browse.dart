@@ -112,7 +112,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
     final album = ref.watch(albumProvider(widget.id));
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(backgroundColor: Colors.transparent, forceMaterialTransparency: true),
+      appBar: AppBar(backgroundColor: overArtBar(context), surfaceTintColor: Colors.transparent),
       body: AsyncView(album, (Album a) {
         pollIf(a.songs.any((s) => s.lookup == LookupState.downloading), () => ref.invalidate(albumProvider(widget.id)));
         final playable = a.songs.where((s) => !s.isLookup).toList();
@@ -297,7 +297,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
     final info = ref.watch(artistInfoProvider(widget.id));
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(backgroundColor: Colors.transparent, forceMaterialTransparency: true),
+      appBar: AppBar(backgroundColor: overArtBar(context), surfaceTintColor: Colors.transparent),
       body: AsyncView(artist, (Artist a) {
         final own = a.albums.where((x) => !x.isLookup).toList()..sort((x, y) => (y.year ?? 0).compareTo(x.year ?? 0));
         final missing = a.albums.where((x) => x.isLookup).toList();
@@ -531,8 +531,8 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
     return Scaffold(
       extendBodyBehindAppBar: !_editing,
       appBar: AppBar(
-        backgroundColor: _editing ? null : Colors.transparent,
-        forceMaterialTransparency: !_editing,
+        backgroundColor: _editing ? null : overArtBar(context),
+        surfaceTintColor: Colors.transparent,
         title: _editing ? const Text('Edit playlist') : null,
         actions: [
           if (_editing)

@@ -290,24 +290,50 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       ..clear()
       ..addAll(list);
     await player.setShuffleModeEnabled(false);
-    await _load(list, index.clamp(0, list.length - 1));
+    final ok = await _load(list, index.clamp(0, list.length - 1));
     _broadcastQueue();
     _rebroadcast();
-    player.play();
+    if (ok) player.play();
     _scheduleSave();
     if (_shuffleKind == ShuffleKind.smart) _smartFill();
   }
 
-  /// Load a new queue. If the first song can't be loaded (server down, file gone), move on to the next.
-  Future<void> _load(List<Song> list, int index, {Duration? position}) async {
-    try {
-      await player.setAudioSources(list.map(_source).toList(), initialIndex: index, initialPosition: position);
-    } on PlayerException catch (_) {
-      if (index + 1 < list.length) await player.seek(Duration.zero, index: index + 1);
-    } on PlayerInterruptedException catch (_) {
-      // replaced by a newer request
+  /// Load a new queue. If the first song can't be loaded (server down, file gone, unreadable file), start
+  /// from the next one that loads. False when none would (nothing should then claim to be playing).
+  Future<bool> _load(List<Song> list, int index, {Duration? position, bool quiet = false}) async {
+    final offline = container.read(offlineProvider);
+    final files = container.read(downloadsProvider).files;
+    for (var i = index, tries = 0; i < list.length && tries < 6; i++) {
+      if (offline && !files.containsKey(list[i].id)) continue; // can't stream it: don't even try
+      tries++;
+      try {
+        await player.setAudioSources(
+          list.map(_source).toList(),
+          initialIndex: i,
+          initialPosition: i == index ? position : null,
+        );
+        if (i != index && !quiet) playerNotices.add("Couldn't play \"${list[index].title}\", skipped it");
+        _loaded = true;
+        return true;
+      } on PlayerException catch (_) {
+        container.read(serverReachableProvider.notifier).suspect();
+      } on PlayerInterruptedException catch (_) {
+        return false; // replaced by a newer request
+      }
     }
+    _loaded = false;
+    if (!quiet) {
+      playerNotices.add(
+        offline ? "Can't reach your server, and none of these songs are downloaded" : "Couldn't play these songs right now",
+      );
+    }
+    return false;
   }
+
+  /// Whether the player holds the queue. A restored queue that couldn't load (server away at start-up)
+  /// is loaded again when you press play.
+  bool _loaded = false;
+  int _restoredIndex = 0;
 
   Future<void> playNext(List<Song> songs) => insertSongs((player.currentIndex ?? -1) + 1, songs);
 
@@ -438,6 +464,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       return;
     }
     await useDownloadedFiles();
+    if (cur != null && cur < _songs.length && !container.read(offlineProvider)) {
+      playerNotices.add("Couldn't play \"${_songs[cur].title}\", skipped it");
+    }
     final from = (cur ?? -1) + 1;
     final offline = container.read(offlineProvider);
     for (var i = from; i < _songs.length; i++) {
@@ -921,6 +950,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       final songs = (j['songs'] as List).map((e) => Song.fromJson((e as Map).cast<String, dynamic>())).toList();
       if (songs.isEmpty) return;
       final index = ((j['index'] as num?)?.toInt() ?? 0).clamp(0, songs.length - 1);
+      _restoredIndex = index;
       _songs.addAll(songs);
       final byId = {for (final s in songs) s.id: s};
       _shuffleKind = ShuffleKind.values.firstWhere((k) => k.name == j['shuffle'], orElse: () => ShuffleKind.off);
@@ -931,7 +961,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _suggested.addAll(((j['suggested'] as List?) ?? const []).map((e) => '$e').where(byId.containsKey));
       playContext = PlayContext.fromJson(j['context']);
       playSource = j['source'] as String? ?? playContext?.key;
-      await _load(songs, index, position: Duration(milliseconds: (j['position'] as num?)?.toInt() ?? 0));
+      await _load(songs, index, position: Duration(milliseconds: (j['position'] as num?)?.toInt() ?? 0), quiet: true);
       _broadcastQueue();
       _rebroadcast();
     } catch (_) {
@@ -982,7 +1012,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   // ── Standard controls ──
   @override
-  Future<void> play() => player.play();
+  Future<void> play() async {
+    if (!_loaded && _songs.isNotEmpty && radioStation == null) {
+      final i = player.currentIndex ?? _restoredIndex;
+      if (!await _load(List.of(_songs), i.clamp(0, _songs.length - 1), position: player.position)) return;
+    }
+    await player.play();
+  }
   @override
   Future<void> pause() => player.pause();
   @override

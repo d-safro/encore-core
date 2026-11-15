@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -11,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../data/account.dart';
+import '../data/cover_cache.dart';
 import '../data/library.dart';
 import '../data/library_pins.dart';
 import '../data/models.dart';
@@ -98,6 +98,9 @@ const _placeholderMd5 = '83d193cefca2810f217cffd533241508';
 
 /// Covers already resolved this session (file, or null for "the server has none"), newest last.
 final _coverMemo = <String, File?>{};
+
+/// After the picture cache is emptied.
+void forgetCovers() => _coverMemo.clear();
 void _remember(String key, File? f) {
   _coverMemo.remove(key);
   _coverMemo[key] = f;
@@ -121,7 +124,7 @@ final _serverCoverProvider = FutureProvider.autoDispose.family<File?, (String, i
   final offline = ref.watch(offlineProvider);
   // the URL carries a fresh login token each time; the cache key is what identifies the picture
   final key = '${c.creds.base}|${k.$1}|${k.$2}';
-  final cache = DefaultCacheManager();
+  final cache = coverCache;
   try {
     final hit = await cache.getFileFromCache(key);
     if (hit != null) {
@@ -149,11 +152,19 @@ class _OnlineCover extends ConsumerWidget {
     if (url == null) return placeholder;
     return CachedNetworkImage(
       imageUrl: url,
+      cacheManager: coverCache,
       fit: BoxFit.cover,
       placeholder: (_, _) => placeholder,
       errorWidget: (_, _, _) => placeholder,
     );
   }
+}
+
+/// For pages whose header art runs under the app bar: see-through at the top, solid once the list is
+/// scrolled under it (so the back button never floats over song titles).
+WidgetStateColor overArtBar(BuildContext context) {
+  final c = Theme.of(context).colorScheme.surfaceContainer;
+  return WidgetStateColor.resolveWith((s) => s.contains(WidgetState.scrolledUnder) ? c : Colors.transparent);
 }
 
 /// A blurred, darkened copy of the artwork behind a header or the player.

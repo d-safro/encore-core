@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:home_widget/home_widget.dart';
@@ -6,6 +10,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../core/settings.dart';
 import '../../data/account.dart';
+import '../../data/cover_cache.dart';
 import '../../data/episode_alerts.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
@@ -259,9 +264,10 @@ class SettingsScreen extends ConsumerWidget {
           const SectionTitle('About'),
           const ListTile(
             leading: EncoreLogo(size: 28),
-            title: Text('Encore'),
+            title: Text('Encore $appVersion'),
             subtitle: Text('A music player for Navidrome and other Subsonic servers'),
           ),
+          const _CoverCacheTile(),
           const SizedBox(height: 32),
         ],
       ),
@@ -432,6 +438,58 @@ class _QualityTile extends StatelessWidget {
       },
     );
   }
+}
+
+/// Pictures kept on the phone (covers, artist photos), with a way to free the space.
+class _CoverCacheTile extends StatefulWidget {
+  const _CoverCacheTile();
+  @override
+  State<_CoverCacheTile> createState() => _CoverCacheTileState();
+}
+
+class _CoverCacheTileState extends State<_CoverCacheTile> {
+  int? _bytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _measure();
+  }
+
+  Future<void> _measure() async {
+    var n = 0;
+    try {
+      final tmp = (await getTemporaryDirectory()).path;
+      for (final name in ['encoreCovers', 'libCachedImageData']) {
+        final dir = Directory('$tmp/$name');
+        if (!await dir.exists()) continue;
+        await for (final f in dir.list(recursive: true, followLinks: false)) {
+          if (f is File) n += await f.length();
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _bytes = n);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    leading: const Icon(Icons.image_outlined),
+    title: const Text('Saved pictures'),
+    subtitle: Text(
+      _bytes == null ? 'Covers and artist photos kept on the phone' : '${(_bytes! / 1048576).toStringAsFixed(0)} MB of covers and artist photos',
+    ),
+    trailing: TextButton(
+      onPressed: () async {
+        await coverCache.emptyCache();
+        await DefaultCacheManager().emptyCache();
+        forgetCovers();
+        PaintingBinding.instance.imageCache.clear();
+        await _measure();
+        if (context.mounted) toast(context, 'Cleared. Covers are fetched again as you browse.');
+      },
+      child: const Text('Clear'),
+    ),
+  );
 }
 
 class EqualizerScreen extends ConsumerStatefulWidget {
