@@ -81,6 +81,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Timer? _reportTimer;
   DateTime? _podSavedAt; // last time a podcast position was saved
   String? _podDone; // the episode last marked played
+  String? _podActive; // the episode actually played this session (a restored queue mustn't overwrite newer progress)
   bool _reportsWork = true; // the server understands playback reports
   String? _reportedId, _reportedState;
   bool isSuggested(String id) => _suggested.contains(id);
@@ -399,6 +400,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final s = currentSong;
     final c = container.read(clientProvider);
     if (s == null || !isPodcastId(s.id) || c == null || container.read(offlineProvider)) return;
+    if (_podActive != s.id) return; // not played here yet: leave the server's position alone
     _podSavedAt = DateTime.now();
     final pos = player.position.inMilliseconds;
     final len = (player.duration ?? Duration(seconds: s.duration ?? 0)).inMilliseconds;
@@ -771,6 +773,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final s = currentSong;
     if (s != null && isPodcastId(s.id)) {
       // podcasts: keep where you are on the server (every 15 s), and mark the episode played near its end
+      if (player.playing) _podActive = s.id;
       if (player.playing && (_podSavedAt == null || now.difference(_podSavedAt!) > const Duration(seconds: 15))) {
         _savePodcast();
       }
