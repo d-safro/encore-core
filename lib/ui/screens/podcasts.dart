@@ -1,0 +1,631 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:http/http.dart' as http;
+import 'package:material_ui/material_ui.dart';
+
+import '../../data/account.dart';
+import '../../data/library.dart';
+import '../../data/models.dart';
+import '../../playback/handler.dart';
+import '../actions.dart';
+import '../state.dart';
+import '../widgets.dart';
+
+// ── Data ──
+final podcastsProvider = FutureProvider.autoDispose<List<PodcastChannel>>((ref) async {
+  final c = ref.watch(clientProvider);
+  if (c == null || !ref.watch(repoProvider).online) return const [];
+  return c.podcasts();
+});
+
+final podcastProvider = FutureProvider.autoDispose.family<PodcastChannel?, String>((ref, id) async {
+  final c = ref.watch(clientProvider);
+  if (c == null || !ref.watch(repoProvider).online) return null;
+  return c.podcast(id);
+});
+
+final newestEpisodesProvider = FutureProvider.autoDispose<List<PodcastEpisode>>((ref) async {
+  final c = ref.watch(clientProvider);
+  if (c == null || !ref.watch(repoProvider).online) return const [];
+  try {
+    return await c.newestEpisodes(count: 12);
+  } catch (_) {
+    return const []; // a server without podcast support
+  }
+});
+
+void refreshPodcastViews(WidgetRef ref, [String? channelId]) {
+  ref.invalidate(podcastsProvider);
+  ref.invalidate(newestEpisodesProvider);
+  if (channelId != null) ref.invalidate(podcastProvider(channelId));
+}
+
+String _ago(DateTime? d) {
+  if (d == null) return '';
+  final days = DateTime.now().difference(d).inDays;
+  if (days < 1) return 'Today';
+  if (days < 2) return 'Yesterday';
+  if (days < 7) return '$days days ago';
+  const m = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${m[d.month - 1]} ${d.day}${d.year != DateTime.now().year ? ', ${d.year}' : ''}';
+}
+
+String _length(int seconds) {
+  if (seconds <= 0) return '';
+  final h = seconds ~/ 3600, min = (seconds % 3600) ~/ 60;
+  return h > 0 ? '$h h ${min.toString().padLeft(2, '0')} min' : '${(seconds / 60).round()} min';
+}
+
+// ── Library tab ──
+class PodcastsTab extends ConsumerWidget {
+  const PodcastsTab({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final online = ref.watch(repoProvider).online;
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      floatingActionButton: online
+          ? FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text('Add podcast'),
+              onPressed: () => context.push('/podcasts/add'),
+            )
+          : null,
+      body: AsyncView(ref.watch(podcastsProvider), (List<PodcastChannel> list) {
+        if (list.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(
+                online ? 'No podcasts yet. Tap Add podcast to find one.' : 'Podcasts need your server',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: () async {
+            try {
+              await ref.read(clientProvider)?.refreshPodcasts();
+            } catch (_) {}
+            await Future.delayed(const Duration(seconds: 2));
+            refreshPodcastViews(ref);
+          },
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 96),
+            children: [
+              for (final p in list)
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  leading: Cover(p.coverArt, size: 56, radius: 10, icon: Icons.podcasts_rounded),
+                  title: Text(p.title, style: t.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    [if (p.author.isNotEmpty) p.author, if (p.latest != null) 'Latest: ${_ago(p.latest)}'].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: p.unplayed > 0
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(999)),
+                          child: Text(
+                            p.unplayed > 99 ? '99+' : '${p.unplayed}',
+                            style: t.labelSmall?.copyWith(color: cs.onPrimary, fontWeight: FontWeight.w700),
+                          ),
+                        )
+                      : null,
+                  onTap: () => context.push('/podcast/${p.id}'),
+                ),
+            ],
+          ),
+        );
+      }, onRetry: () => ref.invalidate(podcastsProvider)),
+    );
+  }
+}
+
+// ── A show ──
+class PodcastScreen extends ConsumerStatefulWidget {
+  const PodcastScreen({super.key, required this.id});
+  final String id;
+  @override
+  ConsumerState<PodcastScreen> createState() => _PodcastScreenState();
+}
+
+class _PodcastScreenState extends ConsumerState<PodcastScreen> {
+  bool _aboutOpen = false, _hidePlayed = false;
+  int _shown = 50;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = ref.watch(podcastProvider(widget.id));
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        actions: [
+          if (p.value != null)
+            PopupMenuButton<String>(
+              onSelected: (v) async {
+                final c = ref.read(clientProvider);
+                final ch = p.value!;
+                if (c == null) return;
+                try {
+                  if (v == 'unsubscribe') {
+                    if (!await confirm(
+                      context,
+                      'Unfollow ${ch.title}?',
+                      'Its episodes on your server are deleted.',
+                      ok: 'Unfollow',
+                    )) {
+                      return;
+                    }
+                    await c.unsubscribePodcast(ch.id);
+                    refreshPodcastViews(ref);
+                    if (context.mounted) context.pop();
+                  } else if (v == 'refresh') {
+                    await c.refreshPodcasts();
+                    await Future.delayed(const Duration(seconds: 3));
+                    refreshPodcastViews(ref, ch.id);
+                  }
+                } catch (e) {
+                  if (context.mounted) toast(context, "Couldn't do that: $e");
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'refresh', child: Text('Check for new episodes')),
+                PopupMenuItem(value: 'unsubscribe', child: Text('Unfollow')),
+              ],
+            ),
+        ],
+      ),
+      body: AsyncView(p, (PodcastChannel? ch) {
+        if (ch == null) return const Center(child: Text('This podcast needs your server'));
+        final eps = ch.episodes.where((e) => !_hidePlayed || !e.played).toList();
+        final resume = ch.episodes.where((e) => e.inProgress).firstOrNull;
+        final next = resume ?? ch.episodes.where((e) => !e.played).firstOrNull;
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(podcastProvider(widget.id)),
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 96),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Cover(ch.coverArt, size: 120, radius: 14, icon: Icons.podcasts_rounded),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(ch.title, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+                          if (ch.author.isNotEmpty)
+                            Text(ch.author, style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                          const SizedBox(height: 4),
+                          Text(
+                            ['${ch.episodes.length} episodes', if (ch.unplayed > 0) '${ch.unplayed} new'].join(' · '),
+                            style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                          if (ch.error.isNotEmpty)
+                            Text("Couldn't check for new episodes", style: t.bodySmall?.copyWith(color: cs.error)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (next != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.play_arrow_rounded),
+                    label: Text(
+                      resume != null ? 'Resume: ${resume.title}' : 'Play latest: ${next.title}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onPressed: () => audioHandler.playEpisode(next),
+                  ),
+                ),
+              if (ch.description.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                  child: InkWell(
+                    onTap: () => setState(() => _aboutOpen = !_aboutOpen),
+                    child: Text(
+                      ch.description,
+                      maxLines: _aboutOpen ? null : 3,
+                      overflow: _aboutOpen ? null : TextOverflow.ellipsis,
+                      style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+                child: Row(
+                  children: [
+                    Text('Episodes', style: t.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    FilterChip(
+                      label: const Text('Hide played'),
+                      selected: _hidePlayed,
+                      onSelected: (v) => setState(() => _hidePlayed = v),
+                    ),
+                  ],
+                ),
+              ),
+              for (final e in eps.take(_shown)) EpisodeTile(e),
+              if (eps.length > _shown)
+                Center(
+                  child: TextButton(
+                    onPressed: () => setState(() => _shown += 100),
+                    child: Text('Show more (${eps.length - _shown} older)'),
+                  ),
+                ),
+            ],
+          ),
+        );
+      }, onRetry: () => ref.invalidate(podcastProvider(widget.id))),
+    );
+  }
+}
+
+class EpisodeTile extends ConsumerWidget {
+  const EpisodeTile(this.e, {super.key, this.showCover = false});
+  final PodcastEpisode e;
+  final bool showCover;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final playing = ref.watch(mediaItemProvider).value?.id == e.id;
+    final dl = ref.watch(downloadsProvider);
+    final onPhone = dl.files.containsKey(e.id);
+    final progress = dl.progress[e.id];
+    final left = e.inProgress && e.duration > 0 ? e.duration - e.position ~/ 1000 : null;
+    return InkWell(
+      onTap: () => audioHandler.playEpisode(e),
+      onLongPress: () => showEpisodeMenu(context, ref, e),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 4, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (showCover)
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Cover(e.coverArt, size: 52, radius: 8, icon: Icons.podcasts_rounded),
+              ),
+            Expanded(
+              child: Opacity(
+                opacity: e.played ? 0.55 : 1,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      [_ago(e.published), if (showCover) e.show].where((x) => x.isNotEmpty).join(' · '),
+                      style: t.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      e.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.bodyLarge?.copyWith(fontWeight: FontWeight.w600, color: playing ? cs.primary : null),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (e.played)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Icon(Icons.check_circle_rounded, size: 14, color: cs.primary),
+                          ),
+                        if (onPhone)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
+                          ),
+                        Text(
+                          e.played
+                              ? 'Played'
+                              : left != null
+                              ? '${_length(left)} left'
+                              : _length(e.duration),
+                          style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                        if (e.inProgress && e.duration > 0) ...[
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 60,
+                            child: LinearProgressIndicator(
+                              value: (e.position / 1000 / e.duration).clamp(0, 1).toDouble(),
+                              minHeight: 3,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ],
+                        if (progress != null) ...[
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, value: progress > 0 ? progress : null),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            IconButton(
+              icon: Icon(playing ? Icons.graphic_eq_rounded : Icons.play_circle_outline_rounded, color: cs.primary),
+              onPressed: () => audioHandler.playEpisode(e),
+            ),
+            IconButton(icon: const Icon(Icons.more_vert), onPressed: () => showEpisodeMenu(context, ref, e)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> showEpisodeMenu(BuildContext context, WidgetRef ref, PodcastEpisode e) async {
+  final dl = ref.read(downloadsProvider);
+  final onPhone = dl.files.containsKey(e.id);
+  await showModalBottomSheet(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (ctx) {
+      Future<void> act(Future<void> Function() f, [String? done]) async {
+        Navigator.pop(ctx);
+        try {
+          await f();
+          refreshPodcastViews(ref, e.channelId);
+          if (done != null && context.mounted) toast(context, done);
+        } catch (err) {
+          if (context.mounted) toast(context, "Couldn't do that: $err");
+        }
+      }
+
+      final c = ref.read(clientProvider);
+      return SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: Text(e.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+                subtitle: Text(e.show),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.play_arrow_rounded),
+                title: Text(e.inProgress ? 'Resume' : 'Play'),
+                onTap: () => act(() => audioHandler.playEpisode(e)),
+              ),
+              if (e.inProgress)
+                ListTile(
+                  leading: const Icon(Icons.replay_rounded),
+                  title: const Text('Play from the start'),
+                  onTap: () => act(() => audioHandler.playSongs([e.toSong()])),
+                ),
+              ListTile(
+                leading: const Icon(Icons.playlist_add_rounded),
+                title: const Text('Play next'),
+                onTap: () => act(() => audioHandler.playNext([e.toSong()]), 'Plays next'),
+              ),
+              if (c != null)
+                ListTile(
+                  leading: Icon(e.played ? Icons.radio_button_unchecked : Icons.check_circle_outline_rounded),
+                  title: Text(e.played ? 'Mark as not played' : 'Mark as played'),
+                  onTap: () => act(() => c.podcastProgress(e.id, played: !e.played)),
+                ),
+              ListTile(
+                leading: Icon(onPhone ? Icons.delete_outline : Icons.download_rounded),
+                title: Text(onPhone ? 'Remove from phone' : 'Download to phone'),
+                onTap: () => act(
+                  () => onPhone
+                      ? ref.read(downloadsProvider.notifier).remove([e.id])
+                      : ref.read(downloadsProvider.notifier).download([e.toSong()], manual: true),
+                  onPhone ? 'Removed from the phone' : 'Downloading',
+                ),
+              ),
+              if (e.description.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.notes_rounded),
+                  title: const Text('Show notes'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    showDialog(
+                      context: context,
+                      builder: (d) => AlertDialog(
+                        title: Text(e.title),
+                        content: SingleChildScrollView(child: SelectableText(e.description)),
+                        actions: [TextButton(onPressed: () => Navigator.pop(d), child: const Text('Close'))],
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+// ── Finding podcasts (Apple's public podcast directory; only the search words are sent) ──
+class AddPodcastScreen extends ConsumerStatefulWidget {
+  const AddPodcastScreen({super.key});
+  @override
+  ConsumerState<AddPodcastScreen> createState() => _AddPodcastScreenState();
+}
+
+class _AddPodcastScreenState extends ConsumerState<AddPodcastScreen> {
+  final _ctl = TextEditingController();
+  Timer? _debounce;
+  Future<List<Map<String, dynamic>>>? _results;
+  final _adding = <String>{}, _added = <String>{};
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  static Future<List<Map<String, dynamic>>> _search(String q) async {
+    final r = await http
+        .get(
+          Uri.https('itunes.apple.com', '/search', {'media': 'podcast', 'limit': '25', 'term': q}),
+          headers: {'User-Agent': 'Encore music player'},
+        )
+        .timeout(const Duration(seconds: 10));
+    final j = jsonDecode(utf8.decode(r.bodyBytes));
+    final list = j is Map && j['results'] is List ? j['results'] as List : const [];
+    return [
+      for (final e in list)
+        if (e is Map && '${e['feedUrl'] ?? ''}'.startsWith('http')) e.cast<String, dynamic>(),
+    ];
+  }
+
+  Future<void> _add(String url, String name) async {
+    final c = ref.read(clientProvider);
+    if (c == null) return;
+    setState(() => _adding.add(url));
+    try {
+      await c.subscribePodcast(url);
+      refreshPodcastViews(ref);
+      if (mounted) setState(() => _added.add(url));
+      if (mounted) toast(context, 'Following $name. New episodes download to your server.');
+    } catch (e) {
+      if (mounted) toast(context, "Couldn't add it: $e");
+    } finally {
+      if (mounted) setState(() => _adding.remove(url));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Add podcast'),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.link),
+            label: const Text('Feed address'),
+            onPressed: () async {
+              final url = await askText(context, 'Podcast feed (RSS) address', 'https://…');
+              if (url != null && url.trim().startsWith('http')) await _add(url.trim(), 'it');
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: SearchBar(
+              controller: _ctl,
+              hintText: 'Search podcasts',
+              leading: const Icon(Icons.search),
+              elevation: const WidgetStatePropertyAll(0),
+              onChanged: (q) {
+                _debounce?.cancel();
+                _debounce = Timer(const Duration(milliseconds: 450), () {
+                  if (mounted) setState(() => _results = q.trim().length < 2 ? null : _search(q.trim()));
+                });
+              },
+            ),
+          ),
+          Expanded(
+            child: _results == null
+                ? const Center(child: Text('Search by name or host'))
+                : FutureBuilder<List<Map<String, dynamic>>>(
+                    future: _results,
+                    builder: (_, snap) {
+                      if (snap.connectionState != ConnectionState.done) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snap.hasError) return const Center(child: Text("Couldn't search right now"));
+                      final list = snap.data ?? const [];
+                      if (list.isEmpty) return const Center(child: Text('Nothing found'));
+                      return ListView(
+                        children: [
+                          for (final p in list)
+                            ListTile(
+                              leading: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(
+                                  '${p['artworkUrl100'] ?? ''}',
+                                  width: 52,
+                                  height: 52,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) =>
+                                      const SizedBox(width: 52, height: 52, child: Icon(Icons.podcasts_rounded)),
+                                ),
+                              ),
+                              title: Text('${p['collectionName'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis),
+                              subtitle: Text(
+                                [
+                                  '${p['artistName'] ?? ''}',
+                                  if (p['trackCount'] != null) '${p['trackCount']} episodes',
+                                ].where((x) => x.isNotEmpty).join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                              ),
+                              trailing: _added.contains(p['feedUrl'])
+                                  ? Icon(Icons.check_circle, color: cs.primary)
+                                  : _adding.contains(p['feedUrl'])
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : IconButton(
+                                      tooltip: 'Follow',
+                                      icon: const Icon(Icons.add_circle_outline),
+                                      onPressed: () => _add('${p['feedUrl']}', '${p['collectionName'] ?? 'it'}'),
+                                    ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Home shelf: the newest episodes of the shows you follow.
+class NewEpisodesShelf extends ConsumerWidget {
+  const NewEpisodesShelf({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final eps = (ref.watch(newestEpisodesProvider).value ?? const <PodcastEpisode>[]).where((e) => !e.played).toList();
+    if (eps.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionTitle('New episodes', onMore: () => context.go('/library?tab=1')),
+        for (final e in eps.take(4)) EpisodeTile(e, showCover: true),
+      ],
+    );
+  }
+}

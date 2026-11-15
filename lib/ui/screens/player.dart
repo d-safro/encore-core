@@ -15,6 +15,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import 'podcasts.dart';
 import 'radio.dart';
 import 'jam.dart';
 
@@ -168,7 +169,13 @@ class _TopBar extends ConsumerWidget {
           ),
           IconButton(
             icon: const Icon(Icons.more_vert_rounded),
-            onPressed: s == null ? null : () => showSongMenu(context, ref, s),
+            onPressed: s == null
+                ? null
+                : () async {
+                    if (!isPodcastId(s.id)) return showSongMenu(context, ref, s);
+                    final e = await ref.read(clientProvider)?.podcastEpisode(s.id).catchError((_) => null);
+                    if (e != null && context.mounted) await showEpisodeMenu(context, ref, e);
+                  },
           ),
         ],
       ),
@@ -354,7 +361,7 @@ class _Titles extends ConsumerWidget {
               ],
             ),
           ),
-          if (s != null)
+          if (s != null && !isPodcastId(s.id))
             IconButton(
               iconSize: 28,
               icon: Icon(

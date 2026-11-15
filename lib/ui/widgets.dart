@@ -561,7 +561,7 @@ class MiniPlayer extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    if (song != null)
+                    if (song != null && !isPodcastId(song.id))
                       IconButton(
                         icon: Icon(
                           song.starred ? Icons.favorite_rounded : Icons.favorite_border_rounded,

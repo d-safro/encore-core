@@ -11,6 +11,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import 'podcasts.dart';
 
 const _sortTypes = {
   AlbumSort.recent: ('recent', 'Recently played'),
@@ -30,7 +31,7 @@ class LibraryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 6,
+      length: 7,
       initialIndex: initialTab,
       child: Scaffold(
         appBar: AppBar(
@@ -57,6 +58,7 @@ class LibraryScreen extends ConsumerWidget {
                 padding: EdgeInsets.symmetric(horizontal: 8),
                 tabs: [
                   Tab(text: 'Playlists', height: 36),
+                  Tab(text: 'Podcasts', height: 36),
                   Tab(text: 'Albums', height: 36),
                   Tab(text: 'Artists', height: 36),
                   Tab(text: 'Songs', height: 36),
@@ -68,7 +70,15 @@ class LibraryScreen extends ConsumerWidget {
           ),
         ),
         body: const TabBarView(
-          children: [_PlaylistsTab(), AlbumsTab(), _ArtistsTab(), _SongsTab(), _FavouritesTab(), _GenresTab()],
+          children: [
+            _PlaylistsTab(),
+            PodcastsTab(),
+            AlbumsTab(),
+            _ArtistsTab(),
+            _SongsTab(),
+            _FavouritesTab(),
+            _GenresTab(),
+          ],
         ),
       ),
     );

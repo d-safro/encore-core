@@ -362,6 +362,43 @@ class SubsonicClient {
     const Duration(seconds: 10),
   );
 
+  // ── Podcasts (music-lookup) ──
+  Future<List<PodcastChannel>> podcasts() async {
+    final r = await call('getPodcasts', {'includeEpisodes': 'false'});
+    return _l(_m(r['podcasts'])['channel']).map(PodcastChannel.fromJson).toList();
+  }
+
+  Future<PodcastChannel?> podcast(String id) async {
+    final r = await call('getPodcasts', {'id': id, 'includeEpisodes': 'true'}, null, const Duration(seconds: 60));
+    final l = _l(_m(r['podcasts'])['channel']);
+    return l.isEmpty ? null : PodcastChannel.fromJson(l.first);
+  }
+
+  Future<List<PodcastEpisode>> newestEpisodes({int count = 20}) async {
+    final r = await call('getNewestPodcasts', {'count': '$count'});
+    return _l(_m(r['newestPodcasts'])['episode']).map(PodcastEpisode.fromJson).toList();
+  }
+
+  Future<PodcastEpisode?> podcastEpisode(String id) async {
+    final r = await call('getPodcastEpisode', {'id': id});
+    final e = r['podcastEpisode'];
+    return e is Map ? PodcastEpisode.fromJson(e.cast<String, dynamic>()) : null;
+  }
+
+  Future<void> subscribePodcast(String url) =>
+      call('createPodcastChannel', {'url': url}, null, const Duration(seconds: 60));
+  Future<void> unsubscribePodcast(String id) => call('deletePodcastChannel', {'id': id});
+  Future<void> refreshPodcasts() => call('refreshPodcasts');
+  Future<void> keepEpisodeOnServer(String id, bool keep) =>
+      call(keep ? 'downloadPodcastEpisode' : 'deletePodcastEpisode', {'id': id});
+
+  /// Where you stopped (ms), or played / not played.
+  Future<void> podcastProgress(String id, {int? positionMs, bool? played}) => call('setPodcastProgress', {
+    'id': id,
+    if (positionMs != null) 'position': '$positionMs',
+    if (played != null) 'played': '$played',
+  });
+
   /// Add / change / remove a station (Navidrome allows this for admin accounts).
   Future<void> createRadio(String name, String streamUrl, {String homePageUrl = ''}) => call(
     'createInternetRadioStation',

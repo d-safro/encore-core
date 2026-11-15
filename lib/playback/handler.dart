@@ -79,6 +79,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   bool _rearranging = false, _filling = false, _smartNoticeShown = false;
   InternetRadio? radioStation; // set while an internet radio station plays
   Timer? _reportTimer;
+  DateTime? _podSavedAt; // last time a podcast position was saved
+  String? _podDone; // the episode last marked played
   bool _reportsWork = true; // the server understands playback reports
   String? _reportedId, _reportedState;
   bool isSuggested(String id) => _suggested.contains(id);
@@ -115,7 +117,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
               _reportSoon(); // keeps the server's position honest
             })
           : null;
-      if (!playing) _scheduleSave(); // remember where it was paused
+      if (!playing) {
+        _scheduleSave(); // remember where it was paused
+        _savePodcast();
+      }
       _reportSoon();
     });
     player.processingStateStream.listen((s) {
@@ -381,6 +386,32 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     mediaItem.add(item);
     player.play();
+  }
+
+  // ── Podcasts ──
+  /// Play an episode (and [then] after it), from where you stopped last time.
+  Future<void> playEpisode(PodcastEpisode e, {List<PodcastEpisode> then = const []}) async {
+    await playSongs([e.toSong(), ...then.where((x) => x.id != e.id).map((x) => x.toSong())]);
+    if (e.inProgress) await player.seek(Duration(milliseconds: e.position));
+  }
+
+  Future<void> _savePodcast() async {
+    final s = currentSong;
+    final c = container.read(clientProvider);
+    if (s == null || !isPodcastId(s.id) || c == null || container.read(offlineProvider)) return;
+    _podSavedAt = DateTime.now();
+    final pos = player.position.inMilliseconds;
+    final len = (player.duration ?? Duration(seconds: s.duration ?? 0)).inMilliseconds;
+    try {
+      if (len > 0 && pos >= len * 0.95) {
+        if (_podDone != s.id) {
+          _podDone = s.id;
+          await c.podcastProgress(s.id, played: true);
+        }
+      } else if (pos > 5000) {
+        await c.podcastProgress(s.id, positionMs: pos);
+      }
+    } catch (_) {}
   }
 
   // ── Mixes ──
@@ -685,7 +716,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _listened = Duration.zero;
     _lastTick = null;
     _submitted = null;
-    if (_settings.scrobble && _scrobbledNow != s.id && !container.read(offlineProvider)) {
+    if (_settings.scrobble && _scrobbledNow != s.id && !isPodcastId(s.id) && !container.read(offlineProvider)) {
       _scrobbledNow = s.id;
       container.read(clientProvider)?.scrobble(s.id, submission: false).catchError((_) {});
     }
@@ -709,7 +740,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final ps = player.processingState;
     final ended = s == null || ps == ProcessingState.completed || ps == ProcessingState.idle;
     final id = s?.id ?? _reportedId;
-    if (id == null || (s != null && s.isLookup)) return;
+    if (id == null || (s != null && (s.isLookup || isPodcastId(s.id)))) return;
     final state = ended
         ? 'stopped'
         : !player.playing
@@ -738,6 +769,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     _lastTick = now;
     final s = currentSong;
+    if (s != null && isPodcastId(s.id)) {
+      // podcasts: keep where you are on the server (every 15 s), and mark the episode played near its end
+      if (player.playing && (_podSavedAt == null || now.difference(_podSavedAt!) > const Duration(seconds: 15))) {
+        _savePodcast();
+      }
+      return;
+    }
     if (s == null || _submitted == s.id || !_settings.scrobble) return;
     final len = Duration(seconds: s.duration ?? 240);
     final need = Duration(milliseconds: min(len.inMilliseconds ~/ 2, 240000));
@@ -1063,6 +1101,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
               action('mix:foryou', 'Made for you', subtitle: 'From what you play most'),
             action('mix:downloads', 'Downloaded songs', subtitle: 'Shuffle, works offline'),
             action('mix:random', 'Shuffle everything'),
+            if (online) folder('podcasts', 'New podcast episodes'),
             folder('list:recent', 'Recently played', extras: _grid),
             folder('list:newest', 'Recently added', extras: _grid),
           ];
@@ -1082,6 +1121,19 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
                 displaySubtitle: '${p.songCount ?? 0} songs',
                 playable: false,
                 artUri: art(p.coverArt),
+              ),
+          ];
+        case 'podcasts':
+          final eps = c == null ? const <PodcastEpisode>[] : await c.newestEpisodes(count: 25);
+          return [
+            for (final e in eps.where((e) => !e.played))
+              MediaItem(
+                id: 'episode:${e.id}',
+                title: e.title,
+                artist: e.show,
+                displaySubtitle: e.show,
+                playable: true,
+                artUri: art(e.coverArt),
               ),
           ];
         case 'radio':
@@ -1140,6 +1192,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
             final songs = [for (final (s, _, _) in await container.read(dbProvider).downloads()) s];
             return playSongs(songs, shuffle: true, source: 'downloads');
         }
+      case 'episode':
+        final e = await container.read(clientProvider)?.podcastEpisode(p[1]);
+        if (e != null) return playEpisode(e);
       case 'station':
         final c = container.read(clientProvider);
         final r = (await c?.radios() ?? const <InternetRadio>[]).where((x) => x.id == p[1]).firstOrNull;

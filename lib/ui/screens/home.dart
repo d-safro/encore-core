@@ -11,6 +11,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import 'podcasts.dart';
 import 'jam.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -75,6 +76,7 @@ class HomeScreen extends ConsumerWidget {
               ),
               const SliverToBoxAdapter(child: _QuickPills()),
               const SliverToBoxAdapter(child: _JumpBackIn()),
+              const SliverToBoxAdapter(child: NewEpisodesShelf()),
               for (final s in sections)
                 SliverToBoxAdapter(
                   child: switch (s) {

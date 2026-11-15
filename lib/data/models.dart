@@ -410,3 +410,97 @@ String formatDuration(int? seconds) {
       ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}'
       : '$m:${s.toString().padLeft(2, '0')}';
 }
+
+/// A podcast show you follow (served by music-lookup's podcast support).
+class PodcastChannel {
+  final String id, url, title, author, description, coverArt, error;
+  final int unplayed, episodeCount;
+  final DateTime? latest;
+  final List<PodcastEpisode> episodes;
+  const PodcastChannel({
+    required this.id,
+    this.url = '',
+    this.title = '',
+    this.author = '',
+    this.description = '',
+    this.coverArt = '',
+    this.error = '',
+    this.unplayed = 0,
+    this.episodeCount = 0,
+    this.latest,
+    this.episodes = const [],
+  });
+  factory PodcastChannel.fromJson(Map<String, dynamic> j) {
+    final eps = _list(j['episode']).map(PodcastEpisode.fromJson).toList();
+    final latest = _int(j['latest']);
+    return PodcastChannel(
+      id: _str(j['id']),
+      url: _str(j['url']),
+      title: _str(j['title']),
+      author: _str(j['author']),
+      description: _str(j['description']),
+      coverArt: _str(j['coverArt']),
+      error: _str(j['errorMessage']),
+      unplayed: _int(j['unplayed']) ?? eps.where((e) => !e.played).length,
+      episodeCount: _int(j['episodeCount']) ?? eps.length,
+      latest: latest != null && latest > 0 ? DateTime.fromMillisecondsSinceEpoch(latest * 1000) : null,
+      episodes: eps,
+    );
+  }
+}
+
+class PodcastEpisode {
+  final String id, channelId, title, show, author, description, coverArt, suffix;
+  final DateTime? published;
+  final int duration, position; // seconds / milliseconds
+  final bool downloaded, played; // downloaded = on the server's drive
+  const PodcastEpisode({
+    required this.id,
+    this.channelId = '',
+    this.title = '',
+    this.show = '',
+    this.author = '',
+    this.description = '',
+    this.coverArt = '',
+    this.suffix = 'mp3',
+    this.published,
+    this.duration = 0,
+    this.position = 0,
+    this.downloaded = false,
+    this.played = false,
+  });
+  factory PodcastEpisode.fromJson(Map<String, dynamic> j) => PodcastEpisode(
+    id: _str(j['id']),
+    channelId: _str(j['channelId']),
+    title: _str(j['title']),
+    show: _str(j['album']),
+    author: _str(j['artist']),
+    description: _str(j['description']),
+    coverArt: _str(j['coverArt']),
+    suffix: _str(j['suffix']).isEmpty ? 'mp3' : _str(j['suffix']),
+    published: DateTime.tryParse(_str(j['publishDate'])),
+    duration: _int(j['duration']) ?? 0,
+    position: _int(j['position']) ?? 0,
+    downloaded: j['downloaded'] == true,
+    played: j['played'] == true,
+  );
+
+  /// Started and not finished: worth resuming.
+  bool get inProgress => !played && position > 15000 && (duration == 0 || position < duration * 1000 - 30000);
+
+  /// As a playable item for the player and downloads.
+  Song toSong() => Song(
+    id: id,
+    title: title,
+    artist: show,
+    album: show,
+    albumId: channelId,
+    coverArt: coverArt,
+    duration: duration > 0 ? duration : null,
+    suffix: suffix,
+    contentType: 'audio/mpeg',
+  );
+}
+
+/// Podcast episode ids start with "pe-", shows with "pc-".
+bool isPodcastId(String id) => id.startsWith('pe-');
