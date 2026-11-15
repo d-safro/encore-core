@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/settings.dart';
-import '../../data/account.dart';
 import '../../data/library.dart';
 import '../../data/library_pins.dart';
 import '../../data/models.dart';
@@ -11,6 +10,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import 'smart_playlist.dart';
 import 'podcasts.dart';
 
 const _sortTypes = {
@@ -370,16 +370,7 @@ class _PlaylistsTab extends ConsumerWidget {
           ? FloatingActionButton.extended(
               icon: const Icon(Icons.add),
               label: const Text('New playlist'),
-              onPressed: () async {
-                final name = await askText(context, 'New playlist', 'Name');
-                if (name == null || name.isEmpty) return;
-                try {
-                  await ref.read(clientProvider)?.createPlaylist(name, const []);
-                  ref.invalidate(playlistsProvider);
-                } catch (e) {
-                  if (context.mounted) toast(context, "Couldn't create the playlist: $e");
-                }
-              },
+              onPressed: () => showNewPlaylistSheet(context, ref),
             )
           : null,
       body: AsyncView(ref.watch(playlistsProvider), (List<Playlist> lists) {

@@ -118,6 +118,18 @@ Stream<List<T>> _remembered<T>(
   }
 }
 
+/// A smart playlist's rules (null: an ordinary playlist, or not Navidrome).
+final playlistRulesProvider = FutureProvider.autoDispose.family<Map<String, dynamic>?, String>((ref, id) async {
+  ref.cacheFor(_short);
+  final repo = ref.watch(repoProvider);
+  if (!repo.online) return null;
+  try {
+    return await repo.client!.playlistRules(id);
+  } catch (_) {
+    return null;
+  }
+});
+
 final playlistsProvider = StreamProvider.autoDispose<List<Playlist>>(
   (ref) => _remembered(ref, 'playlists', (r) => r.playlists(), (p) => p.toJson(), Playlist.fromJson),
 );

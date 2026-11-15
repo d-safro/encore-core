@@ -421,6 +421,64 @@ class SubsonicClient {
         .toList();
   }
 
+  // ── Navidrome's own API (smart playlists): signs in with your login for a short-lived token ──
+  String? _ndToken;
+
+  Future<dynamic> _native(String method, String path, [Object? body]) async {
+    Future<http.Response> send() {
+      final u = Uri.parse('${creds.base}$path');
+      final h = {'Content-Type': 'application/json', if (_ndToken != null) 'x-nd-authorization': 'Bearer $_ndToken'};
+      final b = body == null ? null : jsonEncode(body);
+      return switch (method) {
+        'POST' => _http.post(u, headers: h, body: b),
+        'PUT' => _http.put(u, headers: h, body: b),
+        'DELETE' => _http.delete(u, headers: h),
+        _ => _http.get(u, headers: h),
+      }.timeout(const Duration(seconds: 30));
+    }
+
+    if (_ndToken == null) await _nativeLogin();
+    var r = await send();
+    if (r.statusCode == 401) {
+      await _nativeLogin(); // the token expired
+      r = await send();
+    }
+    if (r.statusCode >= 300) throw SubsonicException(0, 'Navidrome answered ${r.statusCode}');
+    return r.body.isEmpty ? null : jsonDecode(utf8.decode(r.bodyBytes));
+  }
+
+  Future<void> _nativeLogin() async {
+    final r = await _http
+        .post(
+          Uri.parse('${creds.base}/auth/login'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'username': creds.username, 'password': creds.password}),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (r.statusCode != 200) {
+      throw SubsonicException(0, 'Smart playlists need Navidrome (its sign-in answered ${r.statusCode})');
+    }
+    _ndToken = (jsonDecode(r.body) as Map)['token'] as String?;
+  }
+
+  /// A playlist Navidrome fills by itself from rules (Navidrome's smart playlists; stays up to date).
+  Future<String> createSmartPlaylist(String name, Map<String, dynamic> rules, {String comment = ''}) async {
+    final r = await _native('POST', '/api/playlist', {'name': name, 'comment': comment, 'rules': rules, 'public': false});
+    return '${(r as Map)['id']}';
+  }
+
+  Future<void> updateSmartPlaylist(String id, String name, Map<String, dynamic> rules) async {
+    final cur = (await _native('GET', '/api/playlist/$id')) as Map<String, dynamic>;
+    await _native('PUT', '/api/playlist/$id', {...cur, 'name': name, 'rules': rules});
+  }
+
+  /// The rules of a smart playlist, or null for an ordinary one.
+  Future<Map<String, dynamic>?> playlistRules(String id) async {
+    final r = (await _native('GET', '/api/playlist/$id')) as Map<String, dynamic>;
+    final rules = r['rules'];
+    return rules is Map && rules.isNotEmpty ? rules.cast<String, dynamic>() : null;
+  }
+
   /// Your listening for a week / month / year (offset 1 = the one before) or all time (music-lookup).
   Future<ListeningStats> listeningStats(String period, {int offset = 0}) async {
     final r = await call('getListeningStats', {'period': period, 'offset': offset});

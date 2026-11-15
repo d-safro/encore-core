@@ -15,6 +15,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import 'smart_playlist.dart';
 import 'radio.dart';
 
 /// Re-loads a page every 20 s while it shows songs that are being downloaded (⏳ → real song).
@@ -528,6 +529,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
   Widget build(BuildContext context) {
     final pl = ref.watch(playlistProvider(widget.id));
     final online = ref.watch(repoProvider).online;
+    ref.watch(playlistRulesProvider(widget.id)); // is it a smart playlist? (for the menu)
     return Scaffold(
       extendBodyBehindAppBar: !_editing,
       appBar: AppBar(
@@ -541,10 +543,15 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
             PopupMenuButton<String>(
               onSelected: (v) async {
                 final p = pl.value!;
+                final rules = ref.read(playlistRulesProvider(widget.id)).value;
                 final c = ref.read(clientProvider);
                 if (c == null) return;
                 try {
                   switch (v) {
+                    case 'rules':
+                      await Navigator.of(context, rootNavigator: true).push(
+                        MaterialPageRoute(builder: (_) => SmartPlaylistScreen(id: p.id, name: p.name, rules: rules)),
+                      );
                     case 'edit':
                       setState(() {
                         _editing = true;
@@ -576,11 +583,15 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                   if (context.mounted) toast(context, "Couldn't do that: $e");
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'menu', child: Text('Pin, queue, download…')),
-                PopupMenuItem(value: 'edit', child: Text('Reorder / remove songs')),
-                PopupMenuItem(value: 'rename', child: Text('Rename')),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'menu', child: Text('Pin, queue, download…')),
+                if (ref.read(playlistRulesProvider(widget.id)).value != null)
+                  const PopupMenuItem(value: 'rules', child: Text('Edit rules'))
+                else ...const [
+                  PopupMenuItem(value: 'edit', child: Text('Reorder / remove songs')),
+                  PopupMenuItem(value: 'rename', child: Text('Rename')),
+                ],
+                const PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
             ),
         ],
