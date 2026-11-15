@@ -305,14 +305,19 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
           missing.any((x) => x.lookup == LookupState.downloading),
           () => ref.invalidate(artistProvider(widget.id)),
         );
-        final top = ref.watch(topSongsProvider(a.name)).value ?? const <Song>[];
+        final extraAsync = ref.watch(artistExtraProvider(a.name));
+        final extra = extraAsync.value ?? const ArtistExtra();
+        // the server's own top songs only when Deezer has none (it's the slower of the two)
+        final top = !extraAsync.isLoading && extra.top.isEmpty
+            ? ref.watch(topSongsProvider(a.name)).value ?? const <Song>[]
+            : const <Song>[];
         final topOwn = top.where((s) => !s.isLookup).take(5).toList();
         final bio = info.value?.biography ?? '';
-        final extra =
-            ref.watch(artistExtraProvider('${a.name}|${info.hasValue && bio.isEmpty ? 1 : 0}')).value ??
-            const ArtistExtra();
+        final (wiki, _) = info.hasValue && bio.isEmpty
+            ? ref.watch(artistWikiProvider(a.name)).value ?? ('', '')
+            : ('', '');
         final ownSongs = ref.watch(ownArtistSongsProvider(a.name)).value ?? const <Song>[];
-        final bioText = bio.isNotEmpty ? bio : extra.wiki;
+        final bioText = bio.isNotEmpty ? bio : wiki;
         final fans = extra.fans;
         final t = Theme.of(context).textTheme;
         Future<List<Song>> allSongs() async {
@@ -615,8 +620,8 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
         pollIf(pending > 0, () => ref.invalidate(playlistProvider(widget.id)));
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(playlistProvider(widget.id)),
-          child: ListView(
-            children: [
+          child: LazyListView(
+            header: [
               _Header(
                 cover: p.coverArt,
                 title: p.name,
@@ -639,10 +644,10 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                       audioHandler.playSongs(songs, shuffle: true, context: PlayContext.playlist(p.id, p.name)),
                   leading: [DownloadToggle(pinKey: 'playlist:${p.id}', songs: () async => songs)],
                 ),
-              for (var i = 0; i < p.songs.length; i++)
-                SongTile(p.songs[i], list: songs, playContext: PlayContext.playlist(p.id, p.name)),
-              const SizedBox(height: 24),
             ],
+            count: p.songs.length,
+            itemBuilder: (_, i) => SongTile(p.songs[i], list: songs, playContext: PlayContext.playlist(p.id, p.name)),
+            footer: const [SizedBox(height: 24)],
           ),
         );
       }, onRetry: () => ref.invalidate(playlistProvider(widget.id))),
@@ -658,10 +663,13 @@ class GenreScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final albums = ref.watch(genreAlbumsProvider(name));
     final songs = ref.watch(genreSongsProvider(name));
+    final list = songs.value ?? const <Song>[];
     return Scaffold(
       appBar: AppBar(title: Text(name)),
-      body: ListView(
-        children: [
+      body: LazyListView(
+        count: list.length,
+        itemBuilder: (_, i) => SongTile(list[i], list: list, index: i),
+        header: [
           PlayButtons(
             source: 'genre:$name',
             onPlay: () async => audioHandler.playSongs(
@@ -680,10 +688,7 @@ class GenreScreen extends ConsumerWidget {
             error: (_, _) => const SizedBox.shrink(),
           ),
           ...switch (songs) {
-            AsyncData(:final value) => [
-              SectionTitle('Songs (${value.length})'),
-              for (var i = 0; i < value.length; i++) SongTile(value[i], list: value, index: i),
-            ],
+            AsyncData(:final value) => [SectionTitle('Songs (${value.length})')],
             AsyncError(:final error) => [Padding(padding: const EdgeInsets.all(16), child: Text('$error'))],
             _ => [
               const Padding(
@@ -731,26 +736,28 @@ class _FoldersScreenState extends ConsumerState<FoldersScreen> {
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
           final entries = snap.data!;
           final songs = entries.where((e) => !e.isDir && e.song != null).map((e) => e.song!).toList();
-          return ListView(
-            children: [
+          final dirs = entries.where((e) => e.isDir).toList();
+          return LazyListView(
+            header: [
               if (songs.isNotEmpty)
                 PlayButtons(
                   source: 'folder:${widget.id}',
                   onPlay: () => audioHandler.playSongs(songs, source: 'folder:${widget.id}'),
                   onShuffle: () => audioHandler.playSongs(songs, shuffle: true, source: 'folder:${widget.id}'),
                 ),
-              for (final e in entries.where((e) => e.isDir))
-                ListTile(
-                  leading: e.coverArt.isNotEmpty ? Cover(e.coverArt, size: 44) : const Icon(Icons.folder_outlined),
-                  title: Text(e.name),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => FoldersScreen(id: e.id, title: e.name),
-                    ),
-                  ),
-                ),
-              for (var i = 0; i < songs.length; i++) SongTile(songs[i], list: songs, index: i),
             ],
+            count: dirs.length + songs.length,
+            itemBuilder: (_, i) {
+              if (i >= dirs.length) return SongTile(songs[i - dirs.length], list: songs, index: i - dirs.length);
+              final e = dirs[i];
+              return ListTile(
+                leading: e.coverArt.isNotEmpty ? Cover(e.coverArt, size: 44) : const Icon(Icons.folder_outlined),
+                title: Text(e.name),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => FoldersScreen(id: e.id, title: e.name)),
+                ),
+              );
+            },
           );
         },
       ),

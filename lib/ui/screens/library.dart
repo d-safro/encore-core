@@ -539,8 +539,17 @@ class _FavouritesTab extends ConsumerWidget {
       final songs = r.songs.where((s) => !s.isLookup).toList();
       return RefreshIndicator(
         onRefresh: () async => ref.invalidate(starredProvider),
-        child: ListView(
-          children: [
+        child: LazyListView(
+          count: songs.length,
+          itemBuilder: (_, i) => SongTile(songs[i], list: songs, index: i, playContext: const PlayContext.liked()),
+          footer: [
+            if (r.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(child: Text('Nothing hearted yet')),
+              ),
+          ],
+          header: [
             if (songs.isNotEmpty)
               PlayButtons(
                 source: const PlayContext.liked().key,
@@ -566,14 +575,7 @@ class _FavouritesTab extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                   child: Text(nSongs(songs.length), style: Theme.of(context).textTheme.bodySmall),
                 ),
-              for (var i = 0; i < songs.length; i++)
-                SongTile(songs[i], list: songs, index: i, playContext: const PlayContext.liked()),
             ],
-            if (r.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: Text('Nothing hearted yet')),
-              ),
           ],
         ),
       );

@@ -609,8 +609,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
           final songs = list.map((e) => e.$1).toList();
           final bytes = list.fold<int>(0, (n, e) => n + e.$3);
           final collections = dl.pins.where((k) => k.startsWith('album:') || k.startsWith('playlist:')).toList();
-          return ListView(
-            children: [
+          return LazyListView(
+            count: songs.length,
+            itemBuilder: (_, i) => SongTile(songs[i], list: songs, index: i),
+            footer: const [SizedBox(height: 24)],
+            header: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                 child: Column(
@@ -688,9 +691,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   onPlay: () => audioHandler.playSongs(songs, source: 'downloads'),
                   onShuffle: () => audioHandler.playSongs(songs, shuffle: true, source: 'downloads'),
                 ),
-                for (var i = 0; i < songs.length; i++) SongTile(songs[i], list: songs, index: i),
               ],
-              const SizedBox(height: 24),
             ],
           );
         },

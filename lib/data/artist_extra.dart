@@ -32,7 +32,7 @@ String normName(String s) => s
     .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ')
     .trim();
 
-Future<ArtistExtra> fetchArtistExtra(String name, {bool wantWiki = false}) async {
+Future<ArtistExtra> fetchArtistExtra(String name) async {
   int? fans;
   var top = <Song>[];
   final albums = <(Album, String)>[];
@@ -84,8 +84,13 @@ Future<ArtistExtra> fetchArtistExtra(String name, {bool wantWiki = false}) async
       }
     }
   } catch (_) {}
+  return ArtistExtra(fans: fans, top: top, albums: albums);
+}
+
+/// The artist's Wikipedia summary and its address, for artists your server has no bio for.
+Future<(String, String)> fetchArtistWiki(String name) async {
   var wiki = '', wikiUrl = '';
-  if (wantWiki) {
+  {
     // the plain article first; for names that are also ordinary words, the "(band)" / "(musician)" one
     for (final title in [name, '$name (band)', '$name (musician)', '$name (singer)', '$name (rapper)']) {
       try {
@@ -103,14 +108,19 @@ Future<ArtistExtra> fetchArtistExtra(String name, {bool wantWiki = false}) async
       } catch (_) {}
     }
   }
-  return ArtistExtra(fans: fans, top: top, albums: albums, wiki: wiki, wikiUrl: wikiUrl);
+  return (wiki, wikiUrl);
 }
 
-/// [key] is "name|1" when a Wikipedia bio is wanted (the server has none), else "name|0".
-final artistExtraProvider = FutureProvider.autoDispose.family<ArtistExtra, String>((ref, key) async {
+final artistExtraProvider = FutureProvider.autoDispose.family<ArtistExtra, String>((ref, name) async {
+  ref.cacheFor(const Duration(minutes: 15));
   if (!ref.watch(repoProvider).online) return const ArtistExtra();
-  final i = key.lastIndexOf('|');
-  return fetchArtistExtra(key.substring(0, i), wantWiki: key.substring(i + 1) == '1');
+  return fetchArtistExtra(name);
+});
+
+final artistWikiProvider = FutureProvider.autoDispose.family<(String, String), String>((ref, name) async {
+  ref.cacheFor(const Duration(minutes: 15));
+  if (!ref.watch(repoProvider).online) return ('', '');
+  return fetchArtistWiki(name);
 });
 
 /// Your own copies of an artist's songs (from the phone's copy of the library), for matching popular songs.

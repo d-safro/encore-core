@@ -458,8 +458,11 @@ class _AiResultsScreenState extends ConsumerState<AiResultsScreen> {
               ),
             );
           }
-          return ListView(
-            children: [
+          return LazyListView(
+            count: songs.length,
+            itemBuilder: (_, i) => SongTile(songs[i], list: songs, index: i),
+            footer: const [SizedBox(height: 24)],
+            header: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                 child: Text(
@@ -480,8 +483,6 @@ class _AiResultsScreenState extends ConsumerState<AiResultsScreen> {
                   ),
                 ],
               ),
-              for (var i = 0; i < songs.length; i++) SongTile(songs[i], list: songs, index: i),
-              const SizedBox(height: 24),
             ],
           );
         },

@@ -77,6 +77,26 @@ class ServerReachNotifier extends Notifier<bool> {
   }
 }
 
+extension CacheFor on Ref {
+  /// Keep the answer for [d] after the last screen using it closes, so going back is instant.
+  void cacheFor(Duration d) {
+    final link = keepAlive();
+    Timer? t;
+    onCancel(() => t = Timer(d, link.close));
+    onResume(() => t?.cancel());
+    onDispose(() => t?.cancel());
+  }
+}
+
+/// Hearts changed in this session, by song id: lists that were loaded earlier show the new state.
+class HeartsNotifier extends Notifier<Map<String, bool>> {
+  @override
+  Map<String, bool> build() => const {};
+  void set(String id, bool on) => state = {...state, id: on};
+}
+
+final heartsProvider = NotifierProvider<HeartsNotifier, Map<String, bool>>(HeartsNotifier.new);
+
 final serverReachableProvider = NotifierProvider<ServerReachNotifier, bool>(ServerReachNotifier.new);
 
 /// Offline = switched to offline mode in settings, no network at all, or the server can't be reached.
@@ -403,12 +423,16 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   }
 
   /// A real song file: exists, isn't tiny, and doesn't start like a JSON / HTML / XML error reply.
+  /// One quick look at the size for most files (this runs for every download at start-up); only
+  /// small files, which is what an error reply would be, are opened.
   static Future<bool> _isAudio(String path) async {
     try {
       final f = File(path);
-      if (!await f.exists()) return false;
-      final len = await f.length();
+      final st = f.statSync();
+      if (st.type == FileSystemEntityType.notFound) return false;
+      final len = st.size;
       if (len < 8 * 1024) return false;
+      if (len > 512 * 1024) return true;
       final raf = await f.open();
       try {
         final head = await raf.read(16);

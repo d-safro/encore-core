@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import 'models.dart';
 
@@ -23,7 +25,7 @@ class Credentials {
 /// Subsonic / OpenSubsonic API client. Token auth (md5(password + salt)), JSON responses.
 class SubsonicClient {
   SubsonicClient(this.creds, {this.clientName = 'Encore', http.Client? httpClient})
-    : _http = httpClient ?? http.Client();
+    : _http = httpClient ?? IOClient(HttpClient()..idleTimeout = const Duration(minutes: 2));
 
   final Credentials creds;
   final String clientName;

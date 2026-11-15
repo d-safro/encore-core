@@ -41,9 +41,10 @@ Future<void> shareLink(BuildContext context, String label, Future<String?> Funct
 Future<Song> toggleStarSong(BuildContext context, WidgetRef ref, Song s) async {
   final c = ref.read(clientProvider);
   if (c == null) return s;
-  final next = !s.starred;
+  final next = !(ref.read(heartsProvider)[s.id] ?? s.starred);
   try {
     next ? await c.star(id: s.id) : await c.unstar(id: s.id);
+    ref.read(heartsProvider.notifier).set(s.id, next);
     final updated = s.copyWith(starred: next);
     audioHandler.updateSong(updated);
     ref.read(dbProvider).updateSong(updated);
@@ -223,6 +224,7 @@ Future<void> showSongMenu(
     isScrollControlled: true,
     builder: (ctx) {
       void close() => Navigator.pop(ctx);
+      final liked = ref.read(heartsProvider)[song.id] ?? song.starred;
       return SafeArea(
         child: SingleChildScrollView(
           child: Column(
@@ -240,7 +242,7 @@ Future<void> showSongMenu(
                   subtitle: const Text('The server finds it on Soulseek and adds it'),
                   onTap: () {
                     close();
-                    if (!song.starred) toggleStarSong(context, ref, song);
+                    if (!(ref.read(heartsProvider)[song.id] ?? song.starred)) toggleStarSong(context, ref, song);
                   },
                 ),
                 if (online)
@@ -313,8 +315,8 @@ Future<void> showSongMenu(
               ],
               if (online)
                 ListTile(
-                  leading: Icon(song.starred ? Icons.favorite : Icons.favorite_border),
-                  title: Text(song.starred ? 'Remove from favourites' : 'Add to favourites'),
+                  leading: Icon(liked ? Icons.favorite : Icons.favorite_border),
+                  title: Text(liked ? 'Remove from favourites' : 'Add to favourites'),
                   onTap: () {
                     close();
                     toggleStarSong(context, ref, song);

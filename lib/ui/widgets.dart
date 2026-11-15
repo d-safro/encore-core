@@ -40,30 +40,46 @@ class Cover extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (size.isFinite) return _build(context, ref, size);
+    // a cover that fills its space: size it to that space, so a grid card fetches a card-sized picture
+    return LayoutBuilder(
+      builder: (ctx, box) {
+        final w = box.maxWidth.isFinite ? box.maxWidth : MediaQuery.sizeOf(ctx).width;
+        return _build(ctx, ref, w, fill: true);
+      },
+    );
+  }
+
+  Widget _build(BuildContext context, WidgetRef ref, double side, {bool fill = false}) {
     final c = ref.watch(clientProvider);
     final cs = Theme.of(context).colorScheme;
     final placeholder = Container(
       color: cs.surfaceContainerHigh,
       alignment: Alignment.center,
-      child: Icon(icon, color: cs.onSurfaceVariant.withValues(alpha: 0.6), size: size.isFinite ? size * 0.4 : 40),
+      child: Icon(icon, color: cs.onSurfaceVariant.withValues(alpha: 0.6), size: (side * 0.4).clamp(16, 64)),
     );
     final canLookUp = artist.isNotEmpty && (artistImage || album.isNotEmpty);
     Widget online() =>
         canLookUp ? _OnlineCover(artistImage ? 'artist' : 'album', artist, album, placeholder) : placeholder;
-    final px = size.isFinite ? (size * MediaQuery.devicePixelRatioOf(context)).round() : 900;
+    final px = (side * MediaQuery.devicePixelRatioOf(context)).round();
     final bucket = px <= 200 ? 200 : (px <= 500 ? 500 : 1000);
     final Widget img;
     if (coverArt.isEmpty || c == null) {
       img = online();
     } else {
-      final file = ref.watch(_serverCoverProvider((coverArt, bucket)));
+      final key = '${c.creds.base}|$coverArt|$bucket';
+      // already looked up this session: draw it straight away (no placeholder flash when scrolling back)
+      final known = _coverMemo.containsKey(key);
+      final AsyncValue<File?> file = known
+          ? AsyncData(_coverMemo[key])
+          : ref.watch(_serverCoverProvider((coverArt, bucket)));
       img = switch (file) {
         AsyncData(:final value) when value != null => Image.file(
           value,
           fit: BoxFit.cover,
-          width: size.isFinite ? size : null,
-          height: size.isFinite ? size : null,
-          cacheWidth: size.isFinite ? px : null,
+          width: fill ? null : side,
+          height: fill ? null : side,
+          cacheWidth: px,
           gaplessPlayback: true,
           errorBuilder: (_, _, _) => online(),
         ),
@@ -71,7 +87,7 @@ class Cover extends ConsumerWidget {
         _ => online(),
       };
     }
-    final box = SizedBox(width: size, height: size, child: img);
+    final box = fill ? SizedBox.expand(child: img) : SizedBox(width: side, height: side, child: img);
     return circle ? ClipOval(child: box) : ClipRRect(borderRadius: BorderRadius.circular(radius), child: box);
   }
 }
@@ -80,24 +96,46 @@ class Cover extends ConsumerWidget {
 const _placeholderLength = 69228;
 const _placeholderMd5 = '83d193cefca2810f217cffd533241508';
 
-/// The server's cover as a cached file, or null when the server has no real picture.
+/// Covers already resolved this session (file, or null for "the server has none"), newest last.
+final _coverMemo = <String, File?>{};
+void _remember(String key, File? f) {
+  _coverMemo.remove(key);
+  _coverMemo[key] = f;
+  if (_coverMemo.length > 3000) _coverMemo.remove(_coverMemo.keys.first);
+}
+
+Future<File?> _checked(File f) async {
+  final len = await f.length();
+  if (len < 64) return null;
+  if (len == _placeholderLength && md5.convert(await f.readAsBytes()).toString() == _placeholderMd5) return null;
+  final head = await f.openRead(0, 1).first;
+  if (head.isNotEmpty && head.first == 0x7B) return null; // '{': an error message, not an image
+  return f;
+}
+
+/// The server's cover as a cached file, or null when the server has no real picture. A picture on the
+/// phone is used as it is (covers don't change); only a missing one is fetched, and never while offline.
 final _serverCoverProvider = FutureProvider.autoDispose.family<File?, (String, int)>((ref, k) async {
   final c = ref.watch(clientProvider);
   if (c == null) return null;
+  final offline = ref.watch(offlineProvider);
   // the URL carries a fresh login token each time; the cache key is what identifies the picture
+  final key = '${c.creds.base}|${k.$1}|${k.$2}';
+  final cache = DefaultCacheManager();
   try {
-    final f = await DefaultCacheManager().getSingleFile(
-      c.coverUrl(k.$1, size: k.$2).toString(),
-      key: '${c.creds.base}|${k.$1}|${k.$2}',
-    );
-    final len = await f.length();
-    if (len < 64) return null;
-    if (len == _placeholderLength && md5.convert(await f.readAsBytes()).toString() == _placeholderMd5) return null;
-    final head = await f.openRead(0, 1).first;
-    if (head.isNotEmpty && head.first == 0x7B) return null; // '{': an error message, not an image
+    final hit = await cache.getFileFromCache(key);
+    if (hit != null) {
+      final f = await _checked(hit.file);
+      _remember(key, f);
+      return f;
+    }
+    if (offline) return null; // not remembered: it may be there next time we're online
+    final got = await cache.downloadFile(c.coverUrl(k.$1, size: k.$2).toString(), key: key);
+    final f = await _checked(got.file);
+    _remember(key, f);
     return f;
   } catch (_) {
-    return null;
+    return null; // network trouble: not remembered, so it's tried again
   }
 });
 
@@ -235,11 +273,14 @@ class SongTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final current = ref.watch(mediaItemProvider).value?.id == song.id;
-    final dl = ref.watch(downloadsProvider);
-    final progress = dl.progress[song.id];
+    final current = ref.watch(mediaItemProvider.select((m) => m.value?.id == song.id));
+    // only this song's part of the download state, so a download's progress doesn't redraw every row
+    final (progress, onPhone) = ref.watch(
+      downloadsProvider.select((d) => (d.progress[song.id], d.files.containsKey(song.id))),
+    );
+    final hearted = ref.hearted(song);
     final offline = ref.watch(offlineProvider);
-    final available = !offline || dl.files.containsKey(song.id);
+    final available = !offline || onPhone;
     final cs = Theme.of(context).colorScheme;
     final t = Theme.of(context).textTheme;
     final dim = song.isLookup || !available;
@@ -315,12 +356,12 @@ class SongTile extends ConsumerWidget {
                   const SizedBox(height: 2),
                   Row(
                     children: [
-                      if (dl.files.containsKey(song.id))
+                      if (onPhone)
                         Padding(
                           padding: const EdgeInsets.only(right: 4),
                           child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
                         ),
-                      if (song.starred)
+                      if (hearted)
                         Padding(
                           padding: const EdgeInsets.only(right: 4),
                           child: Icon(Icons.favorite_rounded, size: 13, color: cs.primary),
@@ -739,4 +780,33 @@ class _LogoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LogoPainter oldDelegate) => false;
+}
+
+/// A scrolling page: [header] widgets, then [count] rows built only as they scroll into view (so a playlist
+/// of thousands of songs opens instantly), then [footer].
+class LazyListView extends StatelessWidget {
+  const LazyListView({
+    super.key,
+    this.header = const [],
+    required this.count,
+    required this.itemBuilder,
+    this.footer = const [],
+    this.padding,
+  });
+  final List<Widget> header, footer;
+  final int count;
+  final IndexedWidgetBuilder itemBuilder;
+  final EdgeInsets? padding;
+
+  @override
+  Widget build(BuildContext context) => ListView.builder(
+    padding: padding,
+    itemCount: header.length + count + footer.length,
+    itemBuilder: (ctx, i) {
+      if (i < header.length) return header[i];
+      i -= header.length;
+      if (i < count) return itemBuilder(ctx, i);
+      return footer[i - count];
+    },
+  );
 }

@@ -82,7 +82,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   final _ctl = TextEditingController();
-  Timer? _debounce;
+  Timer? _debounce, _quick;
+  String _serverShown = ''; // the query whose server answer is on screen
   SearchResult? _result;
   String _query = '';
   bool _loading = false;
@@ -92,13 +93,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _quick?.cancel();
     _ctl.dispose();
     super.dispose();
   }
 
   void _changed(String q) {
     _debounce?.cancel();
+    _quick?.cancel();
+    _quick = Timer(const Duration(milliseconds: 120), () => _runQuick(q));
     _debounce = Timer(const Duration(milliseconds: 450), () => _run(q));
+  }
+
+  /// Matches from the phone's copy of the library, shown at once while the server's answer comes.
+  Future<void> _runQuick(String q) async {
+    q = q.trim();
+    if (q.length < 2 || ref.read(offlineProvider)) return;
+    try {
+      final r = await ref.read(dbProvider).search(q);
+      if (!mounted || q != _ctl.text.trim() || _serverShown == q || r.isEmpty) return;
+      _safeSetState(() {
+        _query = q;
+        _result = r;
+      });
+    } catch (_) {}
   }
 
   Future<void> _run(String q) async {
@@ -116,6 +134,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     try {
       final r = await ref.read(repoProvider).search(q);
       if (seq != _seq) return;
+      _serverShown = q;
       _safeSetState(() => _result = r);
     } catch (e) {
       if (seq == _seq) _safeSetState(() => _error = '$e');

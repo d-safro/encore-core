@@ -1042,6 +1042,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     try {
       starred ? await c.star(id: s.id) : await c.unstar(id: s.id);
       updateSong(s.copyWith(starred: starred));
+      container.read(heartsProvider.notifier).set(s.id, starred);
     } catch (_) {} // offline: the heart stays as it was
   }
 

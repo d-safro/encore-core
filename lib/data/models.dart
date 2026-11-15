@@ -204,7 +204,7 @@ class Album {
       playCount: _int(j['playCount']),
       userRating: _int(j['userRating']),
       starred: j['starred'] != null,
-      lookup: _lookupFromTitle(id, raw),
+      lookup: j['lookupState'] is int ? LookupState.values[j['lookupState'] as int] : _lookupFromTitle(id, raw),
       songs: _list(j['song']).map(Song.fromJson).toList(),
       created: j['created'] != null ? DateTime.tryParse(_str(j['created'])) : null,
     );
@@ -224,6 +224,7 @@ class Album {
     'userRating': userRating,
     if (starred) 'starred': '1',
     if (created != null) 'created': created!.toIso8601String(),
+    if (isLookup) 'lookupState': lookup.index,
   };
 }
 
@@ -323,6 +324,7 @@ class Playlist {
     'songCount': songCount,
     'duration': duration,
     'public': public,
+    if (changed != null) 'changed': changed!.toIso8601String(),
   };
 }
 
