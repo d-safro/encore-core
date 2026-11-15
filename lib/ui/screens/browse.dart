@@ -110,7 +110,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
     final album = ref.watch(albumProvider(widget.id));
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(backgroundColor: Colors.transparent),
+      appBar: AppBar(backgroundColor: Colors.transparent, forceMaterialTransparency: true),
       body: AsyncView(album, (Album a) {
         pollIf(a.songs.any((s) => s.lookup == LookupState.downloading), () => ref.invalidate(albumProvider(widget.id)));
         final playable = a.songs.where((s) => !s.isLookup).toList();
@@ -144,7 +144,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                     [
                       if (a.year != null) '${a.year}',
                       if (a.genre.isNotEmpty) a.genre,
-                      '${a.songs.length} songs',
+                      nSongs(a.songs.length),
                       formatDuration(a.duration ?? a.songs.fold<int>(0, (n, s) => n + (s.duration ?? 0))),
                     ].join(' · '),
                     style: t.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -215,7 +215,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
     final info = ref.watch(artistInfoProvider(widget.id));
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(backgroundColor: Colors.transparent),
+      appBar: AppBar(backgroundColor: Colors.transparent, forceMaterialTransparency: true),
       body: AsyncView(artist, (Artist a) {
         final own = a.albums.where((x) => !x.isLookup).toList()..sort((x, y) => (y.year ?? 0).compareTo(x.year ?? 0));
         final missing = a.albums.where((x) => x.isLookup).toList();
@@ -413,6 +413,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
       extendBodyBehindAppBar: !_editing,
       appBar: AppBar(
         backgroundColor: _editing ? null : Colors.transparent,
+        forceMaterialTransparency: !_editing,
         title: _editing ? const Text('Edit playlist') : null,
         actions: [
           if (_editing)

@@ -52,13 +52,27 @@ class SubsonicClient {
     String? client,
     Duration timeout = const Duration(seconds: 30),
   ]) async {
-    final res = await _http.get(url(method, params, client)).timeout(timeout);
+    final u = url(method, params, client);
+    // long requests (a big queue or playlist) go as a form POST (OpenSubsonic formPost); URLs have a size limit
+    final res = u.query.length > 1800
+        ? await _http
+              .post(u.replace(query: ''), headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: u.query)
+              .timeout(timeout)
+        : await _http.get(u).timeout(timeout);
     if (res.statusCode == 401 || res.statusCode == 403) {
       throw SubsonicException(40, 'Wrong username or password');
     }
     if (res.statusCode != 200) throw SubsonicException(0, 'Server answered ${res.statusCode}');
-    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-    final r = (body['subsonic-response'] as Map).cast<String, dynamic>();
+    Map<String, dynamic>? r;
+    try {
+      final body = jsonDecode(utf8.decode(res.bodyBytes));
+      if (body is Map && body['subsonic-response'] is Map) r = (body['subsonic-response'] as Map).cast<String, dynamic>();
+    } on FormatException {
+      r = null;
+    }
+    if (r == null) {
+      throw SubsonicException(0, 'That address doesn\'t answer like a Navidrome / Subsonic server. Check the server address.');
+    }
     if (r['status'] != 'ok') {
       final e = (r['error'] as Map?)?.cast<String, dynamic>() ?? {};
       throw SubsonicException((e['code'] as num?)?.toInt() ?? 0, (e['message'] ?? 'Request failed').toString());

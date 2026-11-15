@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../core/settings.dart';
+import 'library.dart';
 import 'subsonic.dart';
 
 const _storage = FlutterSecureStorage();
@@ -31,10 +33,13 @@ class AccountNotifier extends AsyncNotifier<Credentials?> {
     await _storage.write(key: 'user', value: creds.username);
     await _storage.write(key: 'pass', value: pass);
     state = AsyncData(Credentials(creds.base, creds.username, pass));
+    Future.microtask(() => ref.read(syncProvider.notifier).sync()); // build the offline copy in the background
   }
 
   Future<void> signOut() async {
     await _storage.deleteAll();
+    await ref.read(dbProvider).clearLibrary();
+    await prefs.remove('queue');
     state = const AsyncData(null);
   }
 }

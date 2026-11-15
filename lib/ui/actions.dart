@@ -8,8 +8,10 @@ import '../data/models.dart';
 import '../playback/handler.dart';
 import 'screens/radio.dart';
 import 'state.dart';
+import 'widgets.dart' show nSongs;
 
 void toast(BuildContext context, String text) {
+  if (!context.mounted) return; // the screen was closed while waiting
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(text), behavior: SnackBarBehavior.floating));
@@ -118,7 +120,7 @@ Future<void> addToPlaylist(BuildContext context, WidgetRef ref, List<Song> songs
             ListTile(
               leading: const Icon(Icons.queue_music),
               title: Text(p.name),
-              subtitle: Text('${p.songCount ?? 0} songs'),
+              subtitle: Text(nSongs(p.songCount ?? 0)),
               onTap: () => Navigator.pop(ctx, p),
             ),
         ],
@@ -134,11 +136,12 @@ Future<void> addToPlaylist(BuildContext context, WidgetRef ref, List<Song> songs
       if (context.mounted) toast(context, 'Created "$name"');
     } else if (choice is Playlist) {
       await c.updatePlaylist(choice.id, add: songs.map((s) => s.id).toList());
-      if (context.mounted)
+      if (context.mounted) {
         toast(
           context,
-          'Added ${songs.length == 1 ? '"${songs.first.title}"' : '${songs.length} songs'} to ${choice.name}',
+          'Added ${songs.length == 1 ? '"${songs.first.title}"' : nSongs(songs.length)} to ${choice.name}',
         );
+      }
       ref.invalidate(playlistProvider(choice.id));
     }
     ref.invalidate(playlistsProvider);
@@ -465,7 +468,7 @@ Future<void> showCollectionMenu(
               title: const Text('Download for offline'),
               onTap: () => run((s) async {
                 await ref.read(downloadsProvider.notifier).download(s);
-                if (context.mounted) toast(context, 'Downloading ${s.length} songs');
+                if (context.mounted) toast(context, 'Downloading ${nSongs(s.length)}');
               }),
             ),
             ...extra,
@@ -485,8 +488,9 @@ Future<void> bridgeMix(BuildContext context, WidgetRef ref, Song from) async {
   if (context.mounted) toast(context, 'Building a path to "${to.title}"…');
   final path = await c.sonicPath(from.id, to.id, count: 20);
   if (path.isEmpty) {
-    if (context.mounted)
+    if (context.mounted) {
       toast(context, 'Your server can\'t build that path yet (are both songs analysed by AudioMuse?)');
+    }
     return;
   }
   final ids = {from.id, to.id};

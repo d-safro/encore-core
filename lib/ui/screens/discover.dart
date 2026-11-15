@@ -332,6 +332,12 @@ class _PromptCard extends StatefulWidget {
 class _PromptCardState extends State<_PromptCard> {
   final _ctl = TextEditingController();
 
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
   void _go(String q) {
     q = q.trim();
     if (q.length < 3) return;
@@ -396,6 +402,10 @@ class AiResultsScreen extends ConsumerStatefulWidget {
 }
 
 class _AiResultsScreenState extends ConsumerState<AiResultsScreen> {
+  void _safeSetState(VoidCallback f) {
+    if (mounted) setState(f);
+  }
+
   late Future<List<Song>> _future = _run();
 
   Future<List<Song>> _run() {
@@ -413,7 +423,7 @@ class _AiResultsScreenState extends ConsumerState<AiResultsScreen> {
           IconButton(
             tooltip: 'Try again',
             icon: const Icon(Icons.refresh),
-            onPressed: () => setState(() => _future = _run()),
+            onPressed: () => _safeSetState(() => _future = _run()),
           ),
         ],
       ),
@@ -452,7 +462,7 @@ class _AiResultsScreenState extends ConsumerState<AiResultsScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text('${widget.subtitle} · ${songs.length} songs', style: Theme.of(context).textTheme.bodySmall),
+                child: Text('${widget.subtitle} · ${nSongs(songs.length)}', style: Theme.of(context).textTheme.bodySmall),
               ),
               PlayButtons(
                 onPlay: () => audioHandler.playSongs(songs),
@@ -484,11 +494,15 @@ class AlchemyScreen extends ConsumerStatefulWidget {
 }
 
 class _AlchemyScreenState extends ConsumerState<AlchemyScreen> {
+  void _safeSetState(VoidCallback f) {
+    if (mounted) setState(f);
+  }
+
   final _add = <Song>[], _sub = <Song>[];
 
   Future<void> _pick(List<Song> into, String title) async {
     final s = await pickSong(context, ref, title);
-    if (s != null && !_add.any((x) => x.id == s.id) && !_sub.any((x) => x.id == s.id)) setState(() => into.add(s));
+    if (s != null && !_add.any((x) => x.id == s.id) && !_sub.any((x) => x.id == s.id)) _safeSetState(() => into.add(s));
   }
 
   Widget _list(String title, String help, List<Song> songs, IconData icon, String pickTitle) => Card(
@@ -504,7 +518,7 @@ class _AlchemyScreenState extends ConsumerState<AlchemyScreen> {
               leading: Cover(s.coverArt, size: 40, radius: 6, icon: Icons.music_note),
               title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text(s.artist, maxLines: 1),
-              trailing: IconButton(icon: const Icon(Icons.close), onPressed: () => setState(() => songs.remove(s))),
+              trailing: IconButton(icon: const Icon(Icons.close), onPressed: () => _safeSetState(() => songs.remove(s))),
             ),
           Padding(
             padding: const EdgeInsets.only(left: 8),

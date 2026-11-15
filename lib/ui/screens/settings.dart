@@ -217,7 +217,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.offline_pin_outlined),
             title: const Text('Downloaded music'),
-            subtitle: Text('${ref.watch(downloadsProvider).files.length} songs'),
+            subtitle: Text(nSongs(ref.watch(downloadsProvider).files.length)),
             onTap: () => context.push('/downloads'),
           ),
           _QualityTile(
@@ -416,6 +416,10 @@ class EqualizerScreen extends ConsumerStatefulWidget {
 }
 
 class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
+  void _safeSetState(VoidCallback f) {
+    if (mounted) setState(f);
+  }
+
   AndroidEqualizerParameters? _params;
   String? _error;
 
@@ -431,8 +435,8 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
   @override
   void initState() {
     super.initState();
-    audioHandler.equalizer.parameters.then((p) => setState(() => _params = p)).catchError((Object e) {
-      setState(() => _error = 'Start playing a song first, then open the equalizer.');
+    audioHandler.equalizer.parameters.timeout(const Duration(seconds: 4)).then((p) => _safeSetState(() => _params = p)).catchError((Object e) {
+      _safeSetState(() => _error = 'Start playing a song first, then open the equalizer.');
     });
   }
 
@@ -476,7 +480,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
                                 await p.bands[i].setGain(g.clamp(p.minDecibels, p.maxDecibels));
                               }
                               _save();
-                              setState(() {});
+                              _safeSetState(() {});
                             },
                           ),
                         ),
@@ -533,6 +537,10 @@ class DownloadsScreen extends ConsumerStatefulWidget {
 }
 
 class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
+  void _safeSetState(VoidCallback f) {
+    if (mounted) setState(f);
+  }
+
   late Future<List<(Song, String, int)>> _future = ref.read(dbProvider).downloads();
   late final Future<(int, int)> _library = _librarySize();
 
@@ -559,7 +567,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   @override
   Widget build(BuildContext context) {
     ref.listen(downloadsProvider, (a, b) {
-      if (a?.files.length != b.files.length) setState(() => _future = ref.read(dbProvider).downloads());
+      if (a?.files.length != b.files.length) _safeSetState(() => _future = ref.read(dbProvider).downloads());
     });
     final dl = ref.watch(downloadsProvider);
     final t = Theme.of(context).textTheme;

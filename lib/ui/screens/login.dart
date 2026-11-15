@@ -2,7 +2,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/account.dart';
-import '../../data/library.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -11,24 +10,35 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
+  void _safeSetState(VoidCallback f) {
+    if (mounted) setState(f);
+  }
+
   final _server = TextEditingController();
   final _user = TextEditingController();
   final _pass = TextEditingController();
   bool _busy = false, _hide = true;
   String? _error;
 
+  @override
+  void dispose() {
+    _server.dispose();
+    _user.dispose();
+    _pass.dispose();
+    super.dispose();
+  }
+
   Future<void> _submit() async {
-    setState(() {
+    _safeSetState(() {
       _busy = true;
       _error = null;
     });
     try {
       await ref.read(accountProvider.notifier).signIn(_server.text, _user.text, _pass.text);
-      ref.read(syncProvider.notifier).sync(); // build the offline copy in the background
     } catch (e) {
-      setState(() => _error = '$e'.replaceFirst('Exception: ', ''));
+      _safeSetState(() => _error = '$e'.replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) _safeSetState(() => _busy = false);
     }
   }
 
@@ -86,7 +96,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         prefixIcon: const Icon(Icons.lock_outline),
                         suffixIcon: IconButton(
                           icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                          onPressed: () => setState(() => _hide = !_hide),
+                          onPressed: () => _safeSetState(() => _hide = !_hide),
                         ),
                       ),
                     ),

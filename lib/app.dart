@@ -20,6 +20,9 @@ import 'ui/widgets.dart';
 
 final _rootKey = GlobalKey<NavigatorState>();
 
+/// Lets code outside a screen (the player) show a snackbar.
+final messengerKey = GlobalKey<ScaffoldMessengerState>();
+
 final routerProvider = Provider<GoRouter>((ref) {
   final signedIn = ValueNotifier<bool?>(null);
   ref.listen(
@@ -288,6 +291,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> {
           theme: _theme(scheme, s.pureBlack),
           darkTheme: _theme(scheme, s.pureBlack),
           routerConfig: router,
+          scaffoldMessengerKey: messengerKey,
         );
       },
     );

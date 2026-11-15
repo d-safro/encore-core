@@ -78,10 +78,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   // ── Settings that act on the player ──
   Future<void> _applySettings(Settings? prev, Settings s) async {
-    if (prev?.skipSilence != s.skipSilence) await player.setSkipSilenceEnabled(s.skipSilence);
-    if (prev?.speed != s.speed) await setSpeed(s.speed);
-    if (prev?.pitch != s.pitch) await player.setPitch(s.pitch);
-    if (prev?.eqEnabled != s.eqEnabled) await equalizer.setEnabled(s.eqEnabled);
+    if (prev?.skipSilence != s.skipSilence) await _quiet(() => player.setSkipSilenceEnabled(s.skipSilence));
+    if (prev?.speed != s.speed) await _quiet(() => setSpeed(s.speed));
+    if (prev?.pitch != s.pitch) await _quiet(() => player.setPitch(s.pitch));
+    if (prev?.eqEnabled != s.eqEnabled) await _quiet(() => equalizer.setEnabled(s.eqEnabled));
     if (prev?.eqGains != s.eqGains && s.eqGains.isNotEmpty) {
       try {
         final params = await equalizer.parameters;
@@ -93,14 +93,20 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (prev?.replayGain != s.replayGain || prev?.replayGainPreamp != s.replayGainPreamp) _applyReplayGain();
   }
 
+  Future<void> _quiet(Future<void> Function() f) async {
+    try {
+      await f();
+    } catch (_) {} // audio effects can fail before the first song is loaded; they're set again later
+  }
+
   /// Volume from ReplayGain tags. Quieter-than-reference songs use the player volume; louder needs the
   /// loudness enhancer (Android can't amplify through volume alone).
   void _applyReplayGain() {
     final i = player.currentIndex;
     final s = _settings;
     if (i == null || i >= _songs.length || s.replayGain == ReplayGainMode.off) {
-      player.setVolume(1);
-      loudness.setEnabled(false);
+      _quiet(() => player.setVolume(1));
+      _quiet(() => loudness.setEnabled(false));
       return;
     }
     final song = _songs[i];
@@ -114,29 +120,35 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     final gain = (albumMode ? rg.albumGain ?? rg.trackGain : rg.trackGain ?? rg.albumGain);
     if (gain == null) {
-      player.setVolume(1);
-      loudness.setEnabled(false);
+      _quiet(() => player.setVolume(1));
+      _quiet(() => loudness.setEnabled(false));
       return;
     }
     final peak = (albumMode ? rg.albumPeak ?? rg.trackPeak : rg.trackPeak ?? rg.albumPeak) ?? 1.0;
     var db = gain + s.replayGainPreamp;
     if (peak > 0) db = min(db, -20 * log(peak) / ln10); // never push past full scale
     if (db <= 0) {
-      loudness.setEnabled(false);
-      player.setVolume(pow(10, db / 20).toDouble());
+      _quiet(() => loudness.setEnabled(false));
+      _quiet(() => player.setVolume(pow(10, db / 20).toDouble()));
     } else {
-      player.setVolume(1);
-      loudness.setTargetGain(db);
-      loudness.setEnabled(true);
+      _quiet(() => player.setVolume(1));
+      _quiet(() => loudness.setTargetGain(db));
+      _quiet(() => loudness.setEnabled(true));
     }
   }
 
   // ── Sources ──
+  /// Downloaded, or the server can be reached (offline, only downloaded songs play).
+  bool canPlay(Song s) =>
+      container.read(downloadsProvider).files.containsKey(s.id) ||
+      (container.read(clientProvider) != null && !container.read(offlineProvider));
+
   AudioSource _source(Song s) {
     final local = container.read(downloadsProvider).files[s.id];
     final item = _mediaItem(s);
     if (local != null) return AudioSource.file(local, tag: item);
-    final c = container.read(clientProvider)!;
+    final c = container.read(clientProvider);
+    if (c == null) return AudioSource.uri(Uri.parse('file:///missing/${s.id}'), tag: item); // fails, then skipped
     final set = _settings;
     final wifi = container.read(onWifiProvider);
     final fmt = wifi ? set.wifiFormat : set.mobileFormat;
@@ -171,11 +183,20 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     Song? radio,
   }) async {
     radioSeed = radio;
-    var list = allowLookup ? songs : songs.where((s) => !s.isLookup).toList();
-    if (list.isEmpty) return;
-    if (!allowLookup && index < songs.length) {
+    var list = songs.where((s) => (allowLookup || !s.isLookup) && canPlay(s)).toList();
+    if (list.isEmpty) {
+      if (songs.isNotEmpty) {
+        playerNotices.add(
+          !container.read(offlineProvider) ? 'Nothing here can be played' : "You're offline and none of these songs are downloaded",
+        );
+      }
+      return;
+    }
+    if (index >= 0 && index < songs.length) {
       final want = songs[index];
       index = max(0, list.indexWhere((s) => s.id == want.id));
+    } else {
+      index = 0;
     }
     if (shuffle) {
       list = [...list]..shuffle();
@@ -185,14 +206,25 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       ..clear()
       ..addAll(list);
     await player.setShuffleModeEnabled(false);
-    await player.setAudioSources(list.map(_source).toList(), initialIndex: index.clamp(0, list.length - 1));
+    await _load(list, index.clamp(0, list.length - 1));
     _broadcastQueue();
     player.play();
     _scheduleSave();
   }
 
+  /// Load a new queue. If the first song can't be loaded (server down, file gone), move on to the next.
+  Future<void> _load(List<Song> list, int index, {Duration? position}) async {
+    try {
+      await player.setAudioSources(list.map(_source).toList(), initialIndex: index, initialPosition: position);
+    } on PlayerException catch (_) {
+      if (index + 1 < list.length) await player.seek(Duration.zero, index: index + 1);
+    } on PlayerInterruptedException catch (_) {
+      // replaced by a newer request
+    }
+  }
+
   Future<void> playNext(List<Song> songs) async {
-    final add = songs.where((s) => !s.isLookup).toList();
+    final add = songs.where((s) => !s.isLookup && canPlay(s)).toList();
     if (add.isEmpty) return;
     if (_songs.isEmpty) return playSongs(add);
     final at = (player.currentIndex ?? -1) + 1;
@@ -203,7 +235,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   Future<void> addLast(List<Song> songs) async {
-    final add = songs.where((s) => !s.isLookup).toList();
+    final add = songs.where((s) => !s.isLookup && canPlay(s)).toList();
     if (add.isEmpty) return;
     if (_songs.isEmpty) return playSongs(add);
     _songs.addAll(add);
@@ -222,7 +254,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   Future<void> moveQueueItem(int from, int to) async {
-    if (from == to) return;
+    if (from == to || from < 0 || to < 0 || from >= _songs.length || to >= _songs.length) return;
     final s = _songs.removeAt(from);
     _songs.insert(to, s);
     await player.moveAudioSource(from, to);
@@ -283,7 +315,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       // a song radio stays close to its first song; endless playback follows where the music went
       final from = radioSeed != null && Random().nextBool()
           ? radioSeed!
-          : _songs[Random().nextInt(_songs.length - i) + i];
+          : _songs[Random().nextInt(max(1, _songs.length - i)) + min(i, _songs.length - 1)];
       final more = (await c.similarSongs(
         from.id,
         count: 30,
@@ -394,15 +426,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       final j = jsonDecode(raw) as Map<String, dynamic>;
       final songs = (j['songs'] as List).map((e) => Song.fromJson((e as Map).cast<String, dynamic>())).toList();
       if (songs.isEmpty) return;
+      final index = ((j['index'] as num?)?.toInt() ?? 0).clamp(0, songs.length - 1);
       _songs.addAll(songs);
-      final index = (j['index'] as int).clamp(0, songs.length - 1);
-      await player.setAudioSources(
-        songs.map(_source).toList(),
-        initialIndex: index,
-        initialPosition: Duration(milliseconds: j['position'] as int? ?? 0),
-      );
+      await _load(songs, index, position: Duration(milliseconds: (j['position'] as num?)?.toInt() ?? 0));
       _broadcastQueue();
-    } catch (_) {}
+    } catch (_) {
+      _songs.clear();
+    }
   }
 
   /// Take over the queue saved on the server (from Feishin or another device).
@@ -412,14 +442,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final (songs, current, pos) = await c.playQueue();
     if (songs.isEmpty) return false;
     final idx = max(0, songs.indexWhere((s) => s.id == current));
+    radioSeed = null;
     _songs
       ..clear()
       ..addAll(songs);
-    await player.setAudioSources(
-      songs.map(_source).toList(),
-      initialIndex: idx,
-      initialPosition: Duration(milliseconds: pos),
-    );
+    await _load(songs, idx, position: Duration(milliseconds: pos));
     _broadcastQueue();
     return true;
   }
@@ -503,8 +530,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final c = container.read(clientProvider);
     if (s == null || c == null) return;
     final starred = rating.hasHeart();
-    starred ? await c.star(id: s.id) : await c.unstar(id: s.id);
-    updateSong(s.copyWith(starred: starred));
+    try {
+      starred ? await c.star(id: s.id) : await c.unstar(id: s.id);
+      updateSong(s.copyWith(starred: starred));
+    } catch (_) {} // offline: the heart stays as it was
   }
 
   @override
@@ -642,3 +671,6 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 }
 
 late EncoreAudioHandler audioHandler; // created in main()
+
+/// Short messages from the player for the app to show (e.g. nothing playable while offline).
+final playerNotices = StreamController<String>.broadcast();

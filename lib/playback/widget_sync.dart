@@ -11,13 +11,19 @@ void startWidgetSync(AudioHandler handler) {
   String? lastId;
   bool? lastPlaying;
 
-  Future<void> push() => HomeWidget.updateWidget(qualifiedAndroidName: 'dev.safro.encore.EncoreWidget');
+  Future<void> push() async {
+    try {
+      await HomeWidget.updateWidget(qualifiedAndroidName: 'dev.safro.encore.EncoreWidget');
+    } catch (_) {}
+  }
 
   handler.mediaItem.listen((item) async {
     if (item == null || item.id == lastId) return;
     lastId = item.id;
-    await HomeWidget.saveWidgetData<String>('title', item.title);
-    await HomeWidget.saveWidgetData<String>('artist', item.artist ?? '');
+    try {
+      await HomeWidget.saveWidgetData<String>('title', item.title);
+      await HomeWidget.saveWidgetData<String>('artist', item.artist ?? '');
+    } catch (_) {}
     String? coverPath;
     final art = item.artUri;
     if (art != null) {
@@ -31,14 +37,18 @@ void startWidgetSync(AudioHandler handler) {
         }
       } catch (_) {}
     }
-    await HomeWidget.saveWidgetData<String>('cover', coverPath, deleteFile: false);
+    try {
+      await HomeWidget.saveWidgetData<String>('cover', coverPath, deleteFile: false);
+    } catch (_) {}
     await push();
   });
 
   handler.playbackState.listen((s) async {
     if (s.playing == lastPlaying) return;
     lastPlaying = s.playing;
-    await HomeWidget.saveWidgetData<bool>('playing', s.playing);
+    try {
+      await HomeWidget.saveWidgetData<bool>('playing', s.playing);
+    } catch (_) {}
     await push();
   });
 }

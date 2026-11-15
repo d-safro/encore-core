@@ -16,6 +16,10 @@ class SearchScreen extends ConsumerStatefulWidget {
 }
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
+  void _safeSetState(VoidCallback f) {
+    if (mounted) setState(f);
+  }
+
   final _ctl = TextEditingController();
   Timer? _debounce;
   SearchResult? _result;
@@ -23,6 +27,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _loading = false;
   String? _error;
   int _seq = 0;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _ctl.dispose();
+    super.dispose();
+  }
 
   List<String> get _history => prefs.getStringList('searchHistory') ?? const [];
 
@@ -33,24 +44,24 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Future<void> _run(String q) async {
     q = q.trim();
-    setState(() {
+    _safeSetState(() {
       _query = q;
       _error = null;
     });
     if (q.length < 2) {
-      setState(() => _result = null);
+      _safeSetState(() => _result = null);
       return;
     }
     final seq = ++_seq;
-    setState(() => _loading = true);
+    _safeSetState(() => _loading = true);
     try {
       final r = await ref.read(repoProvider).search(q);
       if (seq != _seq) return;
-      setState(() => _result = r);
+      _safeSetState(() => _result = r);
     } catch (e) {
-      if (seq == _seq) setState(() => _error = '$e');
+      if (seq == _seq) _safeSetState(() => _error = '$e');
     } finally {
-      if (seq == _seq && mounted) setState(() => _loading = false);
+      if (seq == _seq && mounted) _safeSetState(() => _loading = false);
     }
   }
 
@@ -108,7 +119,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             SectionTitle(
               'Recent searches',
               trailing: TextButton(
-                onPressed: () => setState(() => prefs.remove('searchHistory')),
+                onPressed: () => _safeSetState(() => prefs.remove('searchHistory')),
                 child: const Text('Clear'),
               ),
             ),

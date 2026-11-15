@@ -656,9 +656,12 @@ class DownloadToggle extends ConsumerWidget {
           }
         } else {
           await n.pin(pinKey, list);
-          if (context.mounted) toast(context, 'Downloading ${list.length} songs, and new ones as they\'re added');
+          if (context.mounted) toast(context, 'Downloading ${nSongs(list.length)}, and new ones as they\'re added');
         }
       },
     );
   }
 }
+
+/// "1 song" / "12 songs".
+String nSongs(int n) => n == 1 ? '1 song' : '$n songs';

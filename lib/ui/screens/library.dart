@@ -83,10 +83,20 @@ class AlbumsTab extends ConsumerStatefulWidget {
 }
 
 class _AlbumsTabState extends ConsumerState<AlbumsTab> {
+  void _safeSetState(VoidCallback f) {
+    if (mounted) setState(f);
+  }
+
   final _albums = <Album>[];
   bool _loading = false, _done = false;
   String? _error;
   final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   String get _type => widget.fixedType ?? _sortTypes[ref.read(settingsProvider).albumSort]!.$1;
 
@@ -100,7 +110,7 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
   }
 
   Future<void> _reset() async {
-    setState(() {
+    _safeSetState(() {
       _albums.clear();
       _done = false;
       _error = null;
@@ -110,20 +120,20 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
 
   Future<void> _more() async {
     if (_loading || _done) return;
-    setState(() => _loading = true);
+    _safeSetState(() => _loading = true);
     try {
       final repo = ref.read(repoProvider);
       final page = _type == 'starred'
           ? (await repo.starred()).albums
           : await repo.albums(_type, size: 60, offset: _albums.length);
-      setState(() {
+      _safeSetState(() {
         _albums.addAll(page.where((a) => !a.isLookup));
         _done = page.length < 60 || _type == 'starred' || _type == 'random' && _albums.length >= 240;
       });
     } catch (e) {
-      setState(() => _error = '$e');
+      _safeSetState(() => _error = '$e');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) _safeSetState(() => _loading = false);
     }
   }
 
@@ -131,7 +141,7 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
   Widget build(BuildContext context) {
     final grid = ref.watch(settingsProvider.select((s) => s.albumGrid));
     final sort = ref.watch(settingsProvider.select((s) => s.albumSort));
-    ref.listen(repoProvider, (_, _) => _reset());
+    ref.listen(repoProvider.select((r) => (r.online, r.client)), (_, _) => _reset()); // went on/offline, or another server
     final header = widget.fixedType != null
         ? null
         : Padding(
@@ -265,6 +275,10 @@ class _SongsTab extends ConsumerStatefulWidget {
 }
 
 class _SongsTabState extends ConsumerState<_SongsTab> {
+  void _safeSetState(VoidCallback f) {
+    if (mounted) setState(f);
+  }
+
   final _songs = <Song>[];
   bool _loading = false, _done = false;
   final _scroll = ScrollController();
@@ -278,19 +292,25 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _more());
   }
 
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
   Future<void> _more() async {
     if (_loading || _done) return;
-    setState(() => _loading = true);
+    _safeSetState(() => _loading = true);
     try {
       final page = await ref.read(repoProvider).allSongs(size: 200, offset: _songs.length);
-      setState(() {
+      _safeSetState(() {
         _songs.addAll(page);
         _done = page.length < 200;
       });
     } catch (_) {
       _done = true;
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) _safeSetState(() => _loading = false);
     }
   }
 
@@ -394,7 +414,7 @@ class _GenresTab extends ConsumerWidget {
               subtitle: Text(
                 [
                   if (g.albumCount > 0) '${g.albumCount} albums',
-                  if (g.songCount > 0) '${g.songCount} songs',
+                  if (g.songCount > 0) nSongs(g.songCount),
                 ].join(' · '),
               ),
               onTap: () => context.push('/genre/${Uri.encodeComponent(g.name)}'),
@@ -432,7 +452,7 @@ class _FavouritesTab extends ConsumerWidget {
             ],
             if (r.albums.isNotEmpty) Shelf(title: 'Albums', children: [for (final a in r.albums) AlbumCard(a)]),
             if (songs.isNotEmpty) ...[
-              SectionTitle('Liked songs', subtitle: '${songs.length} songs'),
+              SectionTitle('Liked songs', subtitle: nSongs(songs.length)),
               for (var i = 0; i < songs.length; i++) SongTile(songs[i], list: songs, index: i),
             ],
             if (r.isEmpty)

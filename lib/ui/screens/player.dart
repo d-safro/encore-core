@@ -641,6 +641,12 @@ class LyricsView extends ConsumerStatefulWidget {
 
 class _LyricsViewState extends ConsumerState<LyricsView> {
   final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
   final _keys = <int, GlobalKey>{};
   int _current = -1;
 
@@ -664,8 +670,9 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             _current = cur;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               final ctx = _keys[cur]?.currentContext;
-              if (ctx != null)
+              if (ctx != null) {
                 Scrollable.ensureVisible(ctx, alignment: 0.4, duration: const Duration(milliseconds: 300));
+              }
             });
           }
         }
@@ -718,7 +725,7 @@ class QueueScreen extends ConsumerWidget {
     final remaining = songs.skip(current).fold<int>(0, (n, s) => n + (s.duration ?? 0));
     return Scaffold(
       appBar: AppBar(
-        title: Text('Queue · ${songs.length} songs'),
+        title: Text('Queue · ${nSongs(songs.length)}'),
         actions: [
           if (online && songs.isNotEmpty)
             IconButton(

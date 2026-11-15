@@ -108,6 +108,15 @@ class LibraryDb {
     'disc': s.disc,
   };
 
+  /// Forget the library copy (signing out, or switching to another server). Downloads are kept.
+  Future<void> clearLibrary() async {
+    await db.transaction((tx) async {
+      for (final t in ['songs', 'albums', 'artists', 'playlists', 'playlist_songs', 'meta']) {
+        await tx.delete(t);
+      }
+    });
+  }
+
   Future<void> updateSong(Song s) async {
     await db.update('songs', _songRow(s), where: 'id = ?', whereArgs: [s.id]);
     await db.update('downloads', {'json': jsonEncode(s.toJson())}, where: 'song_id = ?', whereArgs: [s.id]);

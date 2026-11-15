@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import '../core/settings.dart';
 import 'account.dart';
@@ -49,9 +50,11 @@ class Repo {
     if (!online) return local();
     try {
       return await remote(client!);
-    } on SocketException {
-      return local();
+    } on IOException {
+      return local(); // no network, connection refused, TLS problems...
     } on TimeoutException {
+      return local();
+    } on http.ClientException {
       return local();
     }
   }
@@ -71,8 +74,25 @@ class Repo {
         .then((l) => settings.showLookup ? l : l.where((a) => !a.isLookup).toList()),
     () => type == 'starred'
         ? db.albums().then((l) => l.where((a) => a.starred).toList())
+        : type == 'recent' && genre == null
+        ? _downloadedAlbums(offset > 0 ? 0 : size)
         : db.albums(orderBy: _orderFor(type), limit: size, offset: offset, genre: genre),
   );
+
+  /// Offline stand-in for "recently played": albums you have songs downloaded from, newest download first.
+  Future<List<Album>> _downloadedAlbums(int size) async {
+    final ids = <String>[];
+    for (final (song, _, _) in await db.downloads()) {
+      if (song.albumId.isNotEmpty && !ids.contains(song.albumId)) ids.add(song.albumId);
+      if (ids.length >= size) break;
+    }
+    final out = <Album>[];
+    for (final id in ids) {
+      final a = await db.album(id);
+      if (a != null) out.add(a);
+    }
+    return out;
+  }
 
   Future<Album> album(String id) => _either((c) async {
     final a = await c.album(id);
@@ -136,7 +156,11 @@ class Repo {
 
   Future<List<Song>> randomSongs({int size = 50, String? genre}) => _either(
     (c) => c.randomSongs(size: size, genre: genre),
-    () async => (await db.allSongs())..shuffle(),
+    () async {
+      // Offline: shuffle what's downloaded; only fall back to everything if nothing is.
+      final downloaded = [for (final (song, _, _) in await db.downloads()) song];
+      return (downloaded.isNotEmpty ? downloaded : await db.allSongs())..shuffle();
+    },
   ).then((l) => l.take(size).toList());
 
   /// Songs by id, in the same order: from the phone's copy first, the server for the rest.
@@ -249,8 +273,46 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   DownloadsState build() {
     _sub ??= FileDownloader().updates.listen(_onUpdate);
     ref.onDispose(() => _sub?.cancel());
-    ref.read(dbProvider).downloadPaths().then((m) => state = state.copy(files: m));
+    _loadFiles();
     return DownloadsState(pins: (prefs.getStringList('downloadPins') ?? const []).toSet());
+  }
+
+  /// Loads the saved downloads, dropping any whose file is gone or isn't audio (e.g. a server error page).
+  Future<void> _loadFiles() async {
+    try {
+      final m = await ref.read(dbProvider).downloadPaths();
+      final bad = <String>[];
+      for (final e in m.entries) {
+        if (!await _isAudio(e.value)) bad.add(e.key);
+      }
+      for (final id in bad) {
+        try {
+          await File(m.remove(id)!).delete();
+        } catch (_) {}
+        await ref.read(dbProvider).removeDownload(id);
+      }
+      state = state.copy(files: {...m, ...state.files});
+    } catch (_) {}
+  }
+
+  /// A real song file: exists, isn't tiny, and doesn't start like a JSON / HTML / XML error reply.
+  static Future<bool> _isAudio(String path) async {
+    try {
+      final f = File(path);
+      if (!await f.exists()) return false;
+      final len = await f.length();
+      if (len < 8 * 1024) return false;
+      final raf = await f.open();
+      try {
+        final head = await raf.read(16);
+        final first = head.firstWhere((b) => b > 32, orElse: () => 0);
+        return first != 0x7B && first != 0x3C; // '{' or '<'
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {
+      return false;
+    }
   }
 
   bool has(String id) => state.files.containsKey(id);
@@ -291,12 +353,28 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   }
 
   Future<void> _onUpdate(TaskUpdate u) async {
+    try {
+      await _handleUpdate(u);
+    } catch (_) {} // e.g. a download that finished while the app was closed, and the server is offline now
+  }
+
+  Future<void> _handleUpdate(TaskUpdate u) async {
     final id = u.task.metaData;
+    if (id.isEmpty) return;
     if (u is TaskProgressUpdate) {
       if (u.progress >= 0) state = state.copy(progress: {...state.progress, id: u.progress});
     } else if (u is TaskStatusUpdate) {
       if (u.status == TaskStatus.complete) {
         final path = await u.task.filePath();
+        if (!await _isAudio(path)) {
+          // The server answered with an error instead of the song; don't keep it as a download.
+          _pending.remove(id);
+          try {
+            await File(path).delete();
+          } catch (_) {}
+          state = state.copy(progress: {...state.progress}..remove(id));
+          return;
+        }
         final song = _pending.remove(id) ?? await ref.read(clientProvider)?.song(id);
         if (song != null) await ref.read(dbProvider).addDownload(song, path, await File(path).length());
         state = state.copy(files: {...state.files, id: path}, progress: {...state.progress}..remove(id));

@@ -255,7 +255,7 @@ class _PlaylistShelf extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
-                    Text('${p.songCount ?? 0} songs', style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                    Text(nSongs(p.songCount ?? 0), style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                   ],
                 ),
               ),
