@@ -112,6 +112,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }
     });
     player.playingStream.distinct().listen((playing) {
+      if (!playing && _fadeFrom != null) _cancelFade(); // paused mid-blend: the rest plays plainly
       _periodicSave?.cancel();
       _periodicSave = playing
           ? Timer.periodic(const Duration(seconds: 30), (_) {
@@ -169,7 +170,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final i = player.currentIndex;
     final s = _settings;
     if (i == null || i >= _songs.length || s.replayGain == ReplayGainMode.off) {
-      _quiet(() => player.setVolume(1));
+      _setMainVolume(1);
       _quiet(() => loudness.setEnabled(false));
       return;
     }
@@ -184,7 +185,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     final gain = (albumMode ? rg.albumGain ?? rg.trackGain : rg.trackGain ?? rg.albumGain);
     if (gain == null) {
-      _quiet(() => player.setVolume(1));
+      _setMainVolume(1);
       _quiet(() => loudness.setEnabled(false));
       return;
     }
@@ -193,11 +194,139 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (peak > 0) db = min(db, -20 * log(peak) / ln10); // never push past full scale
     if (db <= 0) {
       _quiet(() => loudness.setEnabled(false));
-      _quiet(() => player.setVolume(pow(10, db / 20).toDouble()));
+      _setMainVolume(pow(10, db / 20).toDouble());
     } else {
-      _quiet(() => player.setVolume(1));
+      _setMainVolume(1);
       _quiet(() => loudness.setTargetGain(db));
       _quiet(() => loudness.setEnabled(true));
+    }
+  }
+
+  /// The ReplayGain volume of the playing song; during a crossfade the player plays a falling share of it.
+  double _mainVolume = 1, _fadeShare = 1;
+  void _setMainVolume(double v) {
+    _mainVolume = v;
+    _quiet(() => player.setVolume(v * _fadeShare));
+  }
+
+  /// The ReplayGain volume for a song (only the quieter-than-reference part; for the crossfade player).
+  double _rgVolume(int i) {
+    final s = _settings;
+    if (i >= _songs.length || s.replayGain == ReplayGainMode.off) return 1;
+    final song = _songs[i];
+    final rg = song.replayGain;
+    var albumMode = s.replayGain == ReplayGainMode.album;
+    if (s.replayGain == ReplayGainMode.auto) {
+      albumMode = (i > 0 && _songs[i - 1].albumId == song.albumId) ||
+          (i + 1 < _songs.length && _songs[i + 1].albumId == song.albumId);
+    }
+    final gain = albumMode ? rg.albumGain ?? rg.trackGain : rg.trackGain ?? rg.albumGain;
+    if (gain == null) return 1;
+    final peak = (albumMode ? rg.albumPeak ?? rg.trackPeak : rg.trackPeak ?? rg.albumPeak) ?? 1.0;
+    var db = gain + s.replayGainPreamp;
+    if (peak > 0) db = min(db, -20 * log(peak) / ln10);
+    return db <= 0 ? pow(10, db / 20).toDouble() : 1;
+  }
+
+  // ── Crossfade ──
+  // Near the end of a song the next one starts on a second player and the two cross over. When the main
+  // player reaches that song itself, it picks up where the second player is and the second one stops.
+  AudioPlayer? _fadePlayer;
+  int? _fadeFrom; // the index fading out
+  bool _fadeReady = false; // the next song is loaded on the second player
+  Timer? _fadeTimer;
+
+  bool _fadeAllowed(int i) {
+    final cf = _settings.crossfade;
+    if (cf <= 0 || radioStation != null || i + 1 >= _songs.length || player.loopMode == LoopMode.one) return false;
+    final a = _songs[i], b = _songs[i + 1];
+    if (isPodcastId(a.id) || isPodcastId(b.id) || a.isLookup || b.isLookup) return false;
+    if (!canPlay(b)) return false;
+    // an album played in order stays seamless (live records, DJ mixes, concept albums)
+    if (!_settings.crossfadeAlbums && a.albumId.isNotEmpty && a.albumId == b.albumId && (b.track ?? 0) == (a.track ?? 0) + 1) {
+      return false;
+    }
+    return true;
+  }
+
+  void _fadeTick(Duration pos) {
+    if (!player.playing) return;
+    final i = player.currentIndex, dur = player.duration;
+    if (i == null || dur == null || dur <= Duration.zero) return;
+    final left = dur - pos;
+    final cf = Duration(seconds: _settings.crossfade);
+    if (_fadeFrom != null && _fadeFrom != i) _cancelFade(); // moved somewhere else
+    if (_fadeFrom == null && left <= cf + const Duration(seconds: 6) && left > cf && _fadeAllowed(i)) {
+      _prepareFade(i); // load the next song a few seconds early so the fade starts on time
+    }
+    if (_fadeFrom == i && _fadeReady && _fadeTimer == null && left <= cf && left > const Duration(milliseconds: 500)) {
+      _runFade(i, left);
+    }
+  }
+
+  Future<void> _prepareFade(int i) async {
+    _fadeFrom = i;
+    _fadeReady = false;
+    // shares the main player's audio focus: it must not pause the main player when it starts
+    final fp = _fadePlayer ??= AudioPlayer(handleInterruptions: false, handleAudioSessionActivation: false);
+    try {
+      await fp.setVolume(0);
+      await fp.setAudioSource(_source(_songs[i + 1]), preload: true);
+      await fp.setSpeed(player.speed);
+      if (_fadeFrom == i) _fadeReady = true;
+    } catch (_) {
+      if (_fadeFrom == i) _fadeFrom = null; // can't load it: no fade this time, plain gapless change
+    }
+  }
+
+  void _runFade(int i, Duration left) {
+    final fp = _fadePlayer!;
+    final start = DateTime.now();
+    final target = _rgVolume(i + 1);
+    fp.play();
+    _fadeTimer = Timer.periodic(const Duration(milliseconds: 50), (t) {
+      final x = (DateTime.now().difference(start).inMilliseconds / left.inMilliseconds).clamp(0.0, 1.0);
+      // equal-power curves: the overall loudness stays even through the blend
+      _fadeShare = cos(x * pi / 2);
+      _quiet(() => player.setVolume(_mainVolume * _fadeShare));
+      _quiet(() => fp.setVolume(target * sin(x * pi / 2)));
+      if (x >= 1) t.cancel();
+    });
+  }
+
+  /// The main player has reached the song the second player is playing: continue it from there.
+  Future<void> _handOff() async {
+    final fp = _fadePlayer;
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _fadeFrom = null;
+    if (fp == null || !fp.playing) {
+      _fadeShare = 1;
+      _setMainVolume(_mainVolume);
+      return;
+    }
+    try {
+      _fadeShare = 0;
+      await player.setVolume(0);
+      await player.seek(fp.position + const Duration(milliseconds: 120));
+      await player.processingStateStream
+          .firstWhere((s) => s == ProcessingState.ready)
+          .timeout(const Duration(seconds: 4));
+    } catch (_) {}
+    _fadeShare = 1;
+    _setMainVolume(_mainVolume);
+    await _quiet(() => fp.stop());
+  }
+
+  void _cancelFade() {
+    _fadeTimer?.cancel();
+    _fadeTimer = null;
+    _fadeFrom = null;
+    _fadeReady = false;
+    _quiet(() async => _fadePlayer?.stop());
+    if (_fadeShare != 1) {
+      _fadeShare = 1;
+      _setMainVolume(_mainVolume);
     }
   }
 
@@ -803,6 +932,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final s = _songs[i];
     if (s.id == _lastSongId) return; // same song, maybe moved by a queue edit: not a new track
     _lastSongId = s.id;
+    if (_fadeFrom != null) {
+      _fadeFrom == i - 1 && _fadeTimer != null ? _handOff() : _cancelFade();
+    }
     mediaItem.add(_mediaItem(s));
     _applyReplayGain();
     _listened = Duration.zero;
@@ -854,6 +986,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   /// Counts real listening time (not seeking) and submits the play after half the song or 4 minutes.
   void _onPosition(Duration pos) {
+    _fadeTick(pos);
     final now = DateTime.now();
     if (player.playing && _lastTick != null) {
       final d = now.difference(_lastTick!);
@@ -1030,6 +1163,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   @override
   Future<void> seek(Duration position) async {
+    if (_fadeFrom != null) _cancelFade();
     await player.seek(position);
     _reportSoon();
   }

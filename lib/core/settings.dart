@@ -25,6 +25,8 @@ class Settings {
   final ReplayGainMode replayGain;
   final double replayGainPreamp; // dB
   final bool skipSilence;
+  final int crossfade; // seconds the end of a song overlaps the next (0 = off)
+  final bool crossfadeAlbums; // also between songs of an album played in order (else those stay gapless)
   final double speed;
   final bool endlessRadio; // keep the music going with sound-alikes when the queue ends
   final bool scrobble;
@@ -57,6 +59,8 @@ class Settings {
     this.replayGain = ReplayGainMode.auto,
     this.replayGainPreamp = 0,
     this.skipSilence = false,
+    this.crossfade = 0,
+    this.crossfadeAlbums = false,
     this.speed = 1.0,
     this.endlessRadio = false,
     this.scrobble = true,
@@ -92,6 +96,8 @@ class Settings {
     'replayGain': replayGain.name,
     'replayGainPreamp': replayGainPreamp,
     'skipSilence': skipSilence,
+    'crossfade': crossfade,
+    'crossfadeAlbums': crossfadeAlbums,
     'speed': speed,
     'endlessRadio': endlessRadio,
     'scrobble': scrobble,
@@ -129,6 +135,8 @@ class Settings {
       replayGain: pick(ReplayGainMode.values, j['replayGain'], d.replayGain),
       replayGainPreamp: (j['replayGainPreamp'] as num?)?.toDouble() ?? d.replayGainPreamp,
       skipSilence: j['skipSilence'] ?? d.skipSilence,
+      crossfade: (j['crossfade'] as num?)?.toInt() ?? d.crossfade,
+      crossfadeAlbums: j['crossfadeAlbums'] ?? d.crossfadeAlbums,
       speed: (j['speed'] as num?)?.toDouble() ?? d.speed,
       endlessRadio: j['endlessRadio'] ?? d.endlessRadio,
       scrobble: j['scrobble'] ?? d.scrobble,

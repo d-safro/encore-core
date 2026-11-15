@@ -12,11 +12,13 @@ import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/cover_cache.dart';
 import '../../data/episode_alerts.dart';
+import '../../data/updates.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../data/online_lyrics.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
+import '../update.dart';
 import '../widgets.dart';
 
 const _formats = {'raw': 'Original', 'opus': 'Opus', 'mp3': 'MP3', 'aac': 'AAC'};
@@ -210,6 +212,26 @@ class SettingsScreen extends ConsumerWidget {
             ),
             onTap: () => _replayGain(context, ref, s),
           ),
+          ListTile(
+            leading: const Icon(Icons.compare_arrows_rounded),
+            title: const Text('Crossfade'),
+            subtitle: Text(s.crossfade == 0 ? 'Off: songs follow each other with no gap' : 'The last ${s.crossfade} s of a song blend into the next'),
+          ),
+          Slider(
+            value: s.crossfade.toDouble(),
+            max: 12,
+            divisions: 12,
+            label: s.crossfade == 0 ? 'Off' : '${s.crossfade} s',
+            onChanged: (v) => set('crossfade', v.round()),
+          ),
+          if (s.crossfade > 0)
+            SwitchListTile(
+              secondary: const SizedBox(width: 24),
+              title: const Text('Crossfade inside albums'),
+              subtitle: const Text('Off keeps an album played in order seamless, like a live record'),
+              value: s.crossfadeAlbums,
+              onChanged: (v) => set('crossfadeAlbums', v),
+            ),
           SwitchListTile(
             secondary: const Icon(Icons.fast_forward_outlined),
             title: const Text('Skip silence'),
@@ -268,6 +290,21 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text('A music player for Navidrome and other Subsonic servers'),
           ),
           const _CoverCacheTile(),
+          SwitchListTile(
+            secondary: const Icon(Icons.system_update_rounded),
+            title: const Text('Check for updates'),
+            subtitle: const Text('Asks GitHub about twice a day and offers new versions'),
+            value: autoUpdateChecks(prefs),
+            onChanged: (v) async {
+              await prefs.setBool('updateChecks', v);
+              ref.invalidate(settingsProvider); // redraw
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.refresh_rounded),
+            title: const Text('Check now'),
+            onTap: () => checkForUpdatesNow(context),
+          ),
           const SizedBox(height: 32),
         ],
       ),

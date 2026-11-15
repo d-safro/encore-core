@@ -17,7 +17,9 @@ import 'ui/screens/login.dart';
 import 'ui/screens/player.dart';
 import 'ui/screens/search.dart';
 import 'ui/screens/settings.dart';
+import 'data/updates.dart';
 import 'ui/state.dart';
+import 'ui/update.dart';
 import 'ui/widgets.dart';
 
 final _rootKey = GlobalKey<NavigatorState>();
@@ -188,6 +190,14 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     Future.delayed(const Duration(seconds: 20), () => ref.read(downloadsProvider.notifier).refreshPins());
     // keep the phone's copy of the library fresh (for offline browsing): at most every 12 hours
     Future.delayed(const Duration(seconds: 45), _syncIfStale);
+    // a newer Encore on GitHub? (at most twice a day; Settings can turn this off)
+    Future.delayed(const Duration(seconds: 8), _offerUpdate);
+  }
+
+  Future<void> _offerUpdate() async {
+    final u = await checkForUpdateQuietly(prefs);
+    final ctx = _rootKey.currentContext;
+    if (u != null && ctx != null && ctx.mounted) await showUpdateDialog(ctx, u);
   }
 
   @override
