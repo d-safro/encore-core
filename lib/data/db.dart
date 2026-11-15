@@ -147,6 +147,15 @@ class LibraryDb {
       'SELECT s.json FROM playlist_songs ps JOIN songs s ON s.id = ps.song_id WHERE ps.playlist_id = ? ORDER BY ps.pos',
       [id]));
 
+  Future<List<Song>> songsByIds(List<String> ids) async {
+    final out = <Song>[];
+    for (var i = 0; i < ids.length; i += 500) {
+      final chunk = ids.skip(i).take(500).toList();
+      out.addAll(_songs(await db.query('songs', where: 'id IN (${List.filled(chunk.length, '?').join(',')})', whereArgs: chunk)));
+    }
+    return out;
+  }
+
   Future<List<Song>> starredSongs() async => _songs(await db.query('songs', where: 'starred = 1', orderBy: 'artist_lc'));
 
   Future<List<Song>> songsByGenre(String genre) async =>

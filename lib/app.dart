@@ -8,6 +8,7 @@ import 'data/account.dart';
 import 'data/library.dart';
 import 'playback/handler.dart';
 import 'ui/screens/browse.dart';
+import 'ui/screens/discover.dart';
 import 'ui/screens/home.dart';
 import 'ui/screens/library.dart';
 import 'ui/screens/login.dart';
@@ -54,6 +55,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (ctx, state, child) => _Shell(location: state.uri.path, child: child),
         routes: [
           GoRoute(path: '/home', pageBuilder: (_, _) => const NoTransitionPage(child: HomeScreen())),
+          GoRoute(path: '/discover', pageBuilder: (_, _) => const NoTransitionPage(child: DiscoverScreen())),
           GoRoute(
             path: '/library',
             pageBuilder: (_, s) => NoTransitionPage(
@@ -84,20 +86,24 @@ class _Shell extends ConsumerWidget {
   final String location;
   final Widget child;
 
-  static const _tabs = ['/home', '/library', '/search'];
+  static const _tabs = ['/home', '/discover', '/library', '/search'];
+  static int _lastTab = 0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final idx = _tabs.indexWhere(location.startsWith);
+    if (idx >= 0) _lastTab = idx; // detail pages keep the tab they were opened from
     return Scaffold(
       body: child,
       bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
         const MiniPlayer(),
         NavigationBar(
-          selectedIndex: idx < 0 ? 0 : idx,
+          selectedIndex: _lastTab,
           onDestinationSelected: (i) => context.go(_tabs[i]),
           destinations: const [
             NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
+            NavigationDestination(
+                icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'Discover'),
             NavigationDestination(
                 icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
             NavigationDestination(icon: Icon(Icons.search), label: 'Search'),

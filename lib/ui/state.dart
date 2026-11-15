@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rxdart/rxdart.dart';
 
 import '../core/settings.dart';
+import '../data/ai.dart';
 import '../data/library.dart';
 import '../data/online_lyrics.dart';
 import '../data/models.dart';
@@ -47,6 +48,15 @@ final artistInfoProvider = FutureProvider.autoDispose.family<ArtistInfo, String>
 final topSongsProvider = FutureProvider.autoDispose.family<List<Song>, String>((ref, name) async {
   final repo = ref.watch(repoProvider);
   return repo.online ? repo.client!.topSongs(name) : const <Song>[];
+});
+final soundAlikeArtistsProvider = FutureProvider.autoDispose.family<List<Artist>, String>((ref, name) async {
+  final ai = ref.watch(aiProvider);
+  if (ai == null) return const <Artist>[];
+  try {
+    return await ai.similarArtists(name);
+  } catch (_) {
+    return const <Artist>[];
+  }
 });
 final playlistProvider =
     FutureProvider.autoDispose.family<Playlist, String>((ref, id) => ref.watch(repoProvider).playlist(id));

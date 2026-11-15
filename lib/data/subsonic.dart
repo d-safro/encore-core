@@ -297,6 +297,23 @@ class SubsonicClient {
     }
   }
 
+  // ── AudioMuse-AI recommendations (through music-lookup on the server: /rest/audiomuse/<endpoint>) ──
+  Future<dynamic> audiomuse(String endpoint, {Map<String, dynamic> query = const {}, Map<String, dynamic>? body}) async {
+    final u = url('audiomuse/$endpoint', query);
+    final res = body == null
+        ? await _http.get(u).timeout(const Duration(seconds: 90))
+        : await _http
+            .post(u, headers: {'Content-Type': 'application/json'}, body: jsonEncode(body))
+            .timeout(const Duration(seconds: 90));
+    if (res.statusCode == 404) throw SubsonicException(404, 'Your server doesn\'t offer AI recommendations');
+    if (res.statusCode == 401) throw SubsonicException(40, 'Wrong username or password');
+    final data = res.bodyBytes.isEmpty ? null : jsonDecode(utf8.decode(res.bodyBytes));
+    if (res.statusCode != 200) {
+      throw SubsonicException(res.statusCode, (data is Map ? data['error'] ?? data['message'] : null)?.toString() ?? 'AI recommendations failed (${res.statusCode})');
+    }
+    return data;
+  }
+
   // ── Media URLs ──
   Uri streamUrl(String id, {String? format, int? maxBitRate}) => url('stream', {
         'id': id,

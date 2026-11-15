@@ -117,6 +117,21 @@ class Repo {
       (c) => c.randomSongs(size: size, genre: genre),
       () async => (await db.allSongs())..shuffle()).then((l) => l.take(size).toList());
 
+  /// Songs by id, in the same order: from the phone's copy first, the server for the rest.
+  Future<List<Song>> resolveSongs(List<String> ids) async {
+    final local = {for (final s in await db.songsByIds(ids)) s.id: s};
+    final missing = ids.where((id) => !local.containsKey(id)).toList();
+    if (missing.isNotEmpty && online) {
+      for (var i = 0; i < missing.length; i += 8) {
+        final batch = await Future.wait(missing.skip(i).take(8).map((id) => client!.song(id).then<Song?>((s) => s, onError: (_) => null)));
+        for (final s in batch.whereType<Song>()) {
+          local[s.id] = s;
+        }
+      }
+    }
+    return [for (final id in ids) if (local[id] != null) local[id]!];
+  }
+
   Future<List<Song>> allSongs({int size = 200, int offset = 0}) => _either(
       (c) => c.search('', songCount: size, offset: offset, artistCount: 0, albumCount: 0, client: 'Encore-sync')
           .then((r) => r.songs.where((s) => !s.isLookup).toList()),

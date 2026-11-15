@@ -259,9 +259,35 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
               ),
             ),
           ],
+          ...switch (ref.watch(soundAlikeArtistsProvider(a.name))) {
+            AsyncData(:final value) when value.isNotEmpty => [
+                Shelf(
+                  title: 'Sounds like',
+                  height: 150,
+                  children: [
+                    for (final s in value)
+                      SizedBox(
+                        width: 110,
+                        child: InkWell(
+                          onTap: () async {
+                            final hit = s.id.isNotEmpty ? s : (await ref.read(repoProvider).search(s.name)).artists.firstOrNull;
+                            if (hit != null && context.mounted) context.push('/artist/${hit.id}');
+                          },
+                          child: Column(children: [
+                            Cover('ar-${s.id}', size: 96, circle: true, icon: Icons.person),
+                            const SizedBox(height: 6),
+                            Text(s.name, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: t.bodySmall),
+                          ]),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            _ => const <Widget>[],
+          },
           if ((info.value?.similar ?? const []).isNotEmpty)
             Shelf(
-              title: 'Similar artists',
+              title: 'Similar artists (Last.fm)',
               height: 150,
               children: [
                 for (final s in info.value!.similar)
@@ -293,7 +319,7 @@ class PlaylistScreen extends ConsumerStatefulWidget {
   ConsumerState<PlaylistScreen> createState() => _PlaylistScreenState();
 }
 
-class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
+class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhileDownloading {
   bool _editing = false;
   List<Song>? _edit;
 
@@ -388,6 +414,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
         }
         final songs = p.songs.where((s) => !s.isLookup).toList();
         final pending = p.songs.length - songs.length;
+        pollIf(pending > 0, () => ref.invalidate(playlistProvider(widget.id)));
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(playlistProvider(widget.id)),
           child: ListView(children: [

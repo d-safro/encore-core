@@ -206,6 +206,16 @@ Future<void> showSongMenu(BuildContext context, WidgetRef ref, Song song, {List<
                     if (!song.starred) toggleStarSong(context, ref, song);
                   },
                 ),
+                if (online)
+                  ListTile(
+                    leading: const Icon(Icons.playlist_add),
+                    title: const Text('Add to playlist'),
+                    subtitle: const Text('Downloads it, then adds it to the playlist'),
+                    onTap: () {
+                      close();
+                      addToPlaylist(context, ref, [song]);
+                    },
+                  ),
                 ListTile(
                   leading: const Icon(Icons.play_circle_outline),
                   title: const Text('Play preview'),
