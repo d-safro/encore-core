@@ -464,5 +464,24 @@ class SubsonicClient {
 
   Uri coverUrl(String coverArt, {int size = 600}) => url('getCoverArt', {'id': coverArt, 'size': size});
 
+  /// The same picture's address every time (a fixed salt per picture), so the media notification's artwork
+  /// cache finds it again, also offline. Screens use [coverUrl] with their own cache keys.
+  Uri stableCoverUrl(String coverArt, {int size = 512}) {
+    final salt = md5.convert(utf8.encode('${creds.username}|$coverArt')).toString().substring(0, 12);
+    final token = md5.convert(utf8.encode(creds.password + salt)).toString();
+    return Uri.parse('${creds.base}/rest/getCoverArt').replace(
+      queryParameters: {
+        'u': creds.username,
+        't': token,
+        's': salt,
+        'v': apiVersion,
+        'c': clientName,
+        'f': 'json',
+        'id': coverArt,
+        'size': '$size',
+      },
+    );
+  }
+
   void close() => _http.close();
 }

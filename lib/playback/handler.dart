@@ -130,6 +130,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (s == ProcessingState.completed || s == ProcessingState.idle) _reportSoon();
     });
     container.listen(settingsProvider, (prev, next) => _applySettings(prev, next), fireImmediately: true);
+    // going offline, or a song finishing its download: queued copies switch to the phone's file
+    container.listen(offlineProvider, (prev, next) {
+      if (next == true) useDownloadedFiles();
+    });
+    container.listen(downloadsProvider.select((d) => d.files.length), (prev, next) {
+      if (next > (prev ?? 0)) useDownloadedFiles();
+    });
     await _restoreQueue();
   }
 
@@ -200,10 +207,16 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       container.read(downloadsProvider).files.containsKey(s.id) ||
       (container.read(clientProvider) != null && !container.read(offlineProvider));
 
+  final Set<String> _onPhone = {}; // queue songs whose source is the downloaded file
+
   AudioSource _source(Song s) {
     final local = container.read(downloadsProvider).files[s.id];
     final item = _mediaItem(s);
-    if (local != null) return AudioSource.file(local, tag: item);
+    if (local != null) {
+      _onPhone.add(s.id);
+      return AudioSource.file(local, tag: item);
+    }
+    _onPhone.remove(s.id);
     final c = container.read(clientProvider);
     if (c == null) return AudioSource.uri(Uri.parse('file:///missing/${s.id}'), tag: item); // fails, then skipped
     final set = _settings;
@@ -225,7 +238,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       artist: s.artist,
       genre: s.genre,
       duration: s.duration != null ? Duration(seconds: s.duration!) : null,
-      artUri: c != null && s.coverArt.isNotEmpty ? c.coverUrl(s.coverArt, size: 512) : null,
+      artUri: c != null && s.coverArt.isNotEmpty ? c.stableCoverUrl(s.coverArt) : null,
       rating: Rating.newHeartRating(s.starred),
       extras: {'albumId': s.albumId, 'artistId': s.artistId},
     );
@@ -390,10 +403,42 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     player.play();
   }
 
-  /// After a song failed: the next one that can play (offline, only downloaded songs can).
-  Future<void> _skipToPlayable() async {
-    final from = (player.currentIndex ?? -1) + 1;
+  /// Queue entries that are downloaded but were set up to stream (queued before the download finished, or
+  /// restored before the download list was read) switch to the phone's file. The playing one is left alone
+  /// unless [includeCurrent] (it just failed).
+  Future<void> useDownloadedFiles({bool includeCurrent = false}) async {
     final files = container.read(downloadsProvider).files;
+    final cur = player.currentIndex;
+    _rearranging = true;
+    try {
+      for (var i = 0; i < _songs.length; i++) {
+        final s = _songs[i];
+        if (!files.containsKey(s.id) || _onPhone.contains(s.id) || (i == cur && !includeCurrent)) continue;
+        final wasPlaying = i == cur && player.playing;
+        await player.removeAudioSourceAt(i);
+        await player.insertAudioSource(i, _source(s));
+        if (i == cur) await player.seek(Duration.zero, index: i);
+        if (wasPlaying) player.play();
+      }
+    } catch (_) {
+      // the queue changed underneath; the next failure tries again
+    } finally {
+      _rearranging = false;
+    }
+  }
+
+  /// After a song failed: play it from the phone if it's downloaded, else the next one that can play
+  /// (offline, only downloaded songs can).
+  Future<void> _skipToPlayable() async {
+    final cur = player.currentIndex;
+    final files = container.read(downloadsProvider).files;
+    if (cur != null && cur < _songs.length && files.containsKey(_songs[cur].id) && !_onPhone.contains(_songs[cur].id)) {
+      await useDownloadedFiles(includeCurrent: true);
+      player.play();
+      return;
+    }
+    await useDownloadedFiles();
+    final from = (cur ?? -1) + 1;
     final offline = container.read(offlineProvider);
     for (var i = from; i < _songs.length; i++) {
       if (!offline || files.containsKey(_songs[i].id)) {

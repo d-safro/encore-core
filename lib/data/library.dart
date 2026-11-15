@@ -372,9 +372,12 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   DownloadsState build() {
     _sub ??= FileDownloader().updates.listen(_onUpdate);
     ref.onDispose(() => _sub?.cancel());
-    _loadFiles();
+    loaded = _loadFiles();
     return DownloadsState(pins: (prefs.getStringList('downloadPins') ?? const []).toSet());
   }
+
+  /// Done once the saved downloads are known (the player waits for it before restoring the queue).
+  Future<void> loaded = Future.value();
 
   /// Loads the saved downloads, dropping any whose file is gone or isn't audio (e.g. a server error page).
   Future<void> _loadFiles() async {
