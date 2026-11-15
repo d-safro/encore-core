@@ -19,6 +19,7 @@ import 'ui/screens/search.dart';
 import 'ui/screens/settings.dart';
 import 'data/updates.dart';
 import 'ui/state.dart';
+import 'ui/screens/stats.dart';
 import 'ui/update.dart';
 import 'ui/widgets.dart';
 
@@ -108,6 +109,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/folders', builder: (_, _) => const FoldersScreen()),
           GoRoute(path: '/radio', builder: (_, _) => const RadioScreen()),
           GoRoute(path: '/liked', builder: (_, _) => const LikedSongsScreen()),
+          GoRoute(path: '/stats', builder: (_, _) => const StatsScreen()),
           GoRoute(path: '/podcasts/add', builder: (_, _) => const AddPodcastScreen()),
           GoRoute(
             path: '/podcast/:id',

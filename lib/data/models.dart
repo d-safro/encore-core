@@ -536,3 +536,60 @@ class PodcastEpisode {
 
 /// Podcast episode ids start with "pe-", shows with "pc-".
 bool isPodcastId(String id) => id.startsWith('pe-');
+
+/// Plays, minutes and favourites for a period (from music-lookup's play log; "all" from play counts).
+class ListeningStats {
+  const ListeningStats({
+    required this.period,
+    this.plays = 0,
+    this.minutes = 0,
+    this.songCount = 0,
+    this.artistCount = 0,
+    this.albumCount = 0,
+    this.newArtists,
+    this.from,
+    this.to,
+    this.since,
+    this.songs = const [],
+    this.artists = const [],
+    this.albums = const [],
+    this.days = const [],
+    this.hours = const [],
+  });
+  final String period;
+  final int plays, minutes, songCount, artistCount, albumCount;
+  final int? newArtists;
+  final DateTime? from, to, since;
+  final List<(Song, int)> songs;
+  final List<(Artist, int, int)> artists; // artist, plays, minutes
+  final List<(Album, int)> albums;
+  final List<(DateTime, int)> days; // minutes per day
+  final List<int> hours; // minutes per hour of the day
+
+  bool get isEmpty => plays == 0;
+
+  factory ListeningStats.fromJson(Map<String, dynamic> j) {
+    DateTime? ms(dynamic v) => v is num && v > 0 ? DateTime.fromMillisecondsSinceEpoch(v.toInt()) : null;
+    int n(dynamic v) => v is num ? v.toInt() : 0;
+    return ListeningStats(
+      period: _str(j['period']),
+      plays: n(j['plays']),
+      minutes: n(j['minutes']),
+      songCount: n(j['songs']),
+      artistCount: n(j['artistCount']),
+      albumCount: n(j['albumCount']),
+      newArtists: j['newArtists'] is num ? n(j['newArtists']) : null,
+      from: ms(j['from']),
+      to: ms(j['to']),
+      since: ms(j['since']),
+      songs: [for (final x in _list(j['song'])) (Song.fromJson(x), n(x['plays']))],
+      artists: [for (final x in _list(j['artist'])) (Artist.fromJson(x), n(x['plays']), n(x['minutes']))],
+      albums: [for (final x in _list(j['album'])) (Album.fromJson(x), n(x['plays']))],
+      days: [
+        for (final x in _list(j['day']))
+          if (DateTime.tryParse(_str(x['date'])) != null) (DateTime.parse(_str(x['date'])), n(x['minutes'])),
+      ],
+      hours: [for (final h in (j['hour'] as List? ?? const [])) n(h)],
+    );
+  }
+}

@@ -151,6 +151,7 @@ class _QuickPills extends ConsumerWidget {
               }
               await audioHandler.playSongs(songs, source: 'ai:Made for you');
             }),
+          if (online) pill(Icons.insights_rounded, 'Your stats', () async => context.push('/stats')),
           if (online)
             pill(
               Icons.groups_rounded,

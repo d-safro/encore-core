@@ -421,6 +421,12 @@ class SubsonicClient {
         .toList();
   }
 
+  /// Your listening for a week / month / year (offset 1 = the one before) or all time (music-lookup).
+  Future<ListeningStats> listeningStats(String period, {int offset = 0}) async {
+    final r = await call('getListeningStats', {'period': period, 'offset': offset});
+    return ListeningStats.fromJson(_m(r['listeningStats']));
+  }
+
   Future<List<Song>> songDiscoveries(String id, {int count = 30}) async {
     try {
       final r = await call('getSongDiscoveries', {'id': id, 'count': count}, null, const Duration(seconds: 60));
