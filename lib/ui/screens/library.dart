@@ -1,0 +1,367 @@
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../core/settings.dart';
+import '../../data/account.dart';
+import '../../data/library.dart';
+import '../../data/models.dart';
+import '../../playback/handler.dart';
+import '../actions.dart';
+import '../state.dart';
+import '../widgets.dart';
+
+const _sortTypes = {
+  AlbumSort.recent: ('recent', 'Recently played'),
+  AlbumSort.newest: ('newest', 'Recently added'),
+  AlbumSort.alphabetical: ('alphabeticalByName', 'Name'),
+  AlbumSort.artist: ('alphabeticalByArtist', 'Artist'),
+  AlbumSort.year: ('byYear', 'Year'),
+  AlbumSort.frequent: ('frequent', 'Most played'),
+  AlbumSort.starred: ('starred', 'Favourites'),
+  AlbumSort.random: ('random', 'Random'),
+};
+
+class LibraryScreen extends ConsumerWidget {
+  const LibraryScreen({super.key, this.initialTab = 0});
+  final int initialTab;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return DefaultTabController(
+      length: 6,
+      initialIndex: initialTab,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Library'),
+          actions: [
+            IconButton(icon: const Icon(Icons.folder_outlined), tooltip: 'Folders', onPressed: () => context.push('/folders')),
+            IconButton(icon: const Icon(Icons.radio_outlined), tooltip: 'Radio', onPressed: () => context.push('/radio')),
+          ],
+          bottom: const TabBar(isScrollable: true, tabAlignment: TabAlignment.start, tabs: [
+            Tab(text: 'Albums'),
+            Tab(text: 'Artists'),
+            Tab(text: 'Songs'),
+            Tab(text: 'Playlists'),
+            Tab(text: 'Genres'),
+            Tab(text: 'Favourites'),
+          ]),
+        ),
+        body: const TabBarView(children: [
+          AlbumsTab(),
+          _ArtistsTab(),
+          _SongsTab(),
+          _PlaylistsTab(),
+          _GenresTab(),
+          _FavouritesTab(),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Paged album grid / list with sort choice. Also used for "see all" from the home screen.
+class AlbumsTab extends ConsumerStatefulWidget {
+  const AlbumsTab({super.key, this.fixedType});
+  final String? fixedType;
+  @override
+  ConsumerState<AlbumsTab> createState() => _AlbumsTabState();
+}
+
+class _AlbumsTabState extends ConsumerState<AlbumsTab> {
+  final _albums = <Album>[];
+  bool _loading = false, _done = false;
+  String? _error;
+  final _scroll = ScrollController();
+
+  String get _type => widget.fixedType ?? _sortTypes[ref.read(settingsProvider).albumSort]!.$1;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 600) _more();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _more());
+  }
+
+  Future<void> _reset() async {
+    setState(() {
+      _albums.clear();
+      _done = false;
+      _error = null;
+    });
+    await _more();
+  }
+
+  Future<void> _more() async {
+    if (_loading || _done) return;
+    setState(() => _loading = true);
+    try {
+      final repo = ref.read(repoProvider);
+      final page = _type == 'starred'
+          ? (await repo.starred()).albums
+          : await repo.albums(_type, size: 60, offset: _albums.length);
+      setState(() {
+        _albums.addAll(page.where((a) => !a.isLookup));
+        _done = page.length < 60 || _type == 'starred' || _type == 'random' && _albums.length >= 240;
+      });
+    } catch (e) {
+      setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final grid = ref.watch(settingsProvider.select((s) => s.albumGrid));
+    final sort = ref.watch(settingsProvider.select((s) => s.albumSort));
+    ref.listen(repoProvider, (_, _) => _reset());
+    final header = widget.fixedType != null
+        ? null
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
+            child: Row(children: [
+              MenuAnchor(
+                builder: (ctx, ctl, _) => TextButton.icon(
+                  icon: const Icon(Icons.sort),
+                  label: Text(_sortTypes[sort]!.$2),
+                  onPressed: () => ctl.isOpen ? ctl.close() : ctl.open(),
+                ),
+                menuChildren: [
+                  for (final e in _sortTypes.entries)
+                    MenuItemButton(
+                      leadingIcon: Icon(e.key == sort ? Icons.check : null),
+                      onPressed: () {
+                        ref.read(settingsProvider.notifier).update({'albumSort': e.key.name});
+                        _reset();
+                      },
+                      child: Text(e.value.$2),
+                    ),
+                ],
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(grid ? Icons.view_list_outlined : Icons.grid_view_outlined),
+                onPressed: () => ref.read(settingsProvider.notifier).update({'albumGrid': !grid}),
+              ),
+            ]),
+          );
+    if (_error != null && _albums.isEmpty) {
+      return AsyncView<void>(AsyncError(_error!, StackTrace.empty), (_) => const SizedBox(), onRetry: _reset);
+    }
+    return RefreshIndicator(
+      onRefresh: _reset,
+      child: CustomScrollView(controller: _scroll, slivers: [
+        if (header != null) SliverToBoxAdapter(child: header),
+        if (grid)
+          SliverPadding(
+            padding: const EdgeInsets.all(8),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 190, childAspectRatio: 0.74, mainAxisSpacing: 4, crossAxisSpacing: 4),
+              delegate: SliverChildBuilderDelegate((_, i) => AlbumCard(_albums[i], width: double.infinity),
+                  childCount: _albums.length),
+            ),
+          )
+        else
+          SliverList.builder(
+            itemCount: _albums.length,
+            itemBuilder: (_, i) {
+              final a = _albums[i];
+              return ListTile(
+                leading: Cover(a.coverArt, size: 52),
+                title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text([a.artist, if (a.year != null) '${a.year}'].join(' · '), maxLines: 1),
+                onTap: () => context.push('/album/${a.id}'),
+                onLongPress: () => showCollectionMenu(context, ref, a.name, () async => (await ref.read(repoProvider).album(a.id)).songs),
+              );
+            },
+          ),
+        if (_loading) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))),
+        const SliverToBoxAdapter(child: SizedBox(height: 16)),
+      ]),
+    );
+  }
+}
+
+class AlbumListScreen extends StatelessWidget {
+  const AlbumListScreen({super.key, required this.type, required this.title});
+  final String type, title;
+  @override
+  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(title)), body: AlbumsTab(fixedType: type));
+}
+
+class _ArtistsTab extends ConsumerWidget {
+  const _ArtistsTab();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return AsyncView(ref.watch(artistsProvider), (List<Artist> artists) {
+      final list = artists.where((a) => !a.isLookup).toList();
+      return RefreshIndicator(
+        onRefresh: () async => ref.invalidate(artistsProvider),
+        child: ListView.builder(
+          itemCount: list.length,
+          itemBuilder: (_, i) {
+            final a = list[i];
+            return ListTile(
+              leading: Cover(a.coverArt, size: 48, circle: true, icon: Icons.person),
+              title: Text(a.name),
+              subtitle: a.albumCount != null ? Text('${a.albumCount} albums') : null,
+              trailing: a.starred ? const Icon(Icons.favorite, size: 18) : null,
+              onTap: () => context.push('/artist/${a.id}'),
+            );
+          },
+        ),
+      );
+    }, onRetry: () => ref.invalidate(artistsProvider));
+  }
+}
+
+class _SongsTab extends ConsumerStatefulWidget {
+  const _SongsTab();
+  @override
+  ConsumerState<_SongsTab> createState() => _SongsTabState();
+}
+
+class _SongsTabState extends ConsumerState<_SongsTab> {
+  final _songs = <Song>[];
+  bool _loading = false, _done = false;
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(() {
+      if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 800) _more();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _more());
+  }
+
+  Future<void> _more() async {
+    if (_loading || _done) return;
+    setState(() => _loading = true);
+    try {
+      final page = await ref.read(repoProvider).allSongs(size: 200, offset: _songs.length);
+      setState(() {
+        _songs.addAll(page);
+        _done = page.length < 200;
+      });
+    } catch (_) {
+      _done = true;
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      controller: _scroll,
+      itemCount: _songs.length + 2,
+      itemBuilder: (_, i) {
+        if (i == 0) {
+          return PlayButtons(
+            onPlay: () async => audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 500)),
+            onShuffle: () async => audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 500), shuffle: true),
+          );
+        }
+        if (i == _songs.length + 1) {
+          return _loading ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())) : const SizedBox(height: 16);
+        }
+        return SongTile(_songs[i - 1], list: _songs, index: i - 1);
+      },
+    );
+  }
+}
+
+class _PlaylistsTab extends ConsumerWidget {
+  const _PlaylistsTab();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final online = ref.watch(repoProvider).online;
+    return Scaffold(
+      floatingActionButton: online
+          ? FloatingActionButton.extended(
+              icon: const Icon(Icons.add),
+              label: const Text('New playlist'),
+              onPressed: () async {
+                final name = await askText(context, 'New playlist', 'Name');
+                if (name == null || name.isEmpty) return;
+                await ref.read(clientProvider)!.createPlaylist(name, const []);
+                ref.invalidate(playlistsProvider);
+              },
+            )
+          : null,
+      body: AsyncView(ref.watch(playlistsProvider), (List<Playlist> lists) {
+        return RefreshIndicator(
+          onRefresh: () async => ref.invalidate(playlistsProvider),
+          child: ListView(children: [
+            for (final p in lists)
+              ListTile(
+                leading: Cover(p.coverArt, size: 52, icon: Icons.queue_music),
+                title: Text(p.name),
+                subtitle: Text('${p.songCount ?? 0} songs · ${formatDuration(p.duration)}'),
+                onTap: () => context.push('/playlist/${p.id}'),
+                onLongPress: () =>
+                    showCollectionMenu(context, ref, p.name, () async => (await ref.read(repoProvider).playlist(p.id)).songs),
+              ),
+            const SizedBox(height: 88),
+          ]),
+        );
+      }, onRetry: () => ref.invalidate(playlistsProvider)),
+    );
+  }
+}
+
+class _GenresTab extends ConsumerWidget {
+  const _GenresTab();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return AsyncView(ref.watch(genresProvider), (List<Genre> genres) {
+      return ListView(children: [
+        for (final g in genres)
+          ListTile(
+            leading: const Icon(Icons.label_outline),
+            title: Text(g.name),
+            subtitle: Text([if (g.albumCount > 0) '${g.albumCount} albums', if (g.songCount > 0) '${g.songCount} songs'].join(' · ')),
+            onTap: () => context.push('/genre/${Uri.encodeComponent(g.name)}'),
+          ),
+      ]);
+    }, onRetry: () => ref.invalidate(genresProvider));
+  }
+}
+
+class _FavouritesTab extends ConsumerWidget {
+  const _FavouritesTab();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return AsyncView(ref.watch(starredProvider), (SearchResult r) {
+      final songs = r.songs.where((s) => !s.isLookup).toList();
+      return RefreshIndicator(
+        onRefresh: () async => ref.invalidate(starredProvider),
+        child: ListView(children: [
+          if (songs.isNotEmpty)
+            PlayButtons(onPlay: () => audioHandler.playSongs(songs), onShuffle: () => audioHandler.playSongs(songs, shuffle: true)),
+          if (r.artists.isNotEmpty) ...[
+            const SectionTitle('Artists'),
+            for (final a in r.artists)
+              ListTile(
+                leading: Cover(a.coverArt, size: 44, circle: true, icon: Icons.person),
+                title: Text(a.name),
+                onTap: () => context.push('/artist/${a.id}'),
+              ),
+          ],
+          if (r.albums.isNotEmpty)
+            Shelf(title: 'Albums', children: [for (final a in r.albums) AlbumCard(a)]),
+          if (songs.isNotEmpty) ...[
+            SectionTitle('Songs (${songs.length})'),
+            for (var i = 0; i < songs.length; i++) SongTile(songs[i], list: songs, index: i),
+          ],
+          if (r.isEmpty) const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('Nothing hearted yet'))),
+        ]),
+      );
+    }, onRetry: () => ref.invalidate(starredProvider));
+  }
+}

@@ -1,0 +1,496 @@
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:just_audio/just_audio.dart';
+
+import '../../core/settings.dart';
+import '../../data/account.dart';
+import '../../data/library.dart';
+import '../../data/models.dart';
+import '../../playback/handler.dart';
+import '../actions.dart';
+import '../widgets.dart';
+
+const _formats = {'raw': 'Original', 'opus': 'Opus', 'mp3': 'MP3', 'aac': 'AAC'};
+const _bitrates = [64, 96, 128, 160, 192, 256, 320];
+const _accents = [0xFF6750A4, 0xFF006A6A, 0xFF8B5000, 0xFFB3261E, 0xFF386A20, 0xFF0061A4, 0xFF984061, 0xFF5D5F00];
+
+class SettingsScreen extends ConsumerWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(settingsProvider);
+    final n = ref.read(settingsProvider.notifier);
+    final creds = ref.watch(accountProvider).value;
+    final sync = ref.watch(syncProvider);
+    void set(String k, Object v) => n.update({k: v});
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings')),
+      body: ListView(children: [
+        const SectionTitle('Server'),
+        ListTile(
+          leading: const Icon(Icons.dns_outlined),
+          title: Text(creds?.base ?? ''),
+          subtitle: Text('Signed in as ${creds?.username ?? ''}'),
+          trailing: TextButton(
+            onPressed: () async {
+              if (await confirm(context, 'Sign out?', 'Downloads stay on the phone.', ok: 'Sign out')) {
+                await audioHandler.clearQueue();
+                ref.read(accountProvider.notifier).signOut();
+              }
+            },
+            child: const Text('Sign out'),
+          ),
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.cloud_off_outlined),
+          title: const Text('Offline mode'),
+          subtitle: const Text('Only downloaded music; nothing goes over the network'),
+          value: s.offlineMode,
+          onChanged: (v) => set('offlineMode', v),
+        ),
+        ListTile(
+          leading: const Icon(Icons.sync),
+          title: const Text('Save library on the phone'),
+          subtitle: Text(sync.running
+              ? sync.message
+              : [
+                  if (sync.message.isNotEmpty) sync.message,
+                  if (sync.last != null) 'Last: ${MaterialLocalizations.of(context).formatShortDate(sync.last!)}',
+                  'For browsing and searching offline',
+                ].join(' · ')),
+          trailing: sync.running
+              ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+              : FilledButton.tonal(onPressed: () => ref.read(syncProvider.notifier).sync(), child: const Text('Sync now')),
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.cloud_download_outlined),
+          title: const Text('Show music you don\'t have'),
+          subtitle: const Text('Search and album pages include songs your server can download (music-lookup)'),
+          value: s.showLookup,
+          onChanged: (v) => set('showLookup', v),
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.history),
+          title: const Text('Scrobble plays'),
+          subtitle: const Text('Play counts, Last.fm / ListenBrainz through the server'),
+          value: s.scrobble,
+          onChanged: (v) => set('scrobble', v),
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.devices),
+          title: const Text('Keep the queue on the server'),
+          subtitle: const Text('Continue where you left off on another device or in Feishin'),
+          value: s.syncPlayQueue,
+          onChanged: (v) => set('syncPlayQueue', v),
+        ),
+
+        const SectionTitle('Look'),
+        ListTile(
+          leading: const Icon(Icons.palette_outlined),
+          title: const Text('Colours'),
+          subtitle: SegmentedButton<ThemeSource>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: ThemeSource.wallpaper, label: Text('Wallpaper')),
+              ButtonSegment(value: ThemeSource.albumArt, label: Text('Album art')),
+              ButtonSegment(value: ThemeSource.fixed, label: Text('Pick')),
+            ],
+            selected: {s.themeSource},
+            onSelectionChanged: (v) => set('themeSource', v.first.name),
+          ),
+        ),
+        if (s.themeSource == ThemeSource.fixed)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 72, vertical: 4),
+            child: Wrap(spacing: 10, runSpacing: 10, children: [
+              for (final c in _accents)
+                InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => set('accentColor', c),
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: Color(c),
+                    child: s.accentColor == c ? const Icon(Icons.check, color: Colors.white) : null,
+                  ),
+                ),
+            ]),
+          ),
+        SwitchListTile(
+          secondary: const Icon(Icons.contrast),
+          title: const Text('Pure black'),
+          subtitle: const Text('Black backgrounds (saves battery on OLED screens)'),
+          value: s.pureBlack,
+          onChanged: (v) => set('pureBlack', v),
+        ),
+        ListTile(
+          leading: const Icon(Icons.dashboard_customize_outlined),
+          title: const Text('Home screen'),
+          subtitle: Text(s.homeSections.map(_sectionName).join(', ')),
+          onTap: () => _editHome(context, ref, s),
+        ),
+
+        const SectionTitle('Playback'),
+        ListTile(
+          leading: const Icon(Icons.equalizer),
+          title: const Text('Equalizer'),
+          subtitle: Text(s.eqEnabled ? 'On' : 'Off'),
+          onTap: () => context.push('/equalizer'),
+        ),
+        ListTile(
+          leading: const Icon(Icons.volume_up_outlined),
+          title: const Text('ReplayGain'),
+          subtitle: Text('${switch (s.replayGain) {
+            ReplayGainMode.off => 'Off',
+            ReplayGainMode.track => 'Track',
+            ReplayGainMode.album => 'Album',
+            ReplayGainMode.auto => 'Automatic (album when playing an album)',
+          }}${s.replayGain != ReplayGainMode.off ? ' · pre-amp ${s.replayGainPreamp.toStringAsFixed(0)} dB' : ''}'),
+          onTap: () => _replayGain(context, ref, s),
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.fast_forward_outlined),
+          title: const Text('Skip silence'),
+          value: s.skipSilence,
+          onChanged: (v) => set('skipSilence', v),
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.all_inclusive),
+          title: const Text('Endless playback'),
+          subtitle: const Text('When the queue ends, keep going with songs that sound similar'),
+          value: s.endlessRadio,
+          onChanged: (v) => set('endlessRadio', v),
+        ),
+
+        const SectionTitle('Streaming quality'),
+        _QualityTile(
+          icon: Icons.wifi,
+          title: 'On Wi-Fi',
+          format: s.wifiFormat,
+          bitrate: s.wifiBitrate,
+          onChanged: (f, b) => n.update({'wifiFormat': f, 'wifiBitrate': b}),
+        ),
+        _QualityTile(
+          icon: Icons.signal_cellular_alt,
+          title: 'On mobile data',
+          format: s.mobileFormat,
+          bitrate: s.mobileBitrate,
+          onChanged: (f, b) => n.update({'mobileFormat': f, 'mobileBitrate': b}),
+        ),
+
+        const SectionTitle('Downloads'),
+        ListTile(
+          leading: const Icon(Icons.offline_pin_outlined),
+          title: const Text('Downloaded music'),
+          subtitle: Text('${ref.watch(downloadsProvider).files.length} songs'),
+          onTap: () => context.push('/downloads'),
+        ),
+        _QualityTile(
+          icon: Icons.download_outlined,
+          title: 'Download quality',
+          format: s.downloadFormat,
+          bitrate: s.downloadBitrate,
+          onChanged: (f, b) => n.update({'downloadFormat': f, 'downloadBitrate': b}),
+        ),
+        SwitchListTile(
+          secondary: const Icon(Icons.wifi_lock),
+          title: const Text('Download only on Wi-Fi'),
+          value: s.downloadWifiOnly,
+          onChanged: (v) => set('downloadWifiOnly', v),
+        ),
+
+        const SectionTitle('About'),
+        const ListTile(
+          leading: Icon(Icons.graphic_eq_rounded),
+          title: Text('Encore'),
+          subtitle: Text('A music player for Navidrome and other Subsonic servers'),
+        ),
+        const SizedBox(height: 32),
+      ]),
+    );
+  }
+
+  static String _sectionName(String k) => const {
+        'recent': 'Recently played',
+        'newest': 'Recently added',
+        'frequent': 'Most played',
+        'starred': 'Favourite albums',
+        'random': 'Discover',
+        'highest': 'Top rated',
+        'playlists': 'Playlists',
+      }[k] ??
+      k;
+
+  Future<void> _editHome(BuildContext context, WidgetRef ref, Settings s) async {
+    final all = ['recent', 'newest', 'frequent', 'starred', 'random', 'highest', 'playlists'];
+    var chosen = [...s.homeSections.where(all.contains)];
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const ListTile(title: Text('Home screen sections'), subtitle: Text('Drag to reorder')),
+            Flexible(
+              child: ReorderableListView(
+                shrinkWrap: true,
+                onReorder: (a, b) => set(() {
+                  final order = [...chosen, ...all.where((x) => !chosen.contains(x))];
+                  if (b > a) b--;
+                  order.insert(b, order.removeAt(a));
+                  chosen = order.where(chosen.contains).toList();
+                }),
+                children: [
+                  for (final k in [...chosen, ...all.where((x) => !chosen.contains(x))])
+                    CheckboxListTile(
+                      key: ValueKey(k),
+                      value: chosen.contains(k),
+                      title: Text(_sectionName(k)),
+                      secondary: const Icon(Icons.drag_handle),
+                      onChanged: (v) => set(() => v! ? chosen.add(k) : chosen.remove(k)),
+                    ),
+                ],
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+    ref.read(settingsProvider.notifier).update({'homeSections': chosen});
+  }
+
+  Future<void> _replayGain(BuildContext context, WidgetRef ref, Settings s) async {
+    var mode = s.replayGain;
+    var pre = s.replayGainPreamp;
+    await showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('ReplayGain', style: Theme.of(ctx).textTheme.titleMedium),
+              const Text('Evens out loudness between songs using the volume tags in your files.'),
+              const SizedBox(height: 12),
+              SegmentedButton<ReplayGainMode>(
+                segments: const [
+                  ButtonSegment(value: ReplayGainMode.off, label: Text('Off')),
+                  ButtonSegment(value: ReplayGainMode.track, label: Text('Track')),
+                  ButtonSegment(value: ReplayGainMode.album, label: Text('Album')),
+                  ButtonSegment(value: ReplayGainMode.auto, label: Text('Auto')),
+                ],
+                selected: {mode},
+                onSelectionChanged: (v) => set(() => mode = v.first),
+              ),
+              const SizedBox(height: 12),
+              Text('Pre-amp: ${pre.toStringAsFixed(0)} dB'),
+              Slider(value: pre, min: -10, max: 10, divisions: 20, onChanged: (v) => set(() => pre = v)),
+            ]),
+          ),
+        ),
+      ),
+    );
+    ref.read(settingsProvider.notifier).update({'replayGain': mode.name, 'replayGainPreamp': pre});
+  }
+}
+
+class _QualityTile extends StatelessWidget {
+  const _QualityTile({required this.icon, required this.title, required this.format, required this.bitrate, required this.onChanged});
+  final IconData icon;
+  final String title, format;
+  final int bitrate;
+  final void Function(String format, int bitrate) onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = format == 'raw' ? 'Original files (FLAC stays FLAC)' : '${_formats[format]} · $bitrate kbps';
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: Text(label),
+      onTap: () async {
+        var f = format;
+        var b = bitrate == 0 ? 192 : bitrate;
+        await showModalBottomSheet(
+          context: context,
+          showDragHandle: true,
+          builder: (ctx) => StatefulBuilder(
+            builder: (ctx, set) => SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, style: Theme.of(ctx).textTheme.titleMedium),
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 8, children: [
+                    for (final e in _formats.entries)
+                      ChoiceChip(label: Text(e.value), selected: f == e.key, onSelected: (_) => set(() => f = e.key)),
+                  ]),
+                  if (f != 'raw') ...[
+                    const SizedBox(height: 16),
+                    const Text('Bitrate (the server converts on the fly)'),
+                    Wrap(spacing: 8, children: [
+                      for (final r in _bitrates)
+                        ChoiceChip(label: Text('$r'), selected: b == r, onSelected: (_) => set(() => b = r)),
+                    ]),
+                  ],
+                ]),
+              ),
+            ),
+          ),
+        );
+        onChanged(f, f == 'raw' ? 0 : b);
+      },
+    );
+  }
+}
+
+class EqualizerScreen extends ConsumerStatefulWidget {
+  const EqualizerScreen({super.key});
+  @override
+  ConsumerState<EqualizerScreen> createState() => _EqualizerScreenState();
+}
+
+class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
+  AndroidEqualizerParameters? _params;
+  String? _error;
+
+  static const _presets = {
+    'Flat': [0.0, 0.0, 0.0, 0.0, 0.0],
+    'Bass boost': [6.0, 4.0, 0.0, 0.0, 0.0],
+    'Treble boost': [0.0, 0.0, 0.0, 3.0, 6.0],
+    'Vocal': [-2.0, 0.0, 3.0, 2.0, 0.0],
+    'Rock': [4.0, 2.0, -1.0, 2.0, 4.0],
+    'Classical': [3.0, 1.0, 0.0, 1.0, 3.0],
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    audioHandler.equalizer.parameters.then((p) => setState(() => _params = p)).catchError((Object e) {
+      setState(() => _error = 'Start playing a song first, then open the equalizer.');
+    });
+  }
+
+  void _save() {
+    ref.read(settingsProvider.notifier).update({'eqGains': _params!.bands.map((b) => b.gain).toList()});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = ref.watch(settingsProvider);
+    final p = _params;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Equalizer'), actions: [
+        Switch(value: s.eqEnabled, onChanged: (v) => ref.read(settingsProvider.notifier).update({'eqEnabled': v})),
+        const SizedBox(width: 12),
+      ]),
+      body: _error != null
+          ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)))
+          : p == null
+              ? const Center(child: CircularProgressIndicator())
+              : Column(children: [
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.all(12),
+                    child: Row(children: [
+                      for (final e in _presets.entries)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ActionChip(
+                            label: Text(e.key),
+                            onPressed: () async {
+                              for (var i = 0; i < p.bands.length; i++) {
+                                final g = i < e.value.length ? e.value[i] : 0.0;
+                                await p.bands[i].setGain(g.clamp(p.minDecibels, p.maxDecibels));
+                              }
+                              _save();
+                              setState(() {});
+                            },
+                          ),
+                        ),
+                    ]),
+                  ),
+                  Expanded(
+                    child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                      for (final b in p.bands)
+                        StreamBuilder<double>(
+                          stream: b.gainStream,
+                          builder: (ctx, snap) => Column(children: [
+                            Text('${(snap.data ?? b.gain).toStringAsFixed(1)} dB', style: Theme.of(ctx).textTheme.labelSmall),
+                            Expanded(
+                              child: RotatedBox(
+                                quarterTurns: -1,
+                                child: Slider(
+                                  value: snap.data ?? b.gain,
+                                  min: p.minDecibels,
+                                  max: p.maxDecibels,
+                                  onChanged: s.eqEnabled ? b.setGain : null,
+                                  onChangeEnd: (_) => _save(),
+                                ),
+                              ),
+                            ),
+                            Text(b.centerFrequency >= 1000
+                                ? '${(b.centerFrequency / 1000).toStringAsFixed(1)}k'
+                                : '${b.centerFrequency.round()}'),
+                            const SizedBox(height: 16),
+                          ]),
+                        ),
+                    ]),
+                  ),
+                ]),
+    );
+  }
+}
+
+class DownloadsScreen extends ConsumerStatefulWidget {
+  const DownloadsScreen({super.key});
+  @override
+  ConsumerState<DownloadsScreen> createState() => _DownloadsScreenState();
+}
+
+class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
+  late Future<List<(Song, String, int)>> _future = ref.read(dbProvider).downloads();
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(downloadsProvider, (_, _) => setState(() => _future = ref.read(dbProvider).downloads()));
+    final progress = ref.watch(downloadsProvider).progress;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Downloaded music'), actions: [
+        IconButton(
+          tooltip: 'Remove all',
+          icon: const Icon(Icons.delete_sweep_outlined),
+          onPressed: () async {
+            final all = await ref.read(dbProvider).downloads();
+            if (all.isEmpty || !context.mounted) return;
+            if (await confirm(context, 'Remove all downloads?', 'Frees the space on the phone. Your server keeps everything.',
+                ok: 'Remove')) {
+              ref.read(downloadsProvider.notifier).remove(all.map((e) => e.$1.id));
+            }
+          },
+        ),
+      ]),
+      body: FutureBuilder(
+        future: _future,
+        builder: (ctx, snap) {
+          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+          final list = snap.data!;
+          final songs = list.map((e) => e.$1).toList();
+          final bytes = list.fold<int>(0, (n, e) => n + e.$3);
+          return ListView(children: [
+            ListTile(
+              title: Text('${list.length} songs · ${(bytes / 1073741824).toStringAsFixed(2)} GB'),
+              subtitle: progress.isNotEmpty ? Text('${progress.length} downloading…') : null,
+            ),
+            if (songs.isNotEmpty)
+              PlayButtons(onPlay: () => audioHandler.playSongs(songs), onShuffle: () => audioHandler.playSongs(songs, shuffle: true)),
+            for (var i = 0; i < songs.length; i++) SongTile(songs[i], list: songs, index: i),
+          ]);
+        },
+      ),
+    );
+  }
+}
