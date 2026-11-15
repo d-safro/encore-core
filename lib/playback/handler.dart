@@ -30,9 +30,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   final ProviderContainer container;
   final equalizer = AndroidEqualizer();
   final loudness = AndroidLoudnessEnhancer();
-  late final AudioPlayer player = AudioPlayer(
-    audioPipeline: AudioPipeline(androidAudioEffects: [equalizer, loudness]),
-  );
+  late final AudioPlayer player = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [equalizer, loudness]));
 
   final List<Song> _songs = []; // same order as the player's sequence
   List<Song> get songs => List.unmodifiable(_songs);
@@ -47,6 +45,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Duration _listened = Duration.zero;
   DateTime? _lastTick;
   bool _fetchingRadio = false;
+  Song? radioSeed; // set while a song radio is playing: the queue keeps growing with songs like it
 
   Settings get _settings => container.read(settingsProvider);
 
@@ -54,10 +53,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
 
-    player.playbackEventStream.listen(_broadcast, onError: (Object e, StackTrace st) async {
-      // a song that can't be played (server gone, file missing): skip it instead of stopping
-      if (player.hasNext) await player.seekToNext();
-    });
+    player.playbackEventStream.listen(
+      _broadcast,
+      onError: (Object e, StackTrace st) async {
+        // a song that can't be played (server gone, file missing): skip it instead of stopping
+        if (player.hasNext) await player.seekToNext();
+      },
+    );
     player.currentIndexStream.listen(_onIndex);
     player.sequenceStream.listen((_) => _onIndex(player.currentIndex)); // same index, different song
     player.shuffleModeEnabledStream.distinct().listen((_) => _broadcastQueue());
@@ -78,6 +80,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Future<void> _applySettings(Settings? prev, Settings s) async {
     if (prev?.skipSilence != s.skipSilence) await player.setSkipSilenceEnabled(s.skipSilence);
     if (prev?.speed != s.speed) await setSpeed(s.speed);
+    if (prev?.pitch != s.pitch) await player.setPitch(s.pitch);
     if (prev?.eqEnabled != s.eqEnabled) await equalizer.setEnabled(s.eqEnabled);
     if (prev?.eqGains != s.eqGains && s.eqGains.isNotEmpty) {
       try {
@@ -138,7 +141,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final wifi = container.read(onWifiProvider);
     final fmt = wifi ? set.wifiFormat : set.mobileFormat;
     final rate = wifi ? set.wifiBitrate : set.mobileBitrate;
-    return AudioSource.uri(c.streamUrl(s.id, format: fmt, maxBitRate: fmt == 'raw' ? null : rate), tag: item);
+    return AudioSource.uri(
+      c.streamUrl(s.id, format: fmt, maxBitRate: fmt == 'raw' ? null : rate),
+      tag: item,
+    );
   }
 
   MediaItem _mediaItem(Song s) {
@@ -157,7 +163,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   // ── Queue operations (used by the app's menus) ──
-  Future<void> playSongs(List<Song> songs, {int index = 0, bool shuffle = false, bool allowLookup = false}) async {
+  Future<void> playSongs(
+    List<Song> songs, {
+    int index = 0,
+    bool shuffle = false,
+    bool allowLookup = false,
+    Song? radio,
+  }) async {
+    radioSeed = radio;
     var list = allowLookup ? songs : songs.where((s) => !s.isLookup).toList();
     if (list.isEmpty) return;
     if (!allowLookup && index < songs.length) {
@@ -248,18 +261,33 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     await playSongs([seed, ...similar.where((s) => s.id != seed.id && !s.isLookup)]);
   }
 
+  /// Song radio (like Spotify's): the song, then songs that sound like it; it never runs out.
+  Future<bool> songRadio(Song seed) async {
+    final c = container.read(clientProvider);
+    if (c == null) return false;
+    final similar = (await c.similarSongs(seed.id, count: 60)).where((s) => s.id != seed.id && !s.isLookup).toList();
+    if (similar.isEmpty) return false;
+    similar.shuffle();
+    await playSongs([seed, ...similar.take(40)], radio: seed);
+    return true;
+  }
+
   Future<void> _maybeExtendRadio() async {
     final i = player.currentIndex;
-    if (!_settings.endlessRadio || _fetchingRadio || i == null || i < _songs.length - 2) return;
+    if (!(_settings.endlessRadio || radioSeed != null) || _fetchingRadio || i == null || i < _songs.length - 3) return;
     final c = container.read(clientProvider);
     if (c == null || container.read(offlineProvider)) return;
     _fetchingRadio = true;
     try {
       final have = _songs.map((s) => s.id).toSet();
-      final more = (await c.similarSongs(_songs.last.id, count: 30))
-          .where((s) => !s.isLookup && !have.contains(s.id))
-          .take(15)
-          .toList();
+      // a song radio stays close to its first song; endless playback follows where the music went
+      final from = radioSeed != null && Random().nextBool()
+          ? radioSeed!
+          : _songs[Random().nextInt(_songs.length - i) + i];
+      final more = (await c.similarSongs(
+        from.id,
+        count: 30,
+      )).where((s) => !s.isLookup && !have.contains(s.id)).take(15).toList();
       if (more.isNotEmpty) await addLast(more);
     } finally {
       _fetchingRadio = false;
@@ -344,12 +372,17 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final i = player.currentIndex ?? 0;
     final pos = player.position.inMilliseconds;
     prefs.setString(
-        'queue', jsonEncode({'songs': _songs.map((s) => s.toJson()).toList(), 'index': i, 'position': pos}));
+      'queue',
+      jsonEncode({'songs': _songs.map((s) => s.toJson()).toList(), 'index': i, 'position': pos}),
+    );
     final c = container.read(clientProvider);
     if (_settings.syncPlayQueue && c != null && !container.read(offlineProvider) && _songs.length <= 1000) {
       try {
-        await c.savePlayQueue(_songs.map((s) => s.id).toList(),
-            current: _songs.isNotEmpty ? _songs[min(i, _songs.length - 1)].id : null, positionMs: pos);
+        await c.savePlayQueue(
+          _songs.map((s) => s.id).toList(),
+          current: _songs.isNotEmpty ? _songs[min(i, _songs.length - 1)].id : null,
+          positionMs: pos,
+        );
       } catch (_) {}
     }
   }
@@ -363,8 +396,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (songs.isEmpty) return;
       _songs.addAll(songs);
       final index = (j['index'] as int).clamp(0, songs.length - 1);
-      await player.setAudioSources(songs.map(_source).toList(),
-          initialIndex: index, initialPosition: Duration(milliseconds: j['position'] as int? ?? 0));
+      await player.setAudioSources(
+        songs.map(_source).toList(),
+        initialIndex: index,
+        initialPosition: Duration(milliseconds: j['position'] as int? ?? 0),
+      );
       _broadcastQueue();
     } catch (_) {}
   }
@@ -379,7 +415,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _songs
       ..clear()
       ..addAll(songs);
-    await player.setAudioSources(songs.map(_source).toList(), initialIndex: idx, initialPosition: Duration(milliseconds: pos));
+    await player.setAudioSources(
+      songs.map(_source).toList(),
+      initialIndex: idx,
+      initialPosition: Duration(milliseconds: pos),
+    );
     _broadcastQueue();
     return true;
   }
@@ -388,8 +428,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   void setSleepTimer(Duration? d, {bool afterTrack = false}) {
     _sleepTimer?.cancel();
     if (d != null) _sleepTimer = Timer(d, _sleepNow);
-    _setExtras(PlayerExtras(
-        sleepAt: d != null ? DateTime.now().add(d) : null, sleepAfterTrack: afterTrack, speed: _extras.speed));
+    _setExtras(
+      PlayerExtras(
+        sleepAt: d != null ? DateTime.now().add(d) : null,
+        sleepAfterTrack: afterTrack,
+        speed: _extras.speed,
+      ),
+    );
   }
 
   void _sleepNow() {
@@ -447,10 +492,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   @override
   Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) => player.setLoopMode(switch (repeatMode) {
-        AudioServiceRepeatMode.one => LoopMode.one,
-        AudioServiceRepeatMode.all || AudioServiceRepeatMode.group => LoopMode.all,
-        _ => LoopMode.off,
-      });
+    AudioServiceRepeatMode.one => LoopMode.one,
+    AudioServiceRepeatMode.all || AudioServiceRepeatMode.group => LoopMode.all,
+    _ => LoopMode.off,
+  });
 
   @override
   Future<void> setRating(Rating rating, [Map<String, dynamic>? extras]) async {
@@ -473,37 +518,45 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   void _broadcast(PlaybackEvent event) {
     final playing = player.playing;
     final starred = currentSong?.starred ?? false;
-    playbackState.add(playbackState.value.copyWith(
-      controls: [
-        MediaControl.skipToPrevious,
-        if (playing) MediaControl.pause else MediaControl.play,
-        MediaControl.skipToNext,
-        MediaControl.custom(
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: [
+          MediaControl.skipToPrevious,
+          if (playing) MediaControl.pause else MediaControl.play,
+          MediaControl.skipToNext,
+          MediaControl.custom(
             androidIcon: starred ? 'drawable/ic_heart_filled' : 'drawable/ic_heart',
             label: starred ? 'Unfavourite' : 'Favourite',
-            name: 'toggleStar'),
-      ],
-      systemActions: const {MediaAction.seek, MediaAction.seekForward, MediaAction.seekBackward, MediaAction.setRating},
-      androidCompactActionIndices: const [0, 1, 2],
-      processingState: const {
-        ProcessingState.idle: AudioProcessingState.idle,
-        ProcessingState.loading: AudioProcessingState.loading,
-        ProcessingState.buffering: AudioProcessingState.buffering,
-        ProcessingState.ready: AudioProcessingState.ready,
-        ProcessingState.completed: AudioProcessingState.completed,
-      }[player.processingState]!,
-      playing: playing,
-      updatePosition: player.position,
-      bufferedPosition: player.bufferedPosition,
-      speed: player.speed,
-      queueIndex: event.currentIndex,
-      shuffleMode: player.shuffleModeEnabled ? AudioServiceShuffleMode.all : AudioServiceShuffleMode.none,
-      repeatMode: switch (player.loopMode) {
-        LoopMode.one => AudioServiceRepeatMode.one,
-        LoopMode.all => AudioServiceRepeatMode.all,
-        LoopMode.off => AudioServiceRepeatMode.none,
-      },
-    ));
+            name: 'toggleStar',
+          ),
+        ],
+        systemActions: const {
+          MediaAction.seek,
+          MediaAction.seekForward,
+          MediaAction.seekBackward,
+          MediaAction.setRating,
+        },
+        androidCompactActionIndices: const [0, 1, 2],
+        processingState: const {
+          ProcessingState.idle: AudioProcessingState.idle,
+          ProcessingState.loading: AudioProcessingState.loading,
+          ProcessingState.buffering: AudioProcessingState.buffering,
+          ProcessingState.ready: AudioProcessingState.ready,
+          ProcessingState.completed: AudioProcessingState.completed,
+        }[player.processingState]!,
+        playing: playing,
+        updatePosition: player.position,
+        bufferedPosition: player.bufferedPosition,
+        speed: player.speed,
+        queueIndex: event.currentIndex,
+        shuffleMode: player.shuffleModeEnabled ? AudioServiceShuffleMode.all : AudioServiceShuffleMode.none,
+        repeatMode: switch (player.loopMode) {
+          LoopMode.one => AudioServiceRepeatMode.one,
+          LoopMode.all => AudioServiceRepeatMode.all,
+          LoopMode.off => AudioServiceRepeatMode.none,
+        },
+      ),
+    );
   }
 
   @override
@@ -523,8 +576,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final c = container.read(clientProvider);
     MediaItem folder(String id, String title) => MediaItem(id: id, title: title, playable: false);
     MediaItem albumItem(Album a) => MediaItem(
-        id: 'album:${a.id}', title: a.name, artist: a.artist, playable: false,
-        artUri: c != null && a.coverArt.isNotEmpty ? c.coverUrl(a.coverArt, size: 300) : null);
+      id: 'album:${a.id}',
+      title: a.name,
+      artist: a.artist,
+      playable: false,
+      artUri: c != null && a.coverArt.isNotEmpty ? c.coverUrl(a.coverArt, size: 300) : null,
+    );
     try {
       switch (parentMediaId) {
         case AudioService.recentRootId:

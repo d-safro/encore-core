@@ -23,7 +23,7 @@ class Credentials {
 /// Subsonic / OpenSubsonic API client. Token auth (md5(password + salt)), JSON responses.
 class SubsonicClient {
   SubsonicClient(this.creds, {this.clientName = 'Encore', http.Client? httpClient})
-      : _http = httpClient ?? http.Client();
+    : _http = httpClient ?? http.Client();
 
   final Credentials creds;
   final String clientName;
@@ -46,8 +46,12 @@ class SubsonicClient {
     return Uri.parse('${creds.base}/rest/$method').replace(queryParameters: q);
   }
 
-  Future<Map<String, dynamic>> call(String method,
-      [Map<String, dynamic> params = const {}, String? client, Duration timeout = const Duration(seconds: 30)]) async {
+  Future<Map<String, dynamic>> call(
+    String method, [
+    Map<String, dynamic> params = const {},
+    String? client,
+    Duration timeout = const Duration(seconds: 30),
+  ]) async {
     final res = await _http.get(url(method, params, client)).timeout(timeout);
     if (res.statusCode == 401 || res.statusCode == 403) {
       throw SubsonicException(40, 'Wrong username or password');
@@ -79,8 +83,15 @@ class SubsonicClient {
   }
 
   // ── Browsing ──
-  Future<List<Album>> albumList(String type,
-      {int size = 50, int offset = 0, int? fromYear, int? toYear, String? genre, String? client}) async {
+  Future<List<Album>> albumList(
+    String type, {
+    int size = 50,
+    int offset = 0,
+    int? fromYear,
+    int? toYear,
+    String? genre,
+    String? client,
+  }) async {
     final r = await call('getAlbumList2', {
       'type': type,
       'size': size,
@@ -124,21 +135,31 @@ class SubsonicClient {
       _l(_m((await call('getGenres'))['genres'])['genre']).map(Genre.fromJson).toList()
         ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
-  Future<List<Song>> songsByGenre(String genre, {int count = 200, int offset = 0}) async =>
-      _l(_m((await call('getSongsByGenre', {'genre': genre, 'count': count, 'offset': offset}))['songsByGenre'])['song'])
-          .map(Song.fromJson)
-          .toList();
+  Future<List<Song>> songsByGenre(String genre, {int count = 200, int offset = 0}) async => _l(
+    _m((await call('getSongsByGenre', {'genre': genre, 'count': count, 'offset': offset}))['songsByGenre'])['song'],
+  ).map(Song.fromJson).toList();
 
-  Future<List<Song>> randomSongs({int size = 50, String? genre, int? fromYear, int? toYear}) async =>
-      _l(_m((await call('getRandomSongs', {'size': size, 'genre': genre, 'fromYear': fromYear, 'toYear': toYear}))[
-              'randomSongs'])['song'])
-          .map(Song.fromJson)
-          .toList();
+  Future<List<Song>> randomSongs({int size = 50, String? genre, int? fromYear, int? toYear}) async => _l(
+    _m(
+      (await call('getRandomSongs', {
+        'size': size,
+        'genre': genre,
+        'fromYear': fromYear,
+        'toYear': toYear,
+      }))['randomSongs'],
+    )['song'],
+  ).map(Song.fromJson).toList();
 
   Future<SearchResult> starred() async => SearchResult.fromJson(_m((await call('getStarred2'))['starred2']));
 
-  Future<SearchResult> search(String query,
-      {int artistCount = 20, int albumCount = 30, int songCount = 50, int offset = 0, String? client}) async {
+  Future<SearchResult> search(
+    String query, {
+    int artistCount = 20,
+    int albumCount = 30,
+    int songCount = 50,
+    int offset = 0,
+    String? client,
+  }) async {
     final r = await call('search3', {
       'query': query,
       'artistCount': artistCount,
@@ -151,9 +172,10 @@ class SubsonicClient {
     return SearchResult.fromJson(_m(r['searchResult3']));
   }
 
-  Future<List<MusicFolder>> musicFolders() async => _l(_m((await call('getMusicFolders'))['musicFolders'])['musicFolder'])
-      .map((f) => MusicFolder(f['id'].toString(), (f['name'] ?? '').toString()))
-      .toList();
+  Future<List<MusicFolder>> musicFolders() async =>
+      _l(_m((await call('getMusicFolders'))['musicFolders'])['musicFolder'])
+          .map((f) => MusicFolder(f['id'].toString(), (f['name'] ?? '').toString()))
+          .toList();
 
   Future<List<DirEntry>> indexes({String? folderId}) async {
     final r = _m((await call('getIndexes', {'musicFolderId': folderId}))['indexes']);
@@ -168,11 +190,12 @@ class SubsonicClient {
     return _l(r['child']).map((c) {
       final dir = c['isDir'] == true;
       return DirEntry(
-          id: c['id'].toString(),
-          name: (c['title'] ?? c['name'] ?? '').toString(),
-          coverArt: (c['coverArt'] ?? '').toString(),
-          isDir: dir,
-          song: dir ? null : Song.fromJson(c));
+        id: c['id'].toString(),
+        name: (c['title'] ?? c['name'] ?? '').toString(),
+        coverArt: (c['coverArt'] ?? '').toString(),
+        isDir: dir,
+        song: dir ? null : Song.fromJson(c),
+      );
     }).toList();
   }
 
@@ -180,7 +203,8 @@ class SubsonicClient {
   Future<List<Playlist>> playlists() async =>
       _l(_m((await call('getPlaylists'))['playlists'])['playlist']).map(Playlist.fromJson).toList();
 
-  Future<Playlist> playlist(String id) async => Playlist.fromJson(_m((await call('getPlaylist', {'id': id}))['playlist']));
+  Future<Playlist> playlist(String id) async =>
+      Playlist.fromJson(_m((await call('getPlaylist', {'id': id}))['playlist']));
 
   Future<Playlist> createPlaylist(String name, List<String> songIds) async =>
       Playlist.fromJson(_m((await call('createPlaylist', {'name': name, 'songId': songIds}))['playlist']));
@@ -189,16 +213,21 @@ class SubsonicClient {
   Future<void> setPlaylistSongs(String id, List<String> songIds) =>
       call('createPlaylist', {'playlistId': id, 'songId': songIds});
 
-  Future<void> updatePlaylist(String id,
-          {String? name, String? comment, bool? public, List<String>? add, List<int>? removeIndexes}) =>
-      call('updatePlaylist', {
-        'playlistId': id,
-        'name': name,
-        'comment': comment,
-        'public': public,
-        'songIdToAdd': add,
-        'songIndexToRemove': removeIndexes,
-      });
+  Future<void> updatePlaylist(
+    String id, {
+    String? name,
+    String? comment,
+    bool? public,
+    List<String>? add,
+    List<int>? removeIndexes,
+  }) => call('updatePlaylist', {
+    'playlistId': id,
+    'name': name,
+    'comment': comment,
+    'public': public,
+    'songIdToAdd': add,
+    'songIndexToRemove': removeIndexes,
+  });
 
   Future<void> deletePlaylist(String id) => call('deletePlaylist', {'id': id});
 
@@ -208,11 +237,8 @@ class SubsonicClient {
   Future<void> unstar({String? id, String? albumId, String? artistId}) =>
       call('unstar', {'id': id, 'albumId': albumId, 'artistId': artistId});
   Future<void> setRating(String id, int rating) => call('setRating', {'id': id, 'rating': rating});
-  Future<void> scrobble(String id, {required bool submission, DateTime? time}) => call('scrobble', {
-        'id': id,
-        'submission': submission,
-        if (time != null) 'time': time.millisecondsSinceEpoch,
-      });
+  Future<void> scrobble(String id, {required bool submission, DateTime? time}) =>
+      call('scrobble', {'id': id, 'submission': submission, if (time != null) 'time': time.millisecondsSinceEpoch});
 
   // ── Play queue (follows you between devices and Feishin) ──
   Future<(List<Song>, String?, int)> playQueue() async {
@@ -297,29 +323,55 @@ class SubsonicClient {
     }
   }
 
+  // ── Discovery (music-lookup on the server): songs you don't have yet, as ⬇ items ──
+  Future<List<(String, List<Song>)>> discoveries({bool refresh = false}) async {
+    final r = await call('getDiscoveries', {if (refresh) 'refresh': 1}, null, const Duration(seconds: 120));
+    return _l(_m(r['discoveries'])['section'])
+        .map((sec) => ((sec['name'] ?? '').toString(), _l(sec['song']).map(Song.fromJson).toList()))
+        .where((e) => e.$2.isNotEmpty)
+        .toList();
+  }
+
+  Future<List<Song>> songDiscoveries(String id, {int count = 30}) async {
+    try {
+      final r = await call('getSongDiscoveries', {'id': id, 'count': count}, null, const Duration(seconds: 60));
+      return _l(_m(r['songDiscoveries'])['song']).map(Song.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   // ── AudioMuse-AI recommendations (through music-lookup on the server: /rest/audiomuse/<endpoint>) ──
-  Future<dynamic> audiomuse(String endpoint, {Map<String, dynamic> query = const {}, Map<String, dynamic>? body}) async {
+  Future<dynamic> audiomuse(
+    String endpoint, {
+    Map<String, dynamic> query = const {},
+    Map<String, dynamic>? body,
+  }) async {
     final u = url('audiomuse/$endpoint', query);
     final res = body == null
         ? await _http.get(u).timeout(const Duration(seconds: 90))
         : await _http
-            .post(u, headers: {'Content-Type': 'application/json'}, body: jsonEncode(body))
-            .timeout(const Duration(seconds: 90));
+              .post(u, headers: {'Content-Type': 'application/json'}, body: jsonEncode(body))
+              .timeout(const Duration(seconds: 90));
     if (res.statusCode == 404) throw SubsonicException(404, 'Your server doesn\'t offer AI recommendations');
     if (res.statusCode == 401) throw SubsonicException(40, 'Wrong username or password');
     final data = res.bodyBytes.isEmpty ? null : jsonDecode(utf8.decode(res.bodyBytes));
     if (res.statusCode != 200) {
-      throw SubsonicException(res.statusCode, (data is Map ? data['error'] ?? data['message'] : null)?.toString() ?? 'AI recommendations failed (${res.statusCode})');
+      throw SubsonicException(
+        res.statusCode,
+        (data is Map ? data['error'] ?? data['message'] : null)?.toString() ??
+            'AI recommendations failed (${res.statusCode})',
+      );
     }
     return data;
   }
 
   // ── Media URLs ──
   Uri streamUrl(String id, {String? format, int? maxBitRate}) => url('stream', {
-        'id': id,
-        if (format != null && format != 'raw') 'format': format,
-        if (maxBitRate != null && maxBitRate > 0) 'maxBitRate': maxBitRate,
-      });
+    'id': id,
+    if (format != null && format != 'raw') 'format': format,
+    if (maxBitRate != null && maxBitRate > 0) 'maxBitRate': maxBitRate,
+  });
 
   Uri downloadUrl(String id) => url('download', {'id': id});
 

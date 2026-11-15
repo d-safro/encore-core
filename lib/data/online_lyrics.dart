@@ -39,8 +39,9 @@ Lyrics parseLrc(String text) {
     for (final m in stamps) {
       final frac = m.group(3) ?? '0';
       final ms = int.parse(frac.padRight(3, '0').substring(0, 3));
-      lines.add(LyricLine(
-          Duration(minutes: int.parse(m.group(1)!), seconds: int.parse(m.group(2)!), milliseconds: ms), words));
+      lines.add(
+        LyricLine(Duration(minutes: int.parse(m.group(1)!), seconds: int.parse(m.group(2)!), milliseconds: ms), words),
+      );
     }
   }
   lines.sort((a, b) => a.start!.compareTo(b.start!));

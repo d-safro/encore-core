@@ -14,7 +14,8 @@ final mediaItemProvider = StreamProvider<MediaItem?>((ref) => audioHandler.media
 final playbackStateProvider = StreamProvider<PlaybackState>((ref) => audioHandler.playbackState);
 final queueProvider = StreamProvider<List<MediaItem>>((ref) => audioHandler.queue);
 final playerExtrasProvider = StreamProvider<PlayerExtras>(
-    (ref) => audioHandler.extras.stream.startWith(audioHandler.currentExtras));
+  (ref) => audioHandler.extras.stream.startWith(audioHandler.currentExtras),
+);
 
 class PositionData {
   final Duration position, buffered, duration;
@@ -40,7 +41,9 @@ final currentSongProvider = Provider<Song?>((ref) {
 
 // ── Data for screens (re-fetched when the server / offline state changes) ──
 final albumProvider = FutureProvider.autoDispose.family<Album, String>((ref, id) => ref.watch(repoProvider).album(id));
-final artistProvider = FutureProvider.autoDispose.family<Artist, String>((ref, id) => ref.watch(repoProvider).artist(id));
+final artistProvider = FutureProvider.autoDispose.family<Artist, String>(
+  (ref, id) => ref.watch(repoProvider).artist(id),
+);
 final artistInfoProvider = FutureProvider.autoDispose.family<ArtistInfo, String>((ref, id) async {
   final repo = ref.watch(repoProvider);
   return repo.online ? repo.client!.artistInfo(id) : const ArtistInfo();
@@ -58,21 +61,28 @@ final soundAlikeArtistsProvider = FutureProvider.autoDispose.family<List<Artist>
     return const <Artist>[];
   }
 });
-final playlistProvider =
-    FutureProvider.autoDispose.family<Playlist, String>((ref, id) => ref.watch(repoProvider).playlist(id));
+final playlistProvider = FutureProvider.autoDispose.family<Playlist, String>(
+  (ref, id) => ref.watch(repoProvider).playlist(id),
+);
 final playlistsProvider = FutureProvider.autoDispose<List<Playlist>>((ref) => ref.watch(repoProvider).playlists());
 final artistsProvider = FutureProvider.autoDispose<List<Artist>>((ref) => ref.watch(repoProvider).artists());
 final genresProvider = FutureProvider.autoDispose<List<Genre>>((ref) => ref.watch(repoProvider).genres());
 final starredProvider = FutureProvider.autoDispose<SearchResult>((ref) => ref.watch(repoProvider).starred());
-final albumListProvider = FutureProvider.autoDispose
-    .family<List<Album>, String>((ref, type) => ref.watch(repoProvider).albums(type, size: 30));
-final genreSongsProvider =
-    FutureProvider.autoDispose.family<List<Song>, String>((ref, g) => ref.watch(repoProvider).songsByGenre(g));
-final genreAlbumsProvider = FutureProvider.autoDispose
-    .family<List<Album>, String>((ref, g) => ref.watch(repoProvider).albums('byGenre', size: 200, genre: g));
+final albumListProvider = FutureProvider.autoDispose.family<List<Album>, String>(
+  (ref, type) => ref.watch(repoProvider).albums(type, size: 30),
+);
+final genreSongsProvider = FutureProvider.autoDispose.family<List<Song>, String>(
+  (ref, g) => ref.watch(repoProvider).songsByGenre(g),
+);
+final genreAlbumsProvider = FutureProvider.autoDispose.family<List<Album>, String>(
+  (ref, g) => ref.watch(repoProvider).albums('byGenre', size: 200, genre: g),
+);
 final lyricsProvider = FutureProvider.autoDispose.family<Lyrics, String>((ref, id) async {
   final repo = ref.watch(repoProvider);
-  final song = audioHandler.songs.firstWhere((s) => s.id == id, orElse: () => Song(id: id, title: ''));
+  final song = audioHandler.songs.firstWhere(
+    (s) => s.id == id,
+    orElse: () => Song(id: id, title: ''),
+  );
   if (!repo.online) return const Lyrics();
   final l = await repo.client!.lyrics(song);
   if (l.isEmpty && ref.read(settingsProvider).onlineLyrics) return lrclibLyrics(song);

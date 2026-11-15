@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/settings.dart';
+import '../../data/ai.dart';
 import '../../data/library.dart';
+import '../../data/models.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
@@ -17,7 +19,7 @@ class HomeScreen extends ConsumerWidget {
     'newest': 'Recently added',
     'frequent': 'Most played',
     'starred': 'Favourite albums',
-    'random': 'Discover',
+    'random': 'Something different',
     'highest': 'Top rated',
   };
 
@@ -25,79 +27,186 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sections = ref.watch(settingsProvider.select((s) => s.homeSections));
     final offline = ref.watch(offlineProvider);
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () async {
-          for (final t in titles.keys) {
-            ref.invalidate(albumListProvider(t));
+          for (final k in titles.keys) {
+            ref.invalidate(albumListProvider(k));
           }
           ref.invalidate(playlistsProvider);
         },
-        child: CustomScrollView(slivers: [
-          SliverAppBar.large(
-            title: Text(_greeting()),
-            actions: [
-              if (offline)
-                const Padding(padding: EdgeInsets.only(right: 8), child: Chip(avatar: Icon(Icons.cloud_off, size: 16), label: Text('Offline'))),
-              IconButton(icon: const Icon(Icons.settings_outlined), onPressed: () => context.push('/settings')),
+        child: SafeArea(
+          bottom: false,
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 8, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _greeting(),
+                          style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.8),
+                        ),
+                      ),
+                      if (offline)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(Icons.cloud_off_rounded, color: cs.onSurfaceVariant, size: 20),
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.download_done_rounded),
+                        tooltip: 'Downloads',
+                        onPressed: () => context.push('/downloads'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined),
+                        tooltip: 'Settings',
+                        onPressed: () => context.push('/settings'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SliverToBoxAdapter(child: _QuickPills()),
+              const SliverToBoxAdapter(child: _JumpBackIn()),
+              for (final s in sections)
+                SliverToBoxAdapter(
+                  child: switch (s) {
+                    'playlists' => const _PlaylistShelf(),
+                    'recent' => const SizedBox.shrink(), // shown as "Jump back in" above
+                    _ when titles.containsKey(s) => _AlbumShelf(type: s, title: titles[s]!),
+                    _ => const SizedBox.shrink(),
+                  },
+                ),
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
             ],
           ),
-          SliverToBoxAdapter(child: _QuickMixes()),
-          for (final s in sections)
-            SliverToBoxAdapter(
-              child: switch (s) {
-                'playlists' => const _PlaylistShelf(),
-                'mixes' => const SizedBox.shrink(),
-                _ when titles.containsKey(s) => _AlbumShelf(type: s, title: titles[s]!),
-                _ => const SizedBox.shrink(),
-              },
-            ),
-          const SliverToBoxAdapter(child: SizedBox(height: 24)),
-        ]),
+        ),
       ),
     );
   }
 
   String _greeting() {
     final h = DateTime.now().hour;
-    return h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+    return h < 5
+        ? 'Good night'
+        : h < 12
+        ? 'Good morning'
+        : h < 18
+        ? 'Good afternoon'
+        : 'Good evening';
   }
 }
 
-class _QuickMixes extends ConsumerWidget {
+class _QuickPills extends ConsumerWidget {
+  const _QuickPills();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final online = ref.watch(repoProvider).online;
-    Widget chip(IconData icon, String label, Future<void> Function() go) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: ActionChip(
-            avatar: Icon(icon, size: 18),
-            label: Text(label),
-            onPressed: () async {
-              try {
-                await go();
-              } catch (e) {
-                if (context.mounted) toast(context, '$e');
-              }
-            },
-          ),
-        );
+    Widget pill(IconData icon, String label, Future<void> Function() go) => Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ActionChip(
+        avatar: Icon(icon, size: 18),
+        label: Text(label),
+        onPressed: () async {
+          try {
+            await go();
+          } catch (e) {
+            if (context.mounted) toast(context, '$e');
+          }
+        },
+      ),
+    );
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(children: [
-        chip(Icons.shuffle, 'Shuffle all', () async => audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 200))),
-        chip(Icons.favorite, 'Favourites', () async {
-          final r = await ref.read(repoProvider).starred();
-          await audioHandler.playSongs(r.songs, shuffle: true);
-        }),
-        if (online)
-          chip(Icons.cloud_sync_outlined, 'Continue from other device', () async {
-            final ok = await audioHandler.loadServerQueue();
-            if (context.mounted) toast(context, ok ? 'Queue loaded — press play' : 'No saved queue on the server');
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(
+        children: [
+          pill(
+            Icons.shuffle_rounded,
+            'Shuffle all',
+            () async => audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 200)),
+          ),
+          pill(Icons.favorite_rounded, 'Liked songs', () async {
+            final r = await ref.read(repoProvider).starred();
+            await audioHandler.playSongs(r.songs, shuffle: true);
           }),
-        chip(Icons.offline_pin_outlined, 'Downloaded', () async => context.push('/downloads')),
-      ]),
+          if (online)
+            pill(Icons.auto_awesome, 'Made for you', () async {
+              final ai = ref.read(aiProvider);
+              if (ai != null) await audioHandler.playSongs(await ai.forYou());
+            }),
+          if (online)
+            pill(Icons.devices_rounded, 'Continue from another device', () async {
+              final ok = await audioHandler.loadServerQueue();
+              if (context.mounted) toast(context, ok ? 'Queue loaded. Press play.' : 'No saved queue on the server');
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+/// Six recently played albums as compact tiles, two columns.
+class _JumpBackIn extends ConsumerWidget {
+  const _JumpBackIn();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final albums =
+        ref.watch(albumListProvider('recent')).value?.where((a) => !a.isLookup).take(6).toList() ?? const <Album>[];
+    if (albums.isEmpty) return const SizedBox(height: 8);
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: GridView.count(
+        crossAxisCount: 2,
+        padding: EdgeInsets.zero,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 3.1,
+        children: [
+          for (final a in albums)
+            Material(
+              color: cs.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(10),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => context.push('/album/${a.id}'),
+                onLongPress: () => showCollectionMenu(
+                  context,
+                  ref,
+                  a.name,
+                  () async => (await ref.read(repoProvider).album(a.id)).songs,
+                ),
+                child: Row(
+                  children: [
+                    AspectRatio(
+                      aspectRatio: 1,
+                      child: Cover(a.coverArt, size: double.infinity, radius: 0, artist: a.artist, album: a.name),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        a.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -125,25 +234,29 @@ class _PlaylistShelf extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lists = ref.watch(playlistsProvider);
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
     return lists.when(
       data: (l) => Shelf(
-        title: 'Playlists',
-        onMore: () => context.go('/library?tab=3'),
+        title: 'Your playlists',
+        onMore: () => context.go('/library?tab=0'),
         children: [
           for (final p in l)
             SizedBox(
-              width: 150,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
+              width: 148,
+              child: GestureDetector(
                 onTap: () => context.push('/playlist/${p.id}'),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    AspectRatio(aspectRatio: 1, child: Cover(p.coverArt, size: double.infinity, radius: 10, icon: Icons.queue_music)),
-                    const SizedBox(height: 6),
-                    Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall),
-                    Text('${p.songCount ?? 0} songs', style: Theme.of(context).textTheme.bodySmall),
-                  ]),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AspectRatio(
+                      aspectRatio: 1,
+                      child: Cover(p.coverArt, size: double.infinity, radius: 14, icon: Icons.queue_music_rounded),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
+                    Text('${p.songCount ?? 0} songs', style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                  ],
                 ),
               ),
             ),

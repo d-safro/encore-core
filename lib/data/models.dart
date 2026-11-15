@@ -28,9 +28,14 @@ class ReplayGain {
           trackGain: _dbl(j['trackGain']),
           albumGain: _dbl(j['albumGain']),
           trackPeak: _dbl(j['trackPeak']),
-          albumPeak: _dbl(j['albumPeak']));
-  Map<String, dynamic> toJson() =>
-      {'trackGain': trackGain, 'albumGain': albumGain, 'trackPeak': trackPeak, 'albumPeak': albumPeak};
+          albumPeak: _dbl(j['albumPeak']),
+        );
+  Map<String, dynamic> toJson() => {
+    'trackGain': trackGain,
+    'albumGain': albumGain,
+    'trackPeak': trackPeak,
+    'albumPeak': albumPeak,
+  };
 }
 
 class Song {
@@ -100,54 +105,54 @@ class Song {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'album': album,
-        'albumId': albumId,
-        'artist': artist,
-        'artistId': artistId,
-        'genre': genre,
-        'coverArt': coverArt,
-        'suffix': suffix,
-        'contentType': contentType,
-        'path': path,
-        'track': track,
-        'discNumber': disc,
-        'year': year,
-        'duration': duration,
-        'bitRate': bitRate,
-        'size': size,
-        'userRating': userRating,
-        'playCount': playCount,
-        if (starred) 'starred': '1',
-        'replayGain': replayGain.toJson(),
-      };
+    'id': id,
+    'title': title,
+    'album': album,
+    'albumId': albumId,
+    'artist': artist,
+    'artistId': artistId,
+    'genre': genre,
+    'coverArt': coverArt,
+    'suffix': suffix,
+    'contentType': contentType,
+    'path': path,
+    'track': track,
+    'discNumber': disc,
+    'year': year,
+    'duration': duration,
+    'bitRate': bitRate,
+    'size': size,
+    'userRating': userRating,
+    'playCount': playCount,
+    if (starred) 'starred': '1',
+    'replayGain': replayGain.toJson(),
+  };
 
   Song copyWith({bool? starred, int? userRating}) => Song(
-        id: id,
-        title: title,
-        album: album,
-        albumId: albumId,
-        artist: artist,
-        artistId: artistId,
-        genre: genre,
-        coverArt: coverArt,
-        suffix: suffix,
-        contentType: contentType,
-        path: path,
-        track: track,
-        disc: disc,
-        year: year,
-        duration: duration,
-        bitRate: bitRate,
-        size: size,
-        userRating: userRating ?? this.userRating,
-        playCount: playCount,
-        starred: starred ?? this.starred,
-        replayGain: replayGain,
-        lookup: lookup,
-        played: played,
-      );
+    id: id,
+    title: title,
+    album: album,
+    albumId: albumId,
+    artist: artist,
+    artistId: artistId,
+    genre: genre,
+    coverArt: coverArt,
+    suffix: suffix,
+    contentType: contentType,
+    path: path,
+    track: track,
+    disc: disc,
+    year: year,
+    duration: duration,
+    bitRate: bitRate,
+    size: size,
+    userRating: userRating ?? this.userRating,
+    playCount: playCount,
+    starred: starred ?? this.starred,
+    replayGain: replayGain,
+    lookup: lookup,
+    played: played,
+  );
 }
 
 class Album {
@@ -201,20 +206,20 @@ class Album {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'artist': artist,
-        'artistId': artistId,
-        'coverArt': coverArt,
-        'genre': genre,
-        'year': year,
-        'songCount': songCount,
-        'duration': duration,
-        'playCount': playCount,
-        'userRating': userRating,
-        if (starred) 'starred': '1',
-        if (created != null) 'created': created!.toIso8601String(),
-      };
+    'id': id,
+    'name': name,
+    'artist': artist,
+    'artistId': artistId,
+    'coverArt': coverArt,
+    'genre': genre,
+    'year': year,
+    'songCount': songCount,
+    'duration': duration,
+    'playCount': playCount,
+    'userRating': userRating,
+    if (starred) 'starred': '1',
+    if (created != null) 'created': created!.toIso8601String(),
+  };
 }
 
 class Artist {
@@ -250,8 +255,13 @@ class Artist {
     );
   }
 
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'name': name, 'coverArt': coverArt, 'albumCount': albumCount, if (starred) 'starred': '1'};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'coverArt': coverArt,
+    'albumCount': albumCount,
+    if (starred) 'starred': '1',
+  };
 }
 
 class ArtistInfo {
@@ -259,11 +269,11 @@ class ArtistInfo {
   final List<Artist> similar;
   const ArtistInfo({this.biography = '', this.imageUrl = '', this.lastFmUrl = '', this.similar = const []});
   factory ArtistInfo.fromJson(Map<String, dynamic> j) => ArtistInfo(
-        biography: _str(j['biography']).replaceAll(RegExp(r'<[^>]+>'), '').trim(),
-        imageUrl: _str(j['largeImageUrl'] ?? j['mediumImageUrl']),
-        lastFmUrl: _str(j['lastFmUrl']),
-        similar: _list(j['similarArtist']).map(Artist.fromJson).toList(),
-      );
+    biography: _str(j['biography']).replaceAll(RegExp(r'<[^>]+>'), '').trim(),
+    imageUrl: _str(j['largeImageUrl'] ?? j['mediumImageUrl']),
+    lastFmUrl: _str(j['lastFmUrl']),
+    similar: _list(j['similarArtist']).map(Artist.fromJson).toList(),
+  );
 }
 
 class Playlist {
@@ -287,28 +297,28 @@ class Playlist {
   });
 
   factory Playlist.fromJson(Map<String, dynamic> j) => Playlist(
-        id: _str(j['id']),
-        name: _str(j['name']),
-        comment: _str(j['comment']),
-        owner: _str(j['owner']),
-        coverArt: _str(j['coverArt']),
-        songCount: _int(j['songCount']),
-        duration: _int(j['duration']),
-        public: j['public'] == true,
-        songs: _list(j['entry']).map(Song.fromJson).toList(),
-        changed: j['changed'] != null ? DateTime.tryParse(_str(j['changed'])) : null,
-      );
+    id: _str(j['id']),
+    name: _str(j['name']),
+    comment: _str(j['comment']),
+    owner: _str(j['owner']),
+    coverArt: _str(j['coverArt']),
+    songCount: _int(j['songCount']),
+    duration: _int(j['duration']),
+    public: j['public'] == true,
+    songs: _list(j['entry']).map(Song.fromJson).toList(),
+    changed: j['changed'] != null ? DateTime.tryParse(_str(j['changed'])) : null,
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'comment': comment,
-        'owner': owner,
-        'coverArt': coverArt,
-        'songCount': songCount,
-        'duration': duration,
-        'public': public,
-      };
+    'id': id,
+    'name': name,
+    'comment': comment,
+    'owner': owner,
+    'coverArt': coverArt,
+    'songCount': songCount,
+    'duration': duration,
+    'public': public,
+  };
 }
 
 class Genre {
@@ -339,9 +349,12 @@ class Lyrics {
       synced: synced,
       lang: _str(j['lang']),
       lines: _list(j['line'])
-          .map((l) => LyricLine(
+          .map(
+            (l) => LyricLine(
               synced && l['start'] != null ? Duration(milliseconds: (_int(l['start']) ?? 0) + offset) : null,
-              _str(l['value'])))
+              _str(l['value']),
+            ),
+          )
           .toList(),
     );
   }
@@ -357,10 +370,10 @@ class SearchResult {
   const SearchResult({this.artists = const [], this.albums = const [], this.songs = const []});
   bool get isEmpty => artists.isEmpty && albums.isEmpty && songs.isEmpty;
   factory SearchResult.fromJson(Map<String, dynamic> j) => SearchResult(
-        artists: _list(j['artist']).map(Artist.fromJson).toList(),
-        albums: _list(j['album']).map(Album.fromJson).toList(),
-        songs: _list(j['song']).map(Song.fromJson).toList(),
-      );
+    artists: _list(j['artist']).map(Artist.fromJson).toList(),
+    albums: _list(j['album']).map(Album.fromJson).toList(),
+    songs: _list(j['song']).map(Song.fromJson).toList(),
+  );
 }
 
 class MusicFolder {
@@ -379,12 +392,14 @@ class DirEntry {
 class InternetRadio {
   final String id, name, streamUrl, homePageUrl;
   const InternetRadio(this.id, this.name, this.streamUrl, this.homePageUrl);
-  factory InternetRadio.fromJson(Map<String, dynamic> j) => InternetRadio(
-      _str(j['id']), _str(j['name']), _str(j['streamUrl']), _str(j['homePageUrl'] ?? j['homepageUrl']));
+  factory InternetRadio.fromJson(Map<String, dynamic> j) =>
+      InternetRadio(_str(j['id']), _str(j['name']), _str(j['streamUrl']), _str(j['homePageUrl'] ?? j['homepageUrl']));
 }
 
 String formatDuration(int? seconds) {
   if (seconds == null) return '';
   final h = seconds ~/ 3600, m = (seconds % 3600) ~/ 60, s = seconds % 60;
-  return h > 0 ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}' : '$m:${s.toString().padLeft(2, '0')}';
+  return h > 0
+      ? '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}'
+      : '$m:${s.toString().padLeft(2, '0')}';
 }

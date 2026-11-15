@@ -1,3 +1,9 @@
+import 'dart:io';
+import 'dart:ui';
+
+import 'package:crypto/crypto.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
@@ -7,41 +13,153 @@ import 'package:go_router/go_router.dart';
 import '../data/account.dart';
 import '../data/library.dart';
 import '../data/models.dart';
+import '../data/online_art.dart';
 import '../playback/handler.dart';
 import 'actions.dart';
 import 'state.dart';
 
-/// Album / song / artist artwork from the server, cached on the phone.
+/// Artwork: the server's cover, cached; if the server has none, one found online (iTunes / Deezer).
+/// Give [artist] + [album] (or [artistImage] for a person) so the online lookup knows what to find.
 class Cover extends ConsumerWidget {
-  const Cover(this.coverArt, {super.key, this.size = 56, this.radius = 8, this.icon = Icons.album, this.circle = false});
-  final String coverArt;
+  const Cover(
+    this.coverArt, {
+    super.key,
+    this.size = 56,
+    this.radius = 10,
+    this.icon = Icons.album_outlined,
+    this.circle = false,
+    this.artist = '',
+    this.album = '',
+    this.artistImage = false,
+  });
+  final String coverArt, artist, album;
   final double size, radius;
   final IconData icon;
-  final bool circle;
+  final bool circle, artistImage;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final c = ref.watch(clientProvider);
     final cs = Theme.of(context).colorScheme;
     final placeholder = Container(
-      color: cs.surfaceContainerHighest,
+      color: cs.surfaceContainerHigh,
       alignment: Alignment.center,
-      child: Icon(icon, color: cs.onSurfaceVariant, size: size.isFinite ? size * 0.45 : 48),
+      child: Icon(icon, color: cs.onSurfaceVariant.withValues(alpha: 0.6), size: size.isFinite ? size * 0.4 : 40),
     );
-    final px = size.isFinite ? (size * MediaQuery.devicePixelRatioOf(context)).round().clamp(100, 1200) : 800;
+    final canLookUp = artist.isNotEmpty && (artistImage || album.isNotEmpty);
+    Widget online() =>
+        canLookUp ? _OnlineCover(artistImage ? 'artist' : 'album', artist, album, placeholder) : placeholder;
+    final px = size.isFinite ? (size * MediaQuery.devicePixelRatioOf(context)).round() : 900;
     final bucket = px <= 200 ? 200 : (px <= 500 ? 500 : 1000);
-    final img = coverArt.isEmpty || c == null
-        ? placeholder
-        : CachedNetworkImage(
-            imageUrl: c.coverUrl(coverArt, size: bucket).toString(),
-            cacheKey: '${c.creds.base}|$coverArt|$bucket',
-            fit: BoxFit.cover,
-            fadeInDuration: const Duration(milliseconds: 150),
-            placeholder: (_, _) => placeholder,
-            errorWidget: (_, _, _) => placeholder,
-          );
+    final Widget img;
+    if (coverArt.isEmpty || c == null) {
+      img = online();
+    } else {
+      final file = ref.watch(_serverCoverProvider((coverArt, bucket)));
+      img = switch (file) {
+        AsyncData(:final value) when value != null => Image.file(
+          value,
+          fit: BoxFit.cover,
+          width: size.isFinite ? size : null,
+          height: size.isFinite ? size : null,
+          cacheWidth: size.isFinite ? px : null,
+          gaplessPlayback: true,
+          errorBuilder: (_, _, _) => online(),
+        ),
+        AsyncLoading() => placeholder,
+        _ => online(),
+      };
+    }
     final box = SizedBox(width: size, height: size, child: img);
     return circle ? ClipOval(child: box) : ClipRRect(borderRadius: BorderRadius.circular(radius), child: box);
+  }
+}
+
+/// Navidrome answers "no cover" with this exact image (same bytes at every size); treat it as missing.
+const _placeholderLength = 69228;
+const _placeholderMd5 = '83d193cefca2810f217cffd533241508';
+
+/// The server's cover as a cached file, or null when the server has no real picture.
+final _serverCoverProvider = FutureProvider.autoDispose.family<File?, (String, int)>((ref, k) async {
+  final c = ref.watch(clientProvider);
+  if (c == null) return null;
+  // the URL carries a fresh login token each time; the cache key is what identifies the picture
+  try {
+    final f = await DefaultCacheManager().getSingleFile(
+      c.coverUrl(k.$1, size: k.$2).toString(),
+      key: '${c.creds.base}|${k.$1}|${k.$2}',
+    );
+    final len = await f.length();
+    if (len < 64) return null;
+    if (len == _placeholderLength && md5.convert(await f.readAsBytes()).toString() == _placeholderMd5) return null;
+    final head = await f.openRead(0, 1).first;
+    if (head.isNotEmpty && head.first == 0x7B) return null; // '{': an error message, not an image
+    return f;
+  } catch (_) {
+    return null;
+  }
+});
+
+class _OnlineCover extends ConsumerWidget {
+  const _OnlineCover(this.kind, this.artist, this.album, this.placeholder);
+  final String kind, artist, album;
+  final Widget placeholder;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final url = ref.watch(onlineArtProvider((kind, artist, album))).value;
+    if (url == null) return placeholder;
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      placeholder: (_, _) => placeholder,
+      errorWidget: (_, _, _) => placeholder,
+    );
+  }
+}
+
+/// A blurred, darkened copy of the artwork behind a header or the player.
+class ArtBackdrop extends StatelessWidget {
+  const ArtBackdrop({
+    super.key,
+    required this.cover,
+    this.artist = '',
+    this.album = '',
+    this.height,
+    this.strength = 0.55,
+  });
+  final String cover, artist, album;
+  final double? height;
+  final double strength;
+  @override
+  Widget build(BuildContext context) {
+    final bg = Theme.of(context).scaffoldBackgroundColor;
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50, tileMode: TileMode.decal),
+            child: Cover(cover, size: double.infinity, radius: 0, artist: artist, album: album),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  bg.withValues(alpha: strength),
+                  bg.withValues(alpha: 0.85),
+                  bg,
+                ],
+                stops: const [0, 0.7, 1],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -54,25 +172,31 @@ class AsyncView<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => value.when(
-        data: builder,
-        loading: () => const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator())),
-        error: (e, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.cloud_off, size: 40, color: Theme.of(context).colorScheme.error),
-              const SizedBox(height: 8),
-              Text('$e', textAlign: TextAlign.center),
-              if (onRetry != null) TextButton(onPressed: onRetry, child: const Text('Try again')),
-            ]),
-          ),
+    data: builder,
+    loading: () => const Center(
+      child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()),
+    ),
+    error: (e, _) => Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_outlined, size: 36, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            const SizedBox(height: 8),
+            Text('$e', textAlign: TextAlign.center),
+            if (onRetry != null) TextButton(onPressed: onRetry, child: const Text('Try again')),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class LookupBadge extends StatelessWidget {
-  const LookupBadge(this.state, {super.key});
+  const LookupBadge(this.state, {super.key, this.size = 16});
   final LookupState state;
+  final double size;
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -81,14 +205,25 @@ class LookupBadge extends StatelessWidget {
       LookupState.failed => (Icons.error_outline, cs.error, 'Couldn\'t download'),
       _ => (Icons.cloud_download_outlined, cs.primary, 'Not in your library'),
     };
-    return Tooltip(message: tip, child: Icon(icon, size: 18, color: color));
+    return Tooltip(
+      message: tip,
+      child: Icon(icon, size: size, color: color),
+    );
   }
 }
 
-/// One song row. Taps play [list] from this song; long press / ⋮ opens the song menu.
+/// One song row: cover, title, artist; taps play [list] from this song; long press / ⋮ opens the menu.
 class SongTile extends ConsumerWidget {
-  const SongTile(this.song,
-      {super.key, this.list, this.index, this.showCover = true, this.showTrack = false, this.queueIndex, this.trailing});
+  const SongTile(
+    this.song, {
+    super.key,
+    this.list,
+    this.index,
+    this.showCover = true,
+    this.showTrack = false,
+    this.queueIndex,
+    this.trailing,
+  });
   final Song song;
   final List<Song>? list;
   final int? index, queueIndex;
@@ -103,62 +238,123 @@ class SongTile extends ConsumerWidget {
     final offline = ref.watch(offlineProvider);
     final available = !offline || dl.files.containsKey(song.id);
     final cs = Theme.of(context).colorScheme;
-    final titleStyle = TextStyle(
-      color: current ? cs.primary : (song.isLookup || !available ? cs.onSurfaceVariant : null),
-      fontWeight: current ? FontWeight.w600 : null,
-    );
-    return ListTile(
-      enabled: available || song.isLookup,
-      contentPadding: const EdgeInsets.only(left: 16, right: 4),
-      leading: showTrack
-          ? SizedBox(
-              width: 32,
-              child: Center(
-                  child: current
-                      ? Icon(Icons.graphic_eq, color: cs.primary)
-                      : Text('${song.track ?? ''}', style: Theme.of(context).textTheme.bodyMedium)))
-          : (showCover ? Cover(song.coverArt, size: 48, radius: 6, icon: Icons.music_note) : null),
-      title: Row(children: [
-        if (song.isLookup) Padding(padding: const EdgeInsets.only(right: 6), child: LookupBadge(song.lookup)),
-        Expanded(child: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: titleStyle)),
-      ]),
-      subtitle: Row(children: [
-        if (dl.files.containsKey(song.id))
-          Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Icon(Icons.offline_pin, size: 14, color: cs.primary)),
-        if (song.starred) Padding(padding: const EdgeInsets.only(right: 4), child: Icon(Icons.favorite, size: 14, color: cs.primary)),
-        Expanded(
-          child: Text(
-            [showTrack ? '' : song.artist, formatDuration(song.duration)].where((e) => e.isNotEmpty).join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ]),
-      trailing: trailing ??
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            if (progress != null)
-              SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, value: progress > 0 ? progress : null)),
-            IconButton(icon: const Icon(Icons.more_vert), onPressed: () => showSongMenu(context, ref, song, queueIndex: queueIndex)),
-          ]),
-      onTap: () {
-        if (queueIndex != null) {
-          audioHandler.skipToQueueItem(queueIndex!);
-        } else if (song.isLookup) {
-          showSongMenu(context, ref, song);
-        } else {
-          final l = list ?? [song];
-          audioHandler.playSongs(l, index: index ?? l.indexOf(song));
-        }
-      },
+    final t = Theme.of(context).textTheme;
+    final dim = song.isLookup || !available;
+    return InkWell(
+      onTap: !(available || song.isLookup)
+          ? null
+          : () {
+              if (queueIndex != null) {
+                audioHandler.skipToQueueItem(queueIndex!);
+              } else if (song.isLookup) {
+                showSongMenu(context, ref, song);
+              } else {
+                final l = list ?? [song];
+                audioHandler.playSongs(l, index: index ?? l.indexOf(song));
+              }
+            },
       onLongPress: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 4, 6),
+        child: Row(
+          children: [
+            if (showTrack)
+              SizedBox(
+                width: 28,
+                child: current
+                    ? Icon(Icons.graphic_eq_rounded, size: 18, color: cs.primary)
+                    : Text('${song.track ?? ''}', style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+              )
+            else if (showCover)
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Opacity(
+                  opacity: dim ? 0.55 : 1,
+                  child: Cover(
+                    song.coverArt,
+                    size: 46,
+                    radius: 8,
+                    icon: Icons.music_note_outlined,
+                    artist: song.artist,
+                    album: song.album,
+                  ),
+                ),
+              ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (song.isLookup)
+                        Padding(padding: const EdgeInsets.only(right: 6), child: LookupBadge(song.lookup, size: 15)),
+                      Expanded(
+                        child: Text(
+                          song.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.bodyLarge?.copyWith(
+                            fontWeight: FontWeight.w500,
+                            color: current ? cs.primary : (dim ? cs.onSurfaceVariant : cs.onSurface),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      if (dl.files.containsKey(song.id))
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
+                        ),
+                      if (song.starred)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(Icons.favorite_rounded, size: 13, color: cs.primary),
+                        ),
+                      Expanded(
+                        child: Text(
+                          [
+                            showTrack ? '' : song.artist,
+                            formatDuration(song.duration),
+                          ].where((e) => e.isNotEmpty).join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            trailing ??
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (progress != null)
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, value: progress > 0 ? progress : null),
+                      ),
+                    IconButton(
+                      icon: Icon(Icons.more_vert_rounded, color: cs.onSurfaceVariant),
+                      onPressed: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
+                    ),
+                  ],
+                ),
+          ],
+        ),
+      ),
     );
   }
 }
 
 class AlbumCard extends ConsumerWidget {
-  const AlbumCard(this.album, {super.key, this.width = 150, this.showArtist = true, this.showYear = false});
+  const AlbumCard(this.album, {super.key, this.width = 148, this.showArtist = true, this.showYear = false});
   final Album album;
   final double width;
   final bool showArtist, showYear;
@@ -166,51 +362,65 @@ class AlbumCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
     return SizedBox(
       width: width,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+      child: GestureDetector(
         onTap: () => context.push('/album/${album.id}'),
-        onLongPress: () => showCollectionMenu(context, ref, album.name,
-            () async => (await ref.read(repoProvider).album(album.id)).songs),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Stack(children: [
-              AspectRatio(aspectRatio: 1, child: Cover(album.coverArt, size: double.infinity, radius: 10)),
-              if (album.isLookup) Positioned(right: 6, top: 6, child: _Pill(child: LookupBadge(album.lookup))),
-            ]),
-            const SizedBox(height: 6),
+        onLongPress: () => showCollectionMenu(
+          context,
+          ref,
+          album.name,
+          () async => (await ref.read(repoProvider).album(album.id)).songs,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                AspectRatio(
+                  aspectRatio: 1,
+                  child: Cover(
+                    album.coverArt,
+                    size: double.infinity,
+                    radius: 14,
+                    artist: album.artist,
+                    album: album.name,
+                  ),
+                ),
+                if (album.isLookup)
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(color: cs.surface.withValues(alpha: 0.85), shape: BoxShape.circle),
+                      child: LookupBadge(album.lookup),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
             if (showArtist || showYear)
               Text(
                 [if (showArtist) album.artist, if (showYear && album.year != null) '${album.year}'].join(' · '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: t.bodySmall,
+                style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
               ),
-          ]),
+          ],
         ),
       ),
     );
   }
 }
 
-class _Pill extends StatelessWidget {
-  const _Pill({required this.child});
-  final Widget child;
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85), shape: BoxShape.circle),
-        child: child,
-      );
-}
-
-/// A titled horizontal carousel (home screen, artist page).
+/// A titled horizontal row (home, artist pages, discover).
 class Shelf extends StatelessWidget {
-  const Shelf({super.key, required this.title, required this.children, this.onMore, this.height = 210});
+  const Shelf({super.key, required this.title, required this.children, this.onMore, this.height = 206, this.subtitle});
   final String title;
+  final String? subtitle;
   final List<Widget> children;
   final VoidCallback? onMore;
   final double height;
@@ -218,43 +428,58 @@ class Shelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (children.isEmpty) return const SizedBox.shrink();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
-        child: Row(children: [
-          Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
-          if (onMore != null) IconButton(icon: const Icon(Icons.chevron_right), onPressed: onMore),
-        ]),
-      ),
-      SizedBox(
-        height: height,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          itemCount: children.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 4),
-          itemBuilder: (_, i) => children[i],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionTitle(title, subtitle: subtitle, onMore: onMore),
+        SizedBox(
+          height: height,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: children.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 14),
+            itemBuilder: (_, i) => children[i],
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 }
 
 class SectionTitle extends StatelessWidget {
-  const SectionTitle(this.text, {super.key, this.trailing});
+  const SectionTitle(this.text, {super.key, this.trailing, this.subtitle, this.onMore});
   final String text;
+  final String? subtitle;
   final Widget? trailing;
+  final VoidCallback? onMore;
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 8, 6),
-        child: Row(children: [
-          Expanded(child: Text(text, style: Theme.of(context).textTheme.titleMedium)),
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 28, 8, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(text, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
+                if (subtitle != null)
+                  Text(subtitle!, style: t.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
           ?trailing,
-        ]),
-      );
+          if (onMore != null) TextButton(onPressed: onMore, child: const Text('See all')),
+        ],
+      ),
+    );
+  }
 }
 
-/// The bar above the navigation: what's playing, play/pause, progress. Tap opens the player.
+/// The floating bar above the navigation: what's playing, progress, play/pause. Tap opens the player.
 class MiniPlayer extends ConsumerWidget {
   const MiniPlayer({super.key});
 
@@ -267,70 +492,173 @@ class MiniPlayer extends ConsumerWidget {
     final playing = state?.playing ?? false;
     final song = ref.watch(currentSongProvider);
     final cs = Theme.of(context).colorScheme;
-    final loading = state?.processingState == AudioProcessingState.loading ||
+    final t = Theme.of(context).textTheme;
+    final loading =
+        state?.processingState == AudioProcessingState.loading ||
         state?.processingState == AudioProcessingState.buffering;
     final frac = pos == null || pos.duration.inMilliseconds == 0
         ? 0.0
         : (pos.position.inMilliseconds / pos.duration.inMilliseconds).clamp(0.0, 1.0);
-    return Material(
-      color: cs.surfaceContainerHigh,
-      child: InkWell(
-        onTap: () => context.push('/player'),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          LinearProgressIndicator(value: frac, minHeight: 2, backgroundColor: Colors.transparent),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
-            child: Row(children: [
-              Hero(tag: 'cover', child: Cover(song?.coverArt ?? '', size: 44, radius: 6, icon: Icons.music_note)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: GestureDetector(
-                  onHorizontalDragEnd: (d) {
-                    final v = d.primaryVelocity ?? 0;
-                    if (v < -300) audioHandler.skipToNext();
-                    if (v > 300) audioHandler.skipToPrevious();
-                  },
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall),
-                    Text(item.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
-                  ]),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+      child: Material(
+        color: cs.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => context.push('/player'),
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
+                child: Row(
+                  children: [
+                    Hero(
+                      tag: 'cover',
+                      child: Cover(
+                        song?.coverArt ?? '',
+                        size: 42,
+                        radius: 8,
+                        icon: Icons.music_note_outlined,
+                        artist: song?.artist ?? '',
+                        album: song?.album ?? '',
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onHorizontalDragEnd: (d) {
+                          final v = d.primaryVelocity ?? 0;
+                          if (v < -300) audioHandler.skipToNext();
+                          if (v > 300) audioHandler.skipToPrevious();
+                        },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
+                            Text(
+                              item.artist ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (song != null)
+                      IconButton(
+                        icon: Icon(
+                          song.starred ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          color: song.starred ? cs.primary : null,
+                        ),
+                        onPressed: () => toggleStarSong(context, ref, song),
+                      ),
+                    loading
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
+                          )
+                        : IconButton(
+                            iconSize: 30,
+                            icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                            onPressed: playing ? audioHandler.pause : audioHandler.play,
+                          ),
+                  ],
                 ),
               ),
-              if (song != null)
-                IconButton(
-                  icon: Icon(song.starred ? Icons.favorite : Icons.favorite_border),
-                  onPressed: () => toggleStarSong(context, ref, song),
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 0,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: frac,
+                    minHeight: 2,
+                    backgroundColor: cs.onSurface.withValues(alpha: 0.08),
+                  ),
                 ),
-              loading
-                  ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5)))
-                  : IconButton(
-                      iconSize: 32,
-                      icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
-                      onPressed: playing ? audioHandler.pause : audioHandler.play,
-                    ),
-              IconButton(icon: const Icon(Icons.skip_next_rounded), onPressed: audioHandler.skipToNext),
-            ]),
+              ),
+            ],
           ),
-        ]),
+        ),
       ),
     );
   }
 }
 
-/// Big round play + shuffle buttons used on album, playlist, artist and genre pages.
+/// Round play button, shuffle, and optional extras, for album / playlist / artist pages.
 class PlayButtons extends StatelessWidget {
-  const PlayButtons({super.key, required this.onPlay, required this.onShuffle, this.extra = const []});
+  const PlayButtons({
+    super.key,
+    required this.onPlay,
+    required this.onShuffle,
+    this.extra = const [],
+    this.leading = const [],
+  });
   final VoidCallback onPlay, onShuffle;
-  final List<Widget> extra;
+  final List<Widget> extra, leading;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(children: [
-          Expanded(child: FilledButton.icon(onPressed: onPlay, icon: const Icon(Icons.play_arrow), label: const Text('Play'))),
-          const SizedBox(width: 12),
-          Expanded(
-              child: FilledButton.tonalIcon(onPressed: onShuffle, icon: const Icon(Icons.shuffle), label: const Text('Shuffle'))),
-          ...extra,
-        ]),
-      );
+    padding: const EdgeInsets.fromLTRB(8, 4, 16, 8),
+    child: Row(
+      children: [
+        ...leading,
+        ...extra,
+        const Spacer(),
+        IconButton(iconSize: 26, tooltip: 'Shuffle', icon: const Icon(Icons.shuffle_rounded), onPressed: onShuffle),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 56,
+          height: 56,
+          child: FilledButton(
+            style: FilledButton.styleFrom(shape: const CircleBorder(), padding: EdgeInsets.zero),
+            onPressed: onPlay,
+            child: const Icon(Icons.play_arrow_rounded, size: 32),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Spotify-style download switch for a whole collection: keeps it on the phone, new songs included.
+class DownloadToggle extends ConsumerWidget {
+  const DownloadToggle({super.key, required this.pinKey, required this.songs});
+  final String pinKey;
+  final Future<List<Song>> Function() songs;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dl = ref.watch(downloadsProvider);
+    final on = dl.pins.contains(pinKey);
+    final cs = Theme.of(context).colorScheme;
+    return IconButton(
+      tooltip: on ? 'Downloaded (tap to remove)' : 'Download',
+      iconSize: 28,
+      icon: Icon(
+        on ? Icons.arrow_circle_down_rounded : Icons.arrow_circle_down_outlined,
+        color: on ? cs.primary : null,
+      ),
+      onPressed: () async {
+        final n = ref.read(downloadsProvider.notifier);
+        final list = (await songs()).where((s) => !s.isLookup).toList();
+        if (on) {
+          if (context.mounted &&
+              await confirm(
+                context,
+                'Remove download?',
+                'These songs stay on your server; they just leave the phone.',
+                ok: 'Remove',
+              )) {
+            await n.unpin(pinKey, list);
+          }
+        } else {
+          await n.pin(pinKey, list);
+          if (context.mounted) toast(context, 'Downloading ${list.length} songs, and new ones as they\'re added');
+        }
+      },
+    );
+  }
 }

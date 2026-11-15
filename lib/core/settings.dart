@@ -30,6 +30,8 @@ class Settings {
   final bool scrobble;
   final bool syncPlayQueue; // save the queue on the server (continue on another device)
   final bool onlineLyrics; // LRCLIB when the server has no lyrics
+  final bool onlineCovers; // iTunes / Deezer art when the server has none
+  final double pitch;
   final bool showLookup; // show songs you don't have (music-lookup) in search and album pages
   final bool offlineMode;
   final AlbumSort albumSort;
@@ -59,6 +61,8 @@ class Settings {
     this.scrobble = true,
     this.syncPlayQueue = true,
     this.onlineLyrics = true,
+    this.onlineCovers = true,
+    this.pitch = 1.0,
     this.showLookup = true,
     this.offlineMode = false,
     this.albumSort = AlbumSort.recent,
@@ -73,34 +77,36 @@ class Settings {
   static const defaultHomeSections = ['recent', 'newest', 'frequent', 'starred', 'random', 'playlists'];
 
   Map<String, dynamic> toJson() => {
-        'themeSource': themeSource.name,
-        'accentColor': accentColor,
-        'pureBlack': pureBlack,
-        'wifiFormat': wifiFormat,
-        'mobileFormat': mobileFormat,
-        'wifiBitrate': wifiBitrate,
-        'mobileBitrate': mobileBitrate,
-        'downloadFormat': downloadFormat,
-        'downloadBitrate': downloadBitrate,
-        'downloadWifiOnly': downloadWifiOnly,
-        'replayGain': replayGain.name,
-        'replayGainPreamp': replayGainPreamp,
-        'skipSilence': skipSilence,
-        'speed': speed,
-        'endlessRadio': endlessRadio,
-        'scrobble': scrobble,
-        'syncPlayQueue': syncPlayQueue,
-        'onlineLyrics': onlineLyrics,
-        'showLookup': showLookup,
-        'offlineMode': offlineMode,
-        'albumSort': albumSort.name,
-        'albumGrid': albumGrid,
-        'sleepMinutes': sleepMinutes,
-        'homeSections': homeSections,
-        'eqEnabled': eqEnabled,
-        'eqGains': eqGains,
-        'cacheMb': cacheMb,
-      };
+    'themeSource': themeSource.name,
+    'accentColor': accentColor,
+    'pureBlack': pureBlack,
+    'wifiFormat': wifiFormat,
+    'mobileFormat': mobileFormat,
+    'wifiBitrate': wifiBitrate,
+    'mobileBitrate': mobileBitrate,
+    'downloadFormat': downloadFormat,
+    'downloadBitrate': downloadBitrate,
+    'downloadWifiOnly': downloadWifiOnly,
+    'replayGain': replayGain.name,
+    'replayGainPreamp': replayGainPreamp,
+    'skipSilence': skipSilence,
+    'speed': speed,
+    'endlessRadio': endlessRadio,
+    'scrobble': scrobble,
+    'syncPlayQueue': syncPlayQueue,
+    'onlineLyrics': onlineLyrics,
+    'onlineCovers': onlineCovers,
+    'pitch': pitch,
+    'showLookup': showLookup,
+    'offlineMode': offlineMode,
+    'albumSort': albumSort.name,
+    'albumGrid': albumGrid,
+    'sleepMinutes': sleepMinutes,
+    'homeSections': homeSections,
+    'eqEnabled': eqEnabled,
+    'eqGains': eqGains,
+    'cacheMb': cacheMb,
+  };
 
   factory Settings.fromJson(Map<String, dynamic> j) {
     T pick<T extends Enum>(List<T> values, dynamic name, T fallback) =>
@@ -125,6 +131,8 @@ class Settings {
       scrobble: j['scrobble'] ?? d.scrobble,
       syncPlayQueue: j['syncPlayQueue'] ?? d.syncPlayQueue,
       onlineLyrics: j['onlineLyrics'] ?? d.onlineLyrics,
+      onlineCovers: j['onlineCovers'] ?? d.onlineCovers,
+      pitch: (j['pitch'] as num?)?.toDouble() ?? d.pitch,
       showLookup: j['showLookup'] ?? d.showLookup,
       offlineMode: j['offlineMode'] ?? d.offlineMode,
       albumSort: pick(AlbumSort.values, j['albumSort'], d.albumSort),

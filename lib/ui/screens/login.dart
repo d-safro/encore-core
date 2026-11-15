@@ -43,56 +43,67 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: AutofillGroup(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  Icon(Icons.graphic_eq_rounded, size: 64, color: Theme.of(context).colorScheme.primary),
-                  const SizedBox(height: 12),
-                  Text('Encore', textAlign: TextAlign.center, style: t.displaySmall),
-                  Text('Sign in to your Navidrome or Subsonic server', textAlign: TextAlign.center, style: t.bodyMedium),
-                  const SizedBox(height: 32),
-                  TextField(
-                    controller: _server,
-                    keyboardType: TextInputType.url,
-                    textInputAction: TextInputAction.next,
-                    autocorrect: false,
-                    decoration: const InputDecoration(
-                        labelText: 'Server address', hintText: 'https://music.example.com', prefixIcon: Icon(Icons.dns_outlined)),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _user,
-                    autocorrect: false,
-                    textInputAction: TextInputAction.next,
-                    autofillHints: const [AutofillHints.username],
-                    decoration: const InputDecoration(labelText: 'Username', prefixIcon: Icon(Icons.person_outline)),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _pass,
-                    obscureText: _hide,
-                    textInputAction: TextInputAction.go,
-                    autofillHints: const [AutofillHints.password],
-                    onSubmitted: (_) => _submit(),
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Icon(Icons.graphic_eq_rounded, size: 64, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(height: 12),
+                    Text('Encore', textAlign: TextAlign.center, style: t.displaySmall),
+                    Text(
+                      'Sign in to your Navidrome or Subsonic server',
+                      textAlign: TextAlign.center,
+                      style: t.bodyMedium,
+                    ),
+                    const SizedBox(height: 32),
+                    TextField(
+                      controller: _server,
+                      keyboardType: TextInputType.url,
+                      textInputAction: TextInputAction.next,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Server address',
+                        hintText: 'https://music.example.com',
+                        prefixIcon: Icon(Icons.dns_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _user,
+                      autocorrect: false,
+                      textInputAction: TextInputAction.next,
+                      autofillHints: const [AutofillHints.username],
+                      decoration: const InputDecoration(labelText: 'Username', prefixIcon: Icon(Icons.person_outline)),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _pass,
+                      obscureText: _hide,
+                      textInputAction: TextInputAction.go,
+                      autofillHints: const [AutofillHints.password],
+                      onSubmitted: (_) => _submit(),
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
                           icon: Icon(_hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                          onPressed: () => setState(() => _hide = !_hide)),
+                          onPressed: () => setState(() => _hide = !_hide),
+                        ),
+                      ),
                     ),
-                  ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                      ),
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: _busy ? null : _submit,
+                      child: _busy
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Text('Sign in'),
                     ),
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: _busy ? null : _submit,
-                    child: _busy
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('Sign in'),
-                  ),
-                ]),
+                  ],
+                ),
               ),
             ),
           ),

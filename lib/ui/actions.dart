@@ -6,6 +6,7 @@ import '../data/account.dart';
 import '../data/library.dart';
 import '../data/models.dart';
 import '../playback/handler.dart';
+import 'screens/radio.dart';
 import 'state.dart';
 
 void toast(BuildContext context, String text) {
@@ -133,7 +134,11 @@ Future<void> addToPlaylist(BuildContext context, WidgetRef ref, List<Song> songs
       if (context.mounted) toast(context, 'Created "$name"');
     } else if (choice is Playlist) {
       await c.updatePlaylist(choice.id, add: songs.map((s) => s.id).toList());
-      if (context.mounted) toast(context, 'Added ${songs.length == 1 ? '"${songs.first.title}"' : '${songs.length} songs'} to ${choice.name}');
+      if (context.mounted)
+        toast(
+          context,
+          'Added ${songs.length == 1 ? '"${songs.first.title}"' : '${songs.length} songs'} to ${choice.name}',
+        );
       ref.invalidate(playlistProvider(choice.id));
     }
     ref.invalidate(playlistsProvider);
@@ -177,7 +182,13 @@ Future<bool> confirm(BuildContext context, String title, String text, {String ok
     false;
 
 /// Long-press / ⋮ menu for a song.
-Future<void> showSongMenu(BuildContext context, WidgetRef ref, Song song, {List<Song>? context_, int? queueIndex}) async {
+Future<void> showSongMenu(
+  BuildContext context,
+  WidgetRef ref,
+  Song song, {
+  List<Song>? context_,
+  int? queueIndex,
+}) async {
   final downloads = ref.read(downloadsProvider);
   final have = downloads.files.containsKey(song.id);
   final online = ref.read(repoProvider).online;
@@ -225,6 +236,16 @@ Future<void> showSongMenu(BuildContext context, WidgetRef ref, Song song, {List<
                   },
                 ),
               ] else ...[
+                if (online)
+                  ListTile(
+                    leading: const Icon(Icons.radio_rounded),
+                    title: const Text('Song radio'),
+                    subtitle: const Text('This song, then songs like it, without end'),
+                    onTap: () {
+                      close();
+                      openSongRadio(context, song);
+                    },
+                  ),
                 ListTile(
                   leading: const Icon(Icons.playlist_play),
                   title: const Text('Play next'),
@@ -276,7 +297,9 @@ Future<void> showSongMenu(BuildContext context, WidgetRef ref, Song song, {List<
               if (online && !song.isLookup) ...[
                 ListTile(
                   leading: const Icon(Icons.star_outline_rounded),
-                  title: Text(song.userRating != null && song.userRating! > 0 ? 'Rating: ${song.userRating}/5' : 'Rate'),
+                  title: Text(
+                    song.userRating != null && song.userRating! > 0 ? 'Rating: ${song.userRating}/5' : 'Rate',
+                  ),
                   onTap: () {
                     close();
                     rateSong(context, ref, song);
@@ -299,7 +322,7 @@ Future<void> showSongMenu(BuildContext context, WidgetRef ref, Song song, {List<
                     close();
                     have
                         ? ref.read(downloadsProvider.notifier).remove([song.id])
-                        : ref.read(downloadsProvider.notifier).download([song]);
+                        : ref.read(downloadsProvider.notifier).download([song], manual: true);
                   },
                 ),
               if (queueIndex != null)
@@ -371,10 +394,13 @@ void showSongInfo(BuildContext context, Song s) {
             for (final (k, v) in rows)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(k, style: Theme.of(ctx).textTheme.labelSmall),
-                  SelectableText(v),
-                ]),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(k, style: Theme.of(ctx).textTheme.labelSmall),
+                    SelectableText(v),
+                  ],
+                ),
               ),
           ],
         ),
@@ -385,8 +411,13 @@ void showSongInfo(BuildContext context, Song s) {
 }
 
 /// Menu for a whole collection (album, playlist, artist, genre).
-Future<void> showCollectionMenu(BuildContext context, WidgetRef ref, String title, Future<List<Song>> Function() songs,
-    {List<Widget> extra = const []}) async {
+Future<void> showCollectionMenu(
+  BuildContext context,
+  WidgetRef ref,
+  String title,
+  Future<List<Song>> Function() songs, {
+  List<Widget> extra = const [],
+}) async {
   final online = ref.read(repoProvider).online;
   await showModalBottomSheet(
     context: context,
@@ -398,35 +429,52 @@ Future<void> showCollectionMenu(BuildContext context, WidgetRef ref, String titl
       }
 
       return SafeArea(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          ListTile(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
-          const Divider(height: 1),
-          ListTile(leading: const Icon(Icons.play_arrow), title: const Text('Play'), onTap: () => run(audioHandler.playSongs)),
-          ListTile(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.play_arrow),
+              title: const Text('Play'),
+              onTap: () => run(audioHandler.playSongs),
+            ),
+            ListTile(
               leading: const Icon(Icons.shuffle),
               title: const Text('Shuffle'),
-              onTap: () => run((s) => audioHandler.playSongs(s, shuffle: true))),
-          ListTile(leading: const Icon(Icons.playlist_play), title: const Text('Play next'), onTap: () => run(audioHandler.playNext)),
-          ListTile(leading: const Icon(Icons.queue_music), title: const Text('Add to queue'), onTap: () => run(audioHandler.addLast)),
-          if (online)
+              onTap: () => run((s) => audioHandler.playSongs(s, shuffle: true)),
+            ),
             ListTile(
+              leading: const Icon(Icons.playlist_play),
+              title: const Text('Play next'),
+              onTap: () => run(audioHandler.playNext),
+            ),
+            ListTile(
+              leading: const Icon(Icons.queue_music),
+              title: const Text('Add to queue'),
+              onTap: () => run(audioHandler.addLast),
+            ),
+            if (online)
+              ListTile(
                 leading: const Icon(Icons.playlist_add),
                 title: const Text('Add to playlist'),
-                onTap: () => run((s) => addToPlaylist(context, ref, s))),
-          ListTile(
+                onTap: () => run((s) => addToPlaylist(context, ref, s)),
+              ),
+            ListTile(
               leading: const Icon(Icons.offline_pin_outlined),
               title: const Text('Download for offline'),
               onTap: () => run((s) async {
-                    await ref.read(downloadsProvider.notifier).download(s);
-                    if (context.mounted) toast(context, 'Downloading ${s.length} songs');
-                  })),
-          ...extra,
-        ]),
+                await ref.read(downloadsProvider.notifier).download(s);
+                if (context.mounted) toast(context, 'Downloading ${s.length} songs');
+              }),
+            ),
+            ...extra,
+          ],
+        ),
       );
     },
   );
 }
-
 
 /// Pick a second song, then play a gradual path of sound-alikes from [from] to it (AudioMuse on the server).
 Future<void> bridgeMix(BuildContext context, WidgetRef ref, Song from) async {
@@ -437,7 +485,8 @@ Future<void> bridgeMix(BuildContext context, WidgetRef ref, Song from) async {
   if (context.mounted) toast(context, 'Building a path to "${to.title}"…');
   final path = await c.sonicPath(from.id, to.id, count: 20);
   if (path.isEmpty) {
-    if (context.mounted) toast(context, 'Your server can\'t build that path yet (are both songs analysed by AudioMuse?)');
+    if (context.mounted)
+      toast(context, 'Your server can\'t build that path yet (are both songs analysed by AudioMuse?)');
     return;
   }
   final ids = {from.id, to.id};
@@ -453,39 +502,45 @@ Future<Song?> pickSong(BuildContext context, WidgetRef ref, String title) {
     builder: (ctx) {
       var results = <Song>[];
       var seq = 0;
-      return StatefulBuilder(builder: (ctx, set) {
-        return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-          child: SizedBox(
-            height: MediaQuery.sizeOf(ctx).height * 0.75,
-            child: Column(children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: TextField(
-                  autofocus: true,
-                  decoration: InputDecoration(labelText: title, prefixIcon: const Icon(Icons.search)),
-                  onChanged: (q) async {
-                    final my = ++seq;
-                    if (q.trim().length < 2) return set(() => results = []);
-                    final r = await ref.read(repoProvider).search(q.trim());
-                    if (my == seq) set(() => results = r.songs.where((s) => !s.isLookup).toList());
-                  },
-                ),
-              ),
-              Expanded(
-                child: ListView(children: [
-                  for (final s in results)
-                    ListTile(
-                      title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text(s.artist, maxLines: 1),
-                      onTap: () => Navigator.pop(ctx, s),
+      return StatefulBuilder(
+        builder: (ctx, set) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+            child: SizedBox(
+              height: MediaQuery.sizeOf(ctx).height * 0.75,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: TextField(
+                      autofocus: true,
+                      decoration: InputDecoration(labelText: title, prefixIcon: const Icon(Icons.search)),
+                      onChanged: (q) async {
+                        final my = ++seq;
+                        if (q.trim().length < 2) return set(() => results = []);
+                        final r = await ref.read(repoProvider).search(q.trim());
+                        if (my == seq) set(() => results = r.songs.where((s) => !s.isLookup).toList());
+                      },
                     ),
-                ]),
+                  ),
+                  Expanded(
+                    child: ListView(
+                      children: [
+                        for (final s in results)
+                          ListTile(
+                            title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            subtitle: Text(s.artist, maxLines: 1),
+                            onTap: () => Navigator.pop(ctx, s),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ]),
-          ),
-        );
-      });
+            ),
+          );
+        },
+      );
     },
   );
 }

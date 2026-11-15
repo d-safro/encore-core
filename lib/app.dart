@@ -22,8 +22,11 @@ final _rootKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
   final signedIn = ValueNotifier<bool?>(null);
-  ref.listen(accountProvider, (_, next) => signedIn.value = next.isLoading ? null : next.value != null,
-      fireImmediately: true);
+  ref.listen(
+    accountProvider,
+    (_, next) => signedIn.value = next.isLoading ? null : next.value != null,
+    fireImmediately: true,
+  );
   return GoRouter(
     navigatorKey: _rootKey,
     initialLocation: '/home',
@@ -44,8 +47,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         pageBuilder: (_, _) => CustomTransitionPage(
           child: const PlayerScreen(),
           transitionsBuilder: (_, anim, _, child) => SlideTransition(
-            position: Tween(begin: const Offset(0, 1), end: Offset.zero)
-                .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+            position: Tween(
+              begin: const Offset(0, 1),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
             child: child,
           ),
         ),
@@ -54,22 +59,45 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (ctx, state, child) => _Shell(location: state.uri.path, child: child),
         routes: [
-          GoRoute(path: '/home', pageBuilder: (_, _) => const NoTransitionPage(child: HomeScreen())),
-          GoRoute(path: '/discover', pageBuilder: (_, _) => const NoTransitionPage(child: DiscoverScreen())),
+          GoRoute(
+            path: '/home',
+            pageBuilder: (_, _) => const NoTransitionPage(child: HomeScreen()),
+          ),
+          GoRoute(
+            path: '/discover',
+            pageBuilder: (_, _) => const NoTransitionPage(child: DiscoverScreen()),
+          ),
           GoRoute(
             path: '/library',
             pageBuilder: (_, s) => NoTransitionPage(
-                child: LibraryScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0)),
+              child: LibraryScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0),
+            ),
           ),
-          GoRoute(path: '/search', pageBuilder: (_, _) => const NoTransitionPage(child: SearchScreen())),
-          GoRoute(path: '/album/:id', builder: (_, s) => AlbumScreen(id: s.pathParameters['id']!)),
-          GoRoute(path: '/artist/:id', builder: (_, s) => ArtistScreen(id: s.pathParameters['id']!)),
-          GoRoute(path: '/playlist/:id', builder: (_, s) => PlaylistScreen(id: s.pathParameters['id']!)),
-          GoRoute(path: '/genre/:name', builder: (_, s) => GenreScreen(name: s.pathParameters['name']!)),
           GoRoute(
-              path: '/albums/:type',
-              builder: (_, s) =>
-                  AlbumListScreen(type: s.pathParameters['type']!, title: s.uri.queryParameters['title'] ?? 'Albums')),
+            path: '/search',
+            pageBuilder: (_, _) => const NoTransitionPage(child: SearchScreen()),
+          ),
+          GoRoute(
+            path: '/album/:id',
+            builder: (_, s) => AlbumScreen(id: s.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: '/artist/:id',
+            builder: (_, s) => ArtistScreen(id: s.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: '/playlist/:id',
+            builder: (_, s) => PlaylistScreen(id: s.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: '/genre/:name',
+            builder: (_, s) => GenreScreen(name: s.pathParameters['name']!),
+          ),
+          GoRoute(
+            path: '/albums/:type',
+            builder: (_, s) =>
+                AlbumListScreen(type: s.pathParameters['type']!, title: s.uri.queryParameters['title'] ?? 'Albums'),
+          ),
           GoRoute(path: '/folders', builder: (_, _) => const FoldersScreen()),
           GoRoute(path: '/radio', builder: (_, _) => const RadioScreen()),
           GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
@@ -95,21 +123,36 @@ class _Shell extends ConsumerWidget {
     if (idx >= 0) _lastTab = idx; // detail pages keep the tab they were opened from
     return Scaffold(
       body: child,
-      bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
-        const MiniPlayer(),
-        NavigationBar(
-          selectedIndex: _lastTab,
-          onDestinationSelected: (i) => context.go(_tabs[i]),
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-            NavigationDestination(
-                icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'Discover'),
-            NavigationDestination(
-                icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
-            NavigationDestination(icon: Icon(Icons.search), label: 'Search'),
-          ],
-        ),
-      ]),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const MiniPlayer(),
+          NavigationBar(
+            selectedIndex: _lastTab,
+            height: 64,
+            labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+            onDestinationSelected: (i) => context.go(_tabs[i]),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home_rounded),
+                label: 'Home',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.auto_awesome_outlined),
+                selectedIcon: Icon(Icons.auto_awesome),
+                label: 'Discover',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.library_music_outlined),
+                selectedIcon: Icon(Icons.library_music_rounded),
+                label: 'Library',
+              ),
+              NavigationDestination(icon: Icon(Icons.search_rounded), label: 'Search'),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -128,20 +171,99 @@ class _EncoreAppState extends ConsumerState<EncoreApp> {
     ref.listenManual(offlineProvider, (prev, next) {
       if (prev == true && next == false) audioHandler.flushOfflineScrobbles();
     });
+    // keep downloaded collections up to date (new songs in playlists, newly hearted songs)
+    Future.delayed(const Duration(seconds: 20), () => ref.read(downloadsProvider.notifier).refreshPins());
   }
 
+  /// Minimal dark look: near-black surfaces tinted by the accent, Inter, soft rounded shapes, no borders.
   ThemeData _theme(ColorScheme scheme, bool pureBlack) {
-    final cs = pureBlack ? scheme.copyWith(surface: Colors.black, surfaceContainerLowest: Colors.black) : scheme;
+    final base = pureBlack
+        ? Colors.black
+        : Color.alphaBlend(scheme.primary.withValues(alpha: 0.03), const Color(0xFF0E0F13));
+    final cs = scheme.copyWith(
+      surface: base,
+      surfaceContainerLowest: base,
+      surfaceContainerLow: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.03), base),
+      surfaceContainer: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.05), base),
+      surfaceContainerHigh: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.08), base),
+      surfaceContainerHighest: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.11), base),
+    );
+    final text = Typography.material2021(platform: TargetPlatform.android).white
+        .apply(fontFamily: 'Inter', bodyColor: cs.onSurface, displayColor: cs.onSurface);
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
     return ThemeData(
       useMaterial3: true,
+      brightness: Brightness.dark,
       colorScheme: cs,
+      fontFamily: 'Inter',
+      textTheme: text.copyWith(
+        headlineMedium: text.headlineMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.6),
+        headlineSmall: text.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.4),
+        titleLarge: text.titleLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3),
+        titleMedium: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        titleSmall: text.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      ),
       scaffoldBackgroundColor: cs.surface,
-      navigationBarTheme: NavigationBarThemeData(backgroundColor: pureBlack ? Colors.black : cs.surfaceContainer),
+      splashFactory: InkSparkle.splashFactory,
+      appBarTheme: AppBarTheme(
+        backgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: cs.primary.withValues(alpha: 0.16),
+        elevation: 0,
+        iconTheme: WidgetStateProperty.resolveWith(
+          (s) => IconThemeData(color: s.contains(WidgetState.selected) ? cs.primary : cs.onSurfaceVariant),
+        ),
+        labelTextStyle: WidgetStatePropertyAll(text.labelSmall?.copyWith(fontWeight: FontWeight.w600)),
+      ),
+      cardTheme: CardThemeData(color: cs.surfaceContainerLow, elevation: 0, shape: shape, margin: EdgeInsets.zero),
+      listTileTheme: ListTileThemeData(shape: shape, iconColor: cs.onSurfaceVariant),
+      chipTheme: ChipThemeData(
+        shape: const StadiumBorder(),
+        side: BorderSide.none,
+        backgroundColor: cs.surfaceContainerHigh,
+        labelStyle: text.labelLarge?.copyWith(fontWeight: FontWeight.w500),
+      ),
+      tabBarTheme: TabBarThemeData(
+        dividerHeight: 0,
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicator: BoxDecoration(color: cs.primary.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(20)),
+        labelColor: cs.primary,
+        unselectedLabelColor: cs.onSurfaceVariant,
+        labelStyle: text.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 18),
+        splashBorderRadius: BorderRadius.circular(20),
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: cs.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
+      ),
+      dialogTheme: DialogThemeData(backgroundColor: cs.surfaceContainer, surfaceTintColor: Colors.transparent),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: cs.surfaceContainerHigh,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+      ),
+      searchBarTheme: SearchBarThemeData(
+        backgroundColor: WidgetStatePropertyAll(cs.surfaceContainerHigh),
+        elevation: const WidgetStatePropertyAll(0),
+        shape: const WidgetStatePropertyAll(StadiumBorder()),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: cs.inverseSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
       sliderTheme: const SliderThemeData(year2023: false),
       progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
-      pageTransitionsTheme: const PageTransitionsTheme(builders: {
-        TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
-      }),
+      dividerTheme: DividerThemeData(color: cs.onSurface.withValues(alpha: 0.06)),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {TargetPlatform.android: PredictiveBackPageTransitionsBuilder()},
+      ),
     );
   }
 
@@ -151,21 +273,23 @@ class _EncoreAppState extends ConsumerState<EncoreApp> {
     final router = ref.watch(routerProvider);
     final song = ref.watch(currentSongProvider);
     final art = s.themeSource == ThemeSource.albumArt ? ref.watch(artSchemeProvider(song?.coverArt ?? '')).value : null;
-    return DynamicColorBuilder(builder: (light, dark) {
-      final seeded = ColorScheme.fromSeed(seedColor: Color(s.accentColor), brightness: Brightness.dark);
-      final scheme = switch (s.themeSource) {
-        ThemeSource.fixed => seeded,
-        ThemeSource.albumArt => art ?? dark?.harmonized() ?? seeded,
-        ThemeSource.wallpaper => dark?.harmonized() ?? seeded,
-      };
-      return MaterialApp.router(
-        title: 'Encore',
-        debugShowCheckedModeBanner: false,
-        themeMode: ThemeMode.dark,
-        theme: _theme(scheme, s.pureBlack),
-        darkTheme: _theme(scheme, s.pureBlack),
-        routerConfig: router,
-      );
-    });
+    return DynamicColorBuilder(
+      builder: (light, dark) {
+        final seeded = ColorScheme.fromSeed(seedColor: Color(s.accentColor), brightness: Brightness.dark);
+        final scheme = switch (s.themeSource) {
+          ThemeSource.fixed => seeded,
+          ThemeSource.albumArt => art ?? dark?.harmonized() ?? seeded,
+          ThemeSource.wallpaper => dark?.harmonized() ?? seeded,
+        };
+        return MaterialApp.router(
+          title: 'Encore',
+          debugShowCheckedModeBanner: false,
+          themeMode: ThemeMode.dark,
+          theme: _theme(scheme, s.pureBlack),
+          darkTheme: _theme(scheme, s.pureBlack),
+          routerConfig: router,
+        );
+      },
+    );
   }
 }

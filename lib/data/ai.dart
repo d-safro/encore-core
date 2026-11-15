@@ -11,14 +11,14 @@ class AiPick {
   final double? score;
   const AiPick(this.id, this.title, this.artist, this.album, this.mood, this.genre, this.score);
   factory AiPick.fromJson(Map<String, dynamic> j) => AiPick(
-        (j['item_id'] ?? '').toString(),
-        (j['title'] ?? '').toString(),
-        (j['author'] ?? j['album_artist'] ?? '').toString(),
-        (j['album'] ?? '').toString(),
-        (j['top_mood'] ?? '').toString(),
-        (j['top_genre'] ?? '').toString(),
-        ((j['similarity'] ?? j['distance']) as num?)?.toDouble(),
-      );
+    (j['item_id'] ?? '').toString(),
+    (j['title'] ?? '').toString(),
+    (j['author'] ?? j['album_artist'] ?? '').toString(),
+    (j['album'] ?? '').toString(),
+    (j['top_mood'] ?? '').toString(),
+    (j['top_genre'] ?? '').toString(),
+    ((j['similarity'] ?? j['distance']) as num?)?.toDouble(),
+  );
 }
 
 const aiMoods = {
@@ -39,14 +39,19 @@ class Ai {
   List<AiPick> _picks(dynamic r) {
     final list = r is List ? r : (r is Map ? r['results'] : null);
     return list is List
-        ? list.whereType<Map>().map((e) => AiPick.fromJson(e.cast<String, dynamic>())).where((p) => p.id.isNotEmpty).toList()
+        ? list
+              .whereType<Map>()
+              .map((e) => AiPick.fromJson(e.cast<String, dynamic>()))
+              .where((p) => p.id.isNotEmpty)
+              .toList()
         : const [];
   }
 
   Future<List<Song>> _songs(dynamic r) => repo.resolveSongs(_picks(r).map((p) => p.id).toList());
 
   /// "Made for you": songs that match what you listen to most.
-  Future<List<Song>> forYou({int n = 60}) async => _songs(await c.audiomuse('sonic_fingerprint/generate', query: {'n': n}));
+  Future<List<Song>> forYou({int n = 60}) async =>
+      _songs(await c.audiomuse('sonic_fingerprint/generate', query: {'n': n}));
 
   /// Describe a sound in words ("calm piano at night").
   Future<List<Song>> describe(String text, {int n = 60}) async =>
@@ -57,20 +62,30 @@ class Ai {
       _songs(await c.audiomuse('lyrics/search/text', body: {'query': text, 'limit': n}));
 
   /// Blend songs together; subtracted songs push the mix away from their sound.
-  Future<List<Song>> alchemy(List<Song> add, List<Song> subtract, {int n = 50}) async => _songs(await c.audiomuse('alchemy', body: {
+  Future<List<Song>> alchemy(List<Song> add, List<Song> subtract, {int n = 50}) async => _songs(
+    await c.audiomuse(
+      'alchemy',
+      body: {
         'n': n,
         'items': [
           for (final s in add) {'id': s.id, 'op': 'ADD'},
           for (final s in subtract) {'id': s.id, 'op': 'SUBTRACT'},
         ],
-      }));
+      },
+    ),
+  );
 
-  Future<List<Song>> mood(String mood, {int n = 60}) async => _songs(await c.audiomuse('alchemy', body: {
+  Future<List<Song>> mood(String mood, {int n = 60}) async => _songs(
+    await c.audiomuse(
+      'alchemy',
+      body: {
         'n': n,
         'items': [
-          {'id': '$mood:0', 'type': 'mood', 'op': 'ADD'}
+          {'id': '$mood:0', 'type': 'mood', 'op': 'ADD'},
         ],
-      }));
+      },
+    ),
+  );
 
   /// Artists that sound alike (by the music itself, not tags).
   Future<List<Artist>> similarArtists(String name, {int n = 12}) async {

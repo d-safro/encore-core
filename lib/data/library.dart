@@ -57,65 +57,87 @@ class Repo {
   }
 
   String _orderFor(String type) => switch (type) {
-        'newest' => 'created DESC',
-        'alphabeticalByArtist' => 'artist_lc, year',
-        'byYear' => 'year DESC',
-        'frequent' => 'play_count DESC',
-        'random' => 'RANDOM()',
-        _ => 'name_lc',
-      };
+    'newest' => 'created DESC',
+    'alphabeticalByArtist' => 'artist_lc, year',
+    'byYear' => 'year DESC',
+    'frequent' => 'play_count DESC',
+    'random' => 'RANDOM()',
+    _ => 'name_lc',
+  };
 
   Future<List<Album>> albums(String type, {int size = 50, int offset = 0, String? genre}) => _either(
-      (c) => c.albumList(genre != null ? 'byGenre' : type, size: size, offset: offset, genre: genre)
-          .then((l) => settings.showLookup ? l : l.where((a) => !a.isLookup).toList()),
-      () => type == 'starred'
-          ? db.albums().then((l) => l.where((a) => a.starred).toList())
-          : db.albums(orderBy: _orderFor(type), limit: size, offset: offset, genre: genre));
+    (c) => c
+        .albumList(genre != null ? 'byGenre' : type, size: size, offset: offset, genre: genre)
+        .then((l) => settings.showLookup ? l : l.where((a) => !a.isLookup).toList()),
+    () => type == 'starred'
+        ? db.albums().then((l) => l.where((a) => a.starred).toList())
+        : db.albums(orderBy: _orderFor(type), limit: size, offset: offset, genre: genre),
+  );
 
   Future<Album> album(String id) => _either((c) async {
-        final a = await c.album(id);
-        if (settings.showLookup) return a;
-        return Album(
-            id: a.id, name: a.name, artist: a.artist, artistId: a.artistId, coverArt: a.coverArt, genre: a.genre,
-            year: a.year, songCount: a.songCount, duration: a.duration, starred: a.starred, created: a.created,
-            userRating: a.userRating, songs: a.songs.where((s) => !s.isLookup).toList());
-      }, () async => (await db.album(id)) ?? (throw Exception('This album isn\'t saved on the phone')));
+    final a = await c.album(id);
+    if (settings.showLookup) return a;
+    return Album(
+      id: a.id,
+      name: a.name,
+      artist: a.artist,
+      artistId: a.artistId,
+      coverArt: a.coverArt,
+      genre: a.genre,
+      year: a.year,
+      songCount: a.songCount,
+      duration: a.duration,
+      starred: a.starred,
+      created: a.created,
+      userRating: a.userRating,
+      songs: a.songs.where((s) => !s.isLookup).toList(),
+    );
+  }, () async => (await db.album(id)) ?? (throw Exception('This album isn\'t saved on the phone')));
 
   Future<List<Artist>> artists() => _either((c) => c.artists(), db.artists);
 
   Future<Artist> artist(String id) => _either((c) async {
-        final a = await c.artist(id);
-        if (settings.showLookup) return a;
-        return Artist(id: a.id, name: a.name, coverArt: a.coverArt, starred: a.starred,
-            albums: a.albums.where((x) => !x.isLookup).toList());
-      }, () async => (await db.artist(id)) ?? (throw Exception('This artist isn\'t saved on the phone')));
+    final a = await c.artist(id);
+    if (settings.showLookup) return a;
+    return Artist(
+      id: a.id,
+      name: a.name,
+      coverArt: a.coverArt,
+      starred: a.starred,
+      albums: a.albums.where((x) => !x.isLookup).toList(),
+    );
+  }, () async => (await db.artist(id)) ?? (throw Exception('This artist isn\'t saved on the phone')));
 
   Future<List<Playlist>> playlists() => _either((c) => c.playlists(), db.playlists);
 
   Future<Playlist> playlist(String id) => _either((c) => c.playlist(id), () async {
-        final pl = (await db.playlists()).firstWhere((p) => p.id == id);
-        return Playlist(id: pl.id, name: pl.name, comment: pl.comment, songs: await db.playlistSongs(id));
-      });
+    final pl = (await db.playlists()).firstWhere((p) => p.id == id);
+    return Playlist(id: pl.id, name: pl.name, comment: pl.comment, songs: await db.playlistSongs(id));
+  });
 
   Future<SearchResult> search(String q) => _either((c) => c.search(q), () => db.search(q));
 
-  Future<SearchResult> starred() => _either((c) => c.starred(),
-      () async => SearchResult(songs: await db.starredSongs(), albums: (await db.albums()).where((a) => a.starred).toList()));
+  Future<SearchResult> starred() => _either(
+    (c) => c.starred(),
+    () async =>
+        SearchResult(songs: await db.starredSongs(), albums: (await db.albums()).where((a) => a.starred).toList()),
+  );
 
   Future<List<Genre>> genres() => _either((c) => c.genres(), () async {
-        final albums = await db.albums();
-        final m = <String, int>{};
-        for (final a in albums) {
-          if (a.genre.isNotEmpty) m[a.genre] = (m[a.genre] ?? 0) + 1;
-        }
-        return m.entries.map((e) => Genre(e.key, 0, e.value)).toList()..sort((a, b) => a.name.compareTo(b.name));
-      });
+    final albums = await db.albums();
+    final m = <String, int>{};
+    for (final a in albums) {
+      if (a.genre.isNotEmpty) m[a.genre] = (m[a.genre] ?? 0) + 1;
+    }
+    return m.entries.map((e) => Genre(e.key, 0, e.value)).toList()..sort((a, b) => a.name.compareTo(b.name));
+  });
 
   Future<List<Song>> songsByGenre(String g) => _either((c) => c.songsByGenre(g), () => db.songsByGenre(g));
 
   Future<List<Song>> randomSongs({int size = 50, String? genre}) => _either(
-      (c) => c.randomSongs(size: size, genre: genre),
-      () async => (await db.allSongs())..shuffle()).then((l) => l.take(size).toList());
+    (c) => c.randomSongs(size: size, genre: genre),
+    () async => (await db.allSongs())..shuffle(),
+  ).then((l) => l.take(size).toList());
 
   /// Songs by id, in the same order: from the phone's copy first, the server for the rest.
   Future<List<Song>> resolveSongs(List<String> ids) async {
@@ -123,27 +145,32 @@ class Repo {
     final missing = ids.where((id) => !local.containsKey(id)).toList();
     if (missing.isNotEmpty && online) {
       for (var i = 0; i < missing.length; i += 8) {
-        final batch = await Future.wait(missing.skip(i).take(8).map((id) => client!.song(id).then<Song?>((s) => s, onError: (_) => null)));
+        final batch = await Future.wait(
+          missing.skip(i).take(8).map((id) => client!.song(id).then<Song?>((s) => s, onError: (_) => null)),
+        );
         for (final s in batch.whereType<Song>()) {
           local[s.id] = s;
         }
       }
     }
-    return [for (final id in ids) if (local[id] != null) local[id]!];
+    return [
+      for (final id in ids)
+        if (local[id] != null) local[id]!,
+    ];
   }
 
   Future<List<Song>> allSongs({int size = 200, int offset = 0}) => _either(
-      (c) => c.search('', songCount: size, offset: offset, artistCount: 0, albumCount: 0, client: 'Encore-sync')
-          .then((r) => r.songs.where((s) => !s.isLookup).toList()),
-      () => db.allSongs(limit: size, offset: offset));
+    (c) => c
+        .search('', songCount: size, offset: offset, artistCount: 0, albumCount: 0, client: 'Encore-sync')
+        .then((r) => r.songs.where((s) => !s.isLookup).toList()),
+    () => db.allSongs(limit: size, offset: offset),
+  );
 }
 
-final repoProvider = Provider<Repo>((ref) => Repo(
-      ref.watch(clientProvider),
-      ref.watch(dbProvider),
-      ref.watch(offlineProvider),
-      ref.watch(settingsProvider),
-    ));
+final repoProvider = Provider<Repo>(
+  (ref) =>
+      Repo(ref.watch(clientProvider), ref.watch(dbProvider), ref.watch(offlineProvider), ref.watch(settingsProvider)),
+);
 
 // ── Library sync (local copy for offline browsing / search) ──
 class SyncState {
@@ -172,14 +199,14 @@ class SyncNotifier extends Notifier<SyncState> {
       state = const SyncState(running: true, message: 'Artists…');
       final artists = (await c.artists()).where((a) => !a.isLookup).toList();
       final albums = <Album>[];
-      for (var off = 0;; off += 500) {
+      for (var off = 0; ; off += 500) {
         state = SyncState(running: true, message: 'Albums… ${albums.length}');
         final page = await c.albumList('alphabeticalByName', size: 500, offset: off, client: who);
         albums.addAll(page.where((a) => !a.isLookup));
         if (page.length < 500) break;
       }
       final songs = <Song>[];
-      for (var off = 0;; off += 500) {
+      for (var off = 0; ; off += 500) {
         state = SyncState(running: true, message: 'Songs… ${songs.length}');
         final r = await c.search('', artistCount: 0, albumCount: 0, songCount: 500, offset: off, client: who);
         songs.addAll(r.songs.where((s) => !s.isLookup));
@@ -191,9 +218,11 @@ class SyncNotifier extends Notifier<SyncState> {
       for (final p in playlists) {
         plSongs[p.id] = (await c.playlist(p.id)).songs.map((s) => s.id).toList();
       }
-      await ref.read(dbProvider).replaceLibrary(
-          artists: artists, albums: albums, songs: songs, playlists: playlists, playlistSongs: plSongs);
+      await ref
+          .read(dbProvider)
+          .replaceLibrary(artists: artists, albums: albums, songs: songs, playlists: playlists, playlistSongs: plSongs);
       state = SyncState(message: '${songs.length} songs, ${albums.length} albums saved', last: DateTime.now());
+      ref.read(downloadsProvider.notifier).refreshPins();
     } catch (e) {
       state = SyncState(message: 'Sync failed: $e', last: state.last);
     }
@@ -206,7 +235,10 @@ final syncProvider = NotifierProvider<SyncNotifier, SyncState>(SyncNotifier.new)
 class DownloadsState {
   final Map<String, String> files; // song id -> local file path
   final Map<String, double> progress; // song id -> 0..1 while downloading
-  const DownloadsState({this.files = const {}, this.progress = const {}});
+  final Set<String> pins; // collections kept downloaded: album:<id>, playlist:<id>, starred, library
+  const DownloadsState({this.files = const {}, this.progress = const {}, this.pins = const {}});
+  DownloadsState copy({Map<String, String>? files, Map<String, double>? progress, Set<String>? pins}) =>
+      DownloadsState(files: files ?? this.files, progress: progress ?? this.progress, pins: pins ?? this.pins);
 }
 
 class DownloadsNotifier extends Notifier<DownloadsState> {
@@ -217,19 +249,28 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   DownloadsState build() {
     _sub ??= FileDownloader().updates.listen(_onUpdate);
     ref.onDispose(() => _sub?.cancel());
-    ref.read(dbProvider).downloadPaths().then((m) => state = DownloadsState(files: m, progress: state.progress));
-    return const DownloadsState();
+    ref.read(dbProvider).downloadPaths().then((m) => state = state.copy(files: m));
+    return DownloadsState(pins: (prefs.getStringList('downloadPins') ?? const []).toSet());
   }
 
   bool has(String id) => state.files.containsKey(id);
 
-  Future<void> download(List<Song> songs) async {
+  /// [manual]: picked one by one (song menu), so switching off a collection never removes it.
+  Future<void> download(List<Song> songs, {bool manual = false}) async {
+    if (manual) {
+      prefs.setStringList(
+        'manualDownloads',
+        {...prefs.getStringList('manualDownloads') ?? const <String>[], ...songs.map((s) => s.id)}.toList(),
+      );
+    }
     final c = ref.read(clientProvider);
     if (c == null) return;
     final s = ref.read(settingsProvider);
     for (final song in songs.where((x) => !x.isLookup && !has(x.id))) {
       final raw = s.downloadFormat == 'raw';
-      final url = raw ? c.downloadUrl(song.id) : c.streamUrl(song.id, format: s.downloadFormat, maxBitRate: s.downloadBitrate);
+      final url = raw
+          ? c.downloadUrl(song.id)
+          : c.streamUrl(song.id, format: s.downloadFormat, maxBitRate: s.downloadBitrate);
       final ext = raw ? (song.suffix.isEmpty ? 'mp3' : song.suffix) : s.downloadFormat;
       final task = DownloadTask(
         taskId: 'song-${song.id}',
@@ -244,7 +285,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         displayName: '${song.artist} - ${song.title}',
       );
       _pending[song.id] = song;
-      state = DownloadsState(files: state.files, progress: {...state.progress, song.id: 0});
+      state = state.copy(progress: {...state.progress, song.id: 0});
       await FileDownloader().enqueue(task);
     }
   }
@@ -252,16 +293,16 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   Future<void> _onUpdate(TaskUpdate u) async {
     final id = u.task.metaData;
     if (u is TaskProgressUpdate) {
-      if (u.progress >= 0) state = DownloadsState(files: state.files, progress: {...state.progress, id: u.progress});
+      if (u.progress >= 0) state = state.copy(progress: {...state.progress, id: u.progress});
     } else if (u is TaskStatusUpdate) {
       if (u.status == TaskStatus.complete) {
         final path = await u.task.filePath();
         final song = _pending.remove(id) ?? await ref.read(clientProvider)?.song(id);
         if (song != null) await ref.read(dbProvider).addDownload(song, path, await File(path).length());
-        state = DownloadsState(files: {...state.files, id: path}, progress: {...state.progress}..remove(id));
+        state = state.copy(files: {...state.files, id: path}, progress: {...state.progress}..remove(id));
       } else if (u.status.isFinalState) {
         _pending.remove(id);
-        state = DownloadsState(files: state.files, progress: {...state.progress}..remove(id));
+        state = state.copy(progress: {...state.progress}..remove(id));
       }
     }
   }
@@ -277,7 +318,51 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
       }
       await ref.read(dbProvider).removeDownload(id);
     }
-    state = DownloadsState(files: files, progress: state.progress);
+    final manual = (prefs.getStringList('manualDownloads') ?? const <String>[]).toSet()..removeAll(ids);
+    prefs.setStringList('manualDownloads', manual.toList());
+    state = state.copy(files: files);
+  }
+
+  // ── Collections kept downloaded (like Spotify's download switch) ──
+  bool isPinned(String key) => state.pins.contains(key);
+
+  void _savePins(Set<String> pins) {
+    prefs.setStringList('downloadPins', pins.toList());
+    state = state.copy(pins: pins);
+  }
+
+  Future<void> pin(String key, List<Song> songs) async {
+    _savePins({...state.pins, key});
+    await download(songs);
+  }
+
+  /// Switch a collection off: its songs go, unless another kept collection or a single download needs them.
+  Future<void> unpin(String key, List<Song> songs) async {
+    _savePins({...state.pins}..remove(key));
+    if (state.pins.contains('library')) return;
+    final keep = {...await _songsOfPins(), ...prefs.getStringList('manualDownloads') ?? const <String>[]};
+    await remove(songs.map((s) => s.id).where((id) => !keep.contains(id)));
+  }
+
+  Future<List<Song>> _pinSongs(String key) async {
+    final repo = ref.read(repoProvider);
+    try {
+      if (key == 'library') return await ref.read(dbProvider).allSongs();
+      if (key == 'starred') return (await repo.starred()).songs;
+      if (key.startsWith('album:')) return (await repo.album(key.substring(6))).songs;
+      if (key.startsWith('playlist:')) return (await repo.playlist(key.substring(9))).songs;
+    } catch (_) {}
+    return const [];
+  }
+
+  Future<Set<String>> _songsOfPins() async => {for (final k in state.pins) ...(await _pinSongs(k)).map((s) => s.id)};
+
+  /// Download what's new in every kept collection (songs added to a playlist, newly hearted songs...).
+  Future<void> refreshPins() async {
+    if (!ref.read(repoProvider).online) return;
+    for (final k in state.pins) {
+      await download((await _pinSongs(k)).where((s) => !s.isLookup && !has(s.id)).toList());
+    }
   }
 }
 
