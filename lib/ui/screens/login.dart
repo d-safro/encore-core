@@ -52,6 +52,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   TextField(
                     controller: _server,
                     keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.next,
                     autocorrect: false,
                     decoration: const InputDecoration(
                         labelText: 'Server address', hintText: 'https://music.example.com', prefixIcon: Icon(Icons.dns_outlined)),
@@ -60,6 +61,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   TextField(
                     controller: _user,
                     autocorrect: false,
+                    textInputAction: TextInputAction.next,
                     autofillHints: const [AutofillHints.username],
                     decoration: const InputDecoration(labelText: 'Username', prefixIcon: Icon(Icons.person_outline)),
                   ),
@@ -67,6 +69,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   TextField(
                     controller: _pass,
                     obscureText: _hide,
+                    textInputAction: TextInputAction.go,
                     autofillHints: const [AutofillHints.password],
                     onSubmitted: (_) => _submit(),
                     decoration: InputDecoration(

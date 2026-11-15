@@ -2,7 +2,9 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rxdart/rxdart.dart';
 
+import '../core/settings.dart';
 import '../data/library.dart';
+import '../data/online_lyrics.dart';
 import '../data/models.dart';
 import '../playback/handler.dart';
 
@@ -61,7 +63,10 @@ final genreAlbumsProvider = FutureProvider.autoDispose
 final lyricsProvider = FutureProvider.autoDispose.family<Lyrics, String>((ref, id) async {
   final repo = ref.watch(repoProvider);
   final song = audioHandler.songs.firstWhere((s) => s.id == id, orElse: () => Song(id: id, title: ''));
-  return repo.online ? repo.client!.lyrics(song) : const Lyrics();
+  if (!repo.online) return const Lyrics();
+  final l = await repo.client!.lyrics(song);
+  if (l.isEmpty && ref.read(settingsProvider).onlineLyrics) return lrclibLyrics(song);
+  return l;
 });
 final radiosProvider = FutureProvider.autoDispose<List<InternetRadio>>((ref) async {
   final repo = ref.watch(repoProvider);

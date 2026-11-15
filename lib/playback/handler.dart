@@ -40,7 +40,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   PlayerExtras _extras = const PlayerExtras();
   PlayerExtras get currentExtras => _extras;
 
-  Timer? _sleepTimer, _saveTimer;
+  Timer? _sleepTimer, _saveTimer, _periodicSave;
+  int? _lastIndex;
+  String? _lastSongId;
   String? _scrobbledNow, _submitted;
   Duration _listened = Duration.zero;
   DateTime? _lastTick;
@@ -57,8 +59,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (player.hasNext) await player.seekToNext();
     });
     player.currentIndexStream.listen(_onIndex);
-    player.shuffleModeEnabledStream.listen((_) => _broadcastQueue());
+    player.sequenceStream.listen((_) => _onIndex(player.currentIndex)); // same index, different song
+    player.shuffleModeEnabledStream.distinct().listen((_) => _broadcastQueue());
     player.positionStream.listen(_onPosition);
+    player.playingStream.distinct().listen((playing) {
+      _periodicSave?.cancel();
+      _periodicSave = playing ? Timer.periodic(const Duration(seconds: 30), (_) => _saveQueue()) : null;
+      if (!playing) _scheduleSave(); // remember where it was paused
+    });
     player.processingStateStream.listen((s) {
       if (s == ProcessingState.completed && _extras.sleepAfterTrack) _sleepNow();
     });
@@ -259,9 +267,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   // ── Track change: metadata, ReplayGain, scrobbling, radio ──
+  /// Runs when the playing song changes. (The player repeats the same index with every playback event,
+  /// so only a real change counts.)
   void _onIndex(int? i) {
     if (i == null || i >= _songs.length) return;
     final s = _songs[i];
+    if (i == _lastIndex && s.id == _lastSongId) return;
+    _lastIndex = i;
+    _lastSongId = s.id;
     mediaItem.add(_mediaItem(s));
     _applyReplayGain();
     _listened = Duration.zero;
@@ -514,8 +527,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         artUri: c != null && a.coverArt.isNotEmpty ? c.coverUrl(a.coverArt, size: 300) : null);
     try {
       switch (parentMediaId) {
-        case _root:
         case AudioService.recentRootId:
+          final cur = currentSong;
+          return cur == null ? const [] : [_mediaItem(cur).copyWith(id: 'resume:${cur.id}', playable: true)];
+        case _root:
           return [
             folder('list:recent', 'Recently played'),
             folder('list:newest', 'Recently added'),
@@ -550,6 +565,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   @override
   Future<void> playFromMediaId(String mediaId, [Map<String, dynamic>? extras]) async {
     final repo = container.read(repoProvider);
+    if (mediaId.startsWith('resume:')) return play(); // the restored queue is already loaded
     if (mediaId == 'mix:random') return playSongs(await repo.randomSongs(size: 100));
     if (mediaId.startsWith('playlist:')) return playSongs((await repo.playlist(mediaId.substring(9))).songs);
     if (mediaId.startsWith('song:')) {

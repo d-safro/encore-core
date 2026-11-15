@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:home_widget/home_widget.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../core/settings.dart';
@@ -73,6 +74,13 @@ class SettingsScreen extends ConsumerWidget {
           onChanged: (v) => set('showLookup', v),
         ),
         SwitchListTile(
+          secondary: const Icon(Icons.lyrics_outlined),
+          title: const Text('Find lyrics online'),
+          subtitle: const Text('From LRCLIB when your server has none (sends title, artist, album)'),
+          value: s.onlineLyrics,
+          onChanged: (v) => set('onlineLyrics', v),
+        ),
+        SwitchListTile(
           secondary: const Icon(Icons.history),
           title: const Text('Scrobble plays'),
           subtitle: const Text('Play counts, Last.fm / ListenBrainz through the server'),
@@ -124,6 +132,12 @@ class SettingsScreen extends ConsumerWidget {
           subtitle: const Text('Black backgrounds (saves battery on OLED screens)'),
           value: s.pureBlack,
           onChanged: (v) => set('pureBlack', v),
+        ),
+        ListTile(
+          leading: const Icon(Icons.widgets_outlined),
+          title: const Text('Add the widget to your home screen'),
+          subtitle: const Text('What\'s playing, with play, pause and skip'),
+          onTap: () => HomeWidget.requestPinWidget(qualifiedAndroidName: 'dev.safro.encore.EncoreWidget'),
         ),
         ListTile(
           leading: const Icon(Icons.dashboard_customize_outlined),

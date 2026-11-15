@@ -29,6 +29,7 @@ class Settings {
   final bool endlessRadio; // keep the music going with sound-alikes when the queue ends
   final bool scrobble;
   final bool syncPlayQueue; // save the queue on the server (continue on another device)
+  final bool onlineLyrics; // LRCLIB when the server has no lyrics
   final bool showLookup; // show songs you don't have (music-lookup) in search and album pages
   final bool offlineMode;
   final AlbumSort albumSort;
@@ -57,6 +58,7 @@ class Settings {
     this.endlessRadio = false,
     this.scrobble = true,
     this.syncPlayQueue = true,
+    this.onlineLyrics = true,
     this.showLookup = true,
     this.offlineMode = false,
     this.albumSort = AlbumSort.recent,
@@ -68,7 +70,7 @@ class Settings {
     this.cacheMb = 1024,
   });
 
-  static const defaultHomeSections = ['recent', 'newest', 'frequent', 'starred', 'random', 'playlists', 'mixes'];
+  static const defaultHomeSections = ['recent', 'newest', 'frequent', 'starred', 'random', 'playlists'];
 
   Map<String, dynamic> toJson() => {
         'themeSource': themeSource.name,
@@ -88,6 +90,7 @@ class Settings {
         'endlessRadio': endlessRadio,
         'scrobble': scrobble,
         'syncPlayQueue': syncPlayQueue,
+        'onlineLyrics': onlineLyrics,
         'showLookup': showLookup,
         'offlineMode': offlineMode,
         'albumSort': albumSort.name,
@@ -121,12 +124,13 @@ class Settings {
       endlessRadio: j['endlessRadio'] ?? d.endlessRadio,
       scrobble: j['scrobble'] ?? d.scrobble,
       syncPlayQueue: j['syncPlayQueue'] ?? d.syncPlayQueue,
+      onlineLyrics: j['onlineLyrics'] ?? d.onlineLyrics,
       showLookup: j['showLookup'] ?? d.showLookup,
       offlineMode: j['offlineMode'] ?? d.offlineMode,
       albumSort: pick(AlbumSort.values, j['albumSort'], d.albumSort),
       albumGrid: j['albumGrid'] ?? d.albumGrid,
       sleepMinutes: j['sleepMinutes'] ?? d.sleepMinutes,
-      homeSections: (j['homeSections'] as List?)?.cast<String>() ?? d.homeSections,
+      homeSections: (j['homeSections'] as List?)?.cast<String>().where((x) => x != 'mixes').toList() ?? d.homeSections,
       eqEnabled: j['eqEnabled'] ?? d.eqEnabled,
       eqGains: (j['eqGains'] as List?)?.map((e) => (e as num).toDouble()).toList() ?? d.eqGains,
       cacheMb: j['cacheMb'] ?? d.cacheMb,

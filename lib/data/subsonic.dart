@@ -249,10 +249,9 @@ class SubsonicClient {
   /// Sound-alike songs (AudioMuse on the server), falling back to Last.fm-style similar songs.
   Future<List<Song>> similarSongs(String id, {int count = 50}) async {
     try {
-      final r = await call('getSonicSimilarTracks', {'id': id, 'count': count});
-      final songs = _l(_m(r['sonicMatches'] ?? r['similarSongs'])['song'] ?? r['sonicMatches'])
-          .map((e) => Song.fromJson(e['entry'] is Map ? (e['entry'] as Map).cast<String, dynamic>() : e))
-          .toList();
+      // Navidrome: {"sonicMatch": [{"entry": {song}, "similarity": 0.9}, ...]}; 404 for songs AudioMuse
+      // hasn't analysed yet, then the Last.fm-style list below is used.
+      final songs = _sonicSongs(await call('getSonicSimilarTracks', {'id': id, 'count': count}));
       if (songs.isNotEmpty) return songs;
     } catch (_) {}
     try {
@@ -266,13 +265,25 @@ class SubsonicClient {
   /// A path of songs that moves from one sound to another (AudioMuse "bridge").
   Future<List<Song>> sonicPath(String fromId, String toId, {int count = 25}) async {
     try {
-      final r = await call('findSonicPath', {'startSongId': fromId, 'endSongId': toId, 'count': count});
-      return _l(_m(r['sonicPath'] ?? r['sonicMatches'])['song'] ?? r['sonicPath'])
-          .map((e) => Song.fromJson(e['entry'] is Map ? (e['entry'] as Map).cast<String, dynamic>() : e))
-          .toList();
+      return _sonicSongs(await call('findSonicPath', {'startSongId': fromId, 'endSongId': toId, 'count': count}));
     } catch (_) {
       return const [];
     }
+  }
+
+  /// Songs from a sonic-similarity answer: the first list in it, items either {entry: song} or a song.
+  List<Song> _sonicSongs(Map<String, dynamic> r) {
+    for (final key in ['sonicMatch', 'sonicMatches', 'sonicPath']) {
+      var v = r[key];
+      if (v is Map) v = v['entry'] ?? v['song'] ?? v['sonicMatch'];
+      if (v is List) {
+        return _l(v)
+            .map((e) => Song.fromJson(e['entry'] is Map ? (e['entry'] as Map).cast<String, dynamic>() : e))
+            .where((s) => s.id.isNotEmpty)
+            .toList();
+      }
+    }
+    return const [];
   }
 
   // ── Radio ──

@@ -243,6 +243,16 @@ Future<void> showSongMenu(BuildContext context, WidgetRef ref, Song song, {List<
                       audioHandler.instantMix(song);
                     },
                   ),
+                if (online)
+                  ListTile(
+                    leading: const Icon(Icons.timeline),
+                    title: const Text('Mix to another song…'),
+                    subtitle: const Text('A path of songs from this sound to another'),
+                    onTap: () {
+                      close();
+                      bridgeMix(context, ref, song);
+                    },
+                  ),
               ],
               if (online)
                 ListTile(
@@ -403,6 +413,69 @@ Future<void> showCollectionMenu(BuildContext context, WidgetRef ref, String titl
           ...extra,
         ]),
       );
+    },
+  );
+}
+
+
+/// Pick a second song, then play a gradual path of sound-alikes from [from] to it (AudioMuse on the server).
+Future<void> bridgeMix(BuildContext context, WidgetRef ref, Song from) async {
+  final to = await pickSong(context, ref, 'Mix towards…');
+  if (to == null) return;
+  final c = ref.read(clientProvider);
+  if (c == null) return;
+  if (context.mounted) toast(context, 'Building a path to "${to.title}"…');
+  final path = await c.sonicPath(from.id, to.id, count: 20);
+  if (path.isEmpty) {
+    if (context.mounted) toast(context, 'Your server can\'t build that path yet (are both songs analysed by AudioMuse?)');
+    return;
+  }
+  final ids = {from.id, to.id};
+  await audioHandler.playSongs([from, ...path.where((s) => ids.add(s.id) && !s.isLookup), to]);
+}
+
+/// A small search dialog that returns one song from the library.
+Future<Song?> pickSong(BuildContext context, WidgetRef ref, String title) {
+  return showModalBottomSheet<Song>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (ctx) {
+      var results = <Song>[];
+      var seq = 0;
+      return StatefulBuilder(builder: (ctx, set) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+          child: SizedBox(
+            height: MediaQuery.sizeOf(ctx).height * 0.75,
+            child: Column(children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  autofocus: true,
+                  decoration: InputDecoration(labelText: title, prefixIcon: const Icon(Icons.search)),
+                  onChanged: (q) async {
+                    final my = ++seq;
+                    if (q.trim().length < 2) return set(() => results = []);
+                    final r = await ref.read(repoProvider).search(q.trim());
+                    if (my == seq) set(() => results = r.songs.where((s) => !s.isLookup).toList());
+                  },
+                ),
+              ),
+              Expanded(
+                child: ListView(children: [
+                  for (final s in results)
+                    ListTile(
+                      title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(s.artist, maxLines: 1),
+                      onTap: () => Navigator.pop(ctx, s),
+                    ),
+                ]),
+              ),
+            ]),
+          ),
+        );
+      });
     },
   );
 }
