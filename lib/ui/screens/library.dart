@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/library.dart';
+import '../../data/library_pins.dart';
 import '../../data/models.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
@@ -376,6 +377,9 @@ class _PlaylistsTab extends ConsumerWidget {
           onRefresh: () async => ref.invalidate(playlistsProvider),
           child: ListView(
             children: [
+              const _LikedTile(),
+              for (final pin in ref.watch(libraryPinsProvider)) _PinnedTile(pin),
+              if (lists.isNotEmpty) const SectionTitle('Playlists'),
               for (final p in lists)
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -401,6 +405,7 @@ class _PlaylistsTab extends ConsumerWidget {
                     ref,
                     p.name,
                     () async => (await ref.read(repoProvider).playlist(p.id)).songs,
+                    pin: LibraryPin('playlist', p.id, p.name, cover: p.coverArt, subtitle: 'Playlist'),
                   ),
                 ),
               const SizedBox(height: 88),
@@ -434,8 +439,90 @@ class _GenresTab extends ConsumerWidget {
   }
 }
 
+/// Liked songs as a playlist of its own (pinned at the top of the Library, like Spotify's).
+class LikedSongsScreen extends StatelessWidget {
+  const LikedSongsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Liked songs')),
+    body: const _FavouritesTab(songsOnly: true),
+  );
+}
+
+class _LikedTile extends ConsumerWidget {
+  const _LikedTile();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final n = ref.watch(starredProvider).value?.songs.where((s) => !s.isLookup).length;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      leading: Container(
+        width: 54,
+        height: 54,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [cs.primary, cs.tertiary],
+          ),
+        ),
+        child: Icon(Icons.favorite_rounded, color: cs.onPrimary, size: 26),
+      ),
+      title: Text('Liked songs', style: Theme.of(context).textTheme.titleSmall),
+      subtitle: Row(
+        children: [
+          Icon(Icons.push_pin, size: 13, color: cs.primary),
+          const SizedBox(width: 4),
+          Text(n == null ? 'Playlist' : 'Playlist · ${nSongs(n)}'),
+        ],
+      ),
+      onTap: () => context.push('/liked'),
+    );
+  }
+}
+
+class _PinnedTile extends ConsumerWidget {
+  const _PinnedTile(this.pin);
+  final LibraryPin pin;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final album = pin.kind == 'album';
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      leading: Cover(pin.cover, size: 54, icon: album ? Icons.album_outlined : Icons.queue_music_rounded),
+      title: Text(
+        pin.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
+      subtitle: Row(
+        children: [
+          Icon(Icons.push_pin, size: 13, color: cs.primary),
+          const SizedBox(width: 4),
+          Expanded(child: Text(pin.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ],
+      ),
+      onTap: () => context.push('/${pin.kind}/${pin.id}'),
+      onLongPress: () => showCollectionMenu(
+        context,
+        ref,
+        pin.name,
+        () async => album
+            ? (await ref.read(repoProvider).album(pin.id)).songs
+            : (await ref.read(repoProvider).playlist(pin.id)).songs,
+        pin: pin,
+      ),
+    );
+  }
+}
+
 class _FavouritesTab extends ConsumerWidget {
-  const _FavouritesTab();
+  const _FavouritesTab({this.songsOnly = false});
+  final bool songsOnly;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return AsyncView(ref.watch(starredProvider), (SearchResult r) {
@@ -451,7 +538,7 @@ class _FavouritesTab extends ConsumerWidget {
                 onShuffle: () => audioHandler.playSongs(songs, shuffle: true, context: const PlayContext.liked()),
                 leading: [DownloadToggle(pinKey: 'starred', songs: () async => songs)],
               ),
-            if (r.artists.isNotEmpty) ...[
+            if (!songsOnly && r.artists.isNotEmpty) ...[
               const SectionTitle('Artists'),
               for (final a in r.artists)
                 ListTile(
@@ -460,9 +547,15 @@ class _FavouritesTab extends ConsumerWidget {
                   onTap: () => context.push('/artist/${a.id}'),
                 ),
             ],
-            if (r.albums.isNotEmpty) Shelf(title: 'Albums', children: [for (final a in r.albums) AlbumCard(a)]),
+            if (!songsOnly && r.albums.isNotEmpty)
+              Shelf(title: 'Albums', children: [for (final a in r.albums) AlbumCard(a)]),
             if (songs.isNotEmpty) ...[
-              SectionTitle('Liked songs', subtitle: nSongs(songs.length)),
+              if (!songsOnly) SectionTitle('Liked songs', subtitle: nSongs(songs.length)),
+              if (songsOnly)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Text(nSongs(songs.length), style: Theme.of(context).textTheme.bodySmall),
+                ),
               for (var i = 0; i < songs.length; i++)
                 SongTile(songs[i], list: songs, index: i, playContext: const PlayContext.liked()),
             ],

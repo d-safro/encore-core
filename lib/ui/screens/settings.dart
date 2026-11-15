@@ -99,9 +99,7 @@ class SettingsScreen extends ConsumerWidget {
               leading: const SizedBox(width: 24),
               title: const Text('Lyrics sources'),
               subtitle: Text(
-                s.lyricsSources.isEmpty
-                    ? 'None'
-                    : s.lyricsSources.map((k) => lyricsSourceNames[k] ?? k).join(' → '),
+                s.lyricsSources.isEmpty ? 'None' : s.lyricsSources.map((k) => lyricsSourceNames[k] ?? k).join(' → '),
               ),
               onTap: () => showDialog(context: context, builder: (_) => const _LyricsSourcesDialog()),
             ),
@@ -274,6 +272,7 @@ class SettingsScreen extends ConsumerWidget {
     final all = ['recent', 'newest', 'frequent', 'starred', 'random', 'highest', 'playlists'];
     var chosen = [...s.homeSections.where(all.contains)];
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       showDragHandle: true,
       builder: (ctx) => StatefulBuilder(
@@ -315,6 +314,7 @@ class SettingsScreen extends ConsumerWidget {
     var mode = s.replayGain;
     var pre = s.replayGainPreamp;
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       showDragHandle: true,
       builder: (ctx) => StatefulBuilder(
@@ -375,6 +375,7 @@ class _QualityTile extends StatelessWidget {
         var f = format;
         var b = bitrate == 0 ? 192 : bitrate;
         await showModalBottomSheet(
+          useRootNavigator: true,
           context: context,
           showDragHandle: true,
           builder: (ctx) => StatefulBuilder(
@@ -722,7 +723,6 @@ class _PinnedRow extends ConsumerWidget {
     );
   }
 }
-
 
 /// Which online lyrics sources to use, and in what order (drag to reorder).
 class _LyricsSourcesDialog extends ConsumerStatefulWidget {

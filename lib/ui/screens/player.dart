@@ -563,6 +563,7 @@ final _outputProvider = StreamProvider.autoDispose<(String, String)>((ref) async
 Future<void> showSleepTimer(BuildContext context, WidgetRef ref) async {
   final extras = audioHandler.currentExtras;
   await showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     showDragHandle: true,
     builder: (ctx) {
@@ -611,6 +612,7 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
   var output = await AudioDevice.output();
   if (!context.mounted) return;
   await showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
@@ -868,6 +870,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
 
 /// Pick lyrics by hand from every online source (remembered for this song).
 Future<void> showChooseLyrics(BuildContext context, WidgetRef ref, Song song) => showModalBottomSheet(
+  useRootNavigator: true,
   context: context,
   isScrollControlled: true,
   showDragHandle: true,

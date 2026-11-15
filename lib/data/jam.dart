@@ -222,7 +222,9 @@ class JamNotifier extends Notifier<JamState> {
         if (!audioHandler.player.playing && audioHandler.songs.length == 1) await audioHandler.play();
       case 'move':
         final from = _find(id, (cmd['from'] as num?)?.toInt() ?? -1);
-        final to = ((cmd['to'] as num?)?.toInt() ?? from).clamp(cur + 1, max(cur + 1, audioHandler.songs.length - 1)).toInt();
+        final to = ((cmd['to'] as num?)?.toInt() ?? from)
+            .clamp(cur + 1, max(cur + 1, audioHandler.songs.length - 1))
+            .toInt();
         if (from > cur && from != to) await audioHandler.moveQueueItem(from, to);
       case 'remove':
         final i = _find(id, (cmd['from'] as num?)?.toInt() ?? (cmd['index'] as num?)?.toInt() ?? -1);

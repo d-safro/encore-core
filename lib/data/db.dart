@@ -203,6 +203,10 @@ class LibraryDb {
     ),
   );
 
+  /// Songs on the phone's copy of the library whose artist is [name] (any case).
+  Future<List<Song>> songsByArtist(String name) async =>
+      _songs(await db.query('songs', where: 'artist_lc = ?', whereArgs: [name.toLowerCase()]));
+
   Future<List<Song>> songsByIds(List<String> ids) async {
     final out = <Song>[];
     for (var i = 0; i < ids.length; i += 500) {

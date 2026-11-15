@@ -10,6 +10,7 @@ import '../actions.dart';
 
 /// Start / show / end a Jam: friends scan the code or open the link to add songs to the queue.
 Future<void> showJamSheet(BuildContext context) => showModalBottomSheet(
+  useRootNavigator: true,
   context: context,
   isScrollControlled: true,
   showDragHandle: true,

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/account.dart';
 import '../data/library.dart';
+import '../data/library_pins.dart';
 import '../data/models.dart';
 import '../data/share_links.dart';
 import '../playback/handler.dart';
@@ -121,6 +122,7 @@ Future<void> addToPlaylist(BuildContext context, WidgetRef ref, List<Song> songs
   final lists = await ref.read(repoProvider).playlists();
   if (!context.mounted) return;
   final choice = await showModalBottomSheet<Object>(
+    useRootNavigator: true,
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
@@ -217,6 +219,8 @@ Future<void> showSongMenu(
   await showModalBottomSheet(
     context: context,
     showDragHandle: true,
+    useRootNavigator: true, // above the mini player and the tab bar
+    isScrollControlled: true,
     builder: (ctx) {
       void close() => Navigator.pop(ctx);
       return SafeArea(
@@ -449,11 +453,15 @@ Future<void> showCollectionMenu(
   String title,
   Future<List<Song>> Function() songs, {
   List<Widget> extra = const [],
+  LibraryPin? pin, // offers "Pin to Library" for this playlist / album
 }) async {
   final online = ref.read(repoProvider).online;
+  final pinned = pin != null && ref.read(libraryPinsProvider.notifier).isPinned(pin.key);
   await showModalBottomSheet(
     context: context,
     showDragHandle: true,
+    useRootNavigator: true, // above the mini player and the tab bar
+    isScrollControlled: true,
     builder: (ctx) {
       Future<void> run(Future<void> Function(List<Song>) f) async {
         Navigator.pop(ctx);
@@ -461,47 +469,59 @@ Future<void> showCollectionMenu(
       }
 
       return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
-            const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.play_arrow),
-              title: const Text('Play'),
-              onTap: () => run(audioHandler.playSongs),
-            ),
-            ListTile(
-              leading: const Icon(Icons.shuffle),
-              title: const Text('Shuffle'),
-              onTap: () => run((s) => audioHandler.playSongs(s, shuffle: true)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.playlist_play),
-              title: const Text('Play next'),
-              onTap: () => run(audioHandler.playNext),
-            ),
-            ListTile(
-              leading: const Icon(Icons.queue_music),
-              title: const Text('Add to queue'),
-              onTap: () => run(audioHandler.addLast),
-            ),
-            if (online)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis)),
+              const Divider(height: 1),
+              if (pin != null)
+                ListTile(
+                  leading: Icon(pinned ? Icons.push_pin : Icons.push_pin_outlined),
+                  title: Text(pinned ? 'Unpin from Library' : 'Pin to Library'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    ref.read(libraryPinsProvider.notifier).toggle(pin);
+                    toast(context, pinned ? 'Unpinned' : 'Pinned to the top of your Library');
+                  },
+                ),
               ListTile(
-                leading: const Icon(Icons.playlist_add),
-                title: const Text('Add to playlist'),
-                onTap: () => run((s) => addToPlaylist(context, ref, s)),
+                leading: const Icon(Icons.play_arrow),
+                title: const Text('Play'),
+                onTap: () => run(audioHandler.playSongs),
               ),
-            ListTile(
-              leading: const Icon(Icons.offline_pin_outlined),
-              title: const Text('Download for offline'),
-              onTap: () => run((s) async {
-                await ref.read(downloadsProvider.notifier).download(s);
-                if (context.mounted) toast(context, 'Downloading ${nSongs(s.length)}');
-              }),
-            ),
-            ...extra,
-          ],
+              ListTile(
+                leading: const Icon(Icons.shuffle),
+                title: const Text('Shuffle'),
+                onTap: () => run((s) => audioHandler.playSongs(s, shuffle: true)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.playlist_play),
+                title: const Text('Play next'),
+                onTap: () => run(audioHandler.playNext),
+              ),
+              ListTile(
+                leading: const Icon(Icons.queue_music),
+                title: const Text('Add to queue'),
+                onTap: () => run(audioHandler.addLast),
+              ),
+              if (online)
+                ListTile(
+                  leading: const Icon(Icons.playlist_add),
+                  title: const Text('Add to playlist'),
+                  onTap: () => run((s) => addToPlaylist(context, ref, s)),
+                ),
+              ListTile(
+                leading: const Icon(Icons.offline_pin_outlined),
+                title: const Text('Download for offline'),
+                onTap: () => run((s) async {
+                  await ref.read(downloadsProvider.notifier).download(s);
+                  if (context.mounted) toast(context, 'Downloading ${nSongs(s.length)}');
+                }),
+              ),
+              ...extra,
+            ],
+          ),
         ),
       );
     },
@@ -529,6 +549,7 @@ Future<void> bridgeMix(BuildContext context, WidgetRef ref, Song from) async {
 /// A small search dialog that returns one song from the library.
 Future<Song?> pickSong(BuildContext context, WidgetRef ref, String title) {
   return showModalBottomSheet<Song>(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     showDragHandle: true,

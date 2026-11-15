@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 
 import '../data/account.dart';
 import '../data/library.dart';
+import '../data/library_pins.dart';
 import '../data/models.dart';
 import '../data/online_art.dart';
 import '../playback/handler.dart';
@@ -382,6 +383,9 @@ class AlbumCard extends ConsumerWidget {
           ref,
           album.name,
           () async => (await ref.read(repoProvider).album(album.id)).songs,
+          pin: album.isLookup
+              ? null
+              : LibraryPin('album', album.id, album.name, cover: album.coverArt, subtitle: 'Album · ${album.artist}'),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

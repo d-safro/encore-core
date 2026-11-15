@@ -67,7 +67,8 @@ Future<String?> albumLink(Album a) async {
     final j = await _get('/search/album', {'q': 'artist:"${_q(a.artist)}" album:"${_q(a.name)}"', 'limit': '10'});
     final list = j is Map && j['data'] is List ? j['data'] as List : const [];
     final n = _n(a.name);
-    final hit = list.whereType<Map>().where((e) => _n('${e['title']}') == n).firstOrNull ??
+    final hit =
+        list.whereType<Map>().where((e) => _n('${e['title']}') == n).firstOrNull ??
         (list.isNotEmpty && list.first is Map ? list.first as Map : null);
     if (hit != null) id = '${hit['id']}';
   }

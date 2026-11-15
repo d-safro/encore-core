@@ -103,6 +103,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path: '/folders', builder: (_, _) => const FoldersScreen()),
           GoRoute(path: '/radio', builder: (_, _) => const RadioScreen()),
+          GoRoute(path: '/liked', builder: (_, _) => const LikedSongsScreen()),
           GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
           GoRoute(path: '/equalizer', builder: (_, _) => const EqualizerScreen()),
           GoRoute(path: '/downloads', builder: (_, _) => const DownloadsScreen()),

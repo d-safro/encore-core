@@ -56,7 +56,11 @@ class SubsonicClient {
     // long requests (a big queue or playlist) go as a form POST (OpenSubsonic formPost); URLs have a size limit
     final res = u.query.length > 1800
         ? await _http
-              .post(u.replace(query: ''), headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: u.query)
+              .post(
+                u.replace(query: ''),
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: u.query,
+              )
               .timeout(timeout)
         : await _http.get(u).timeout(timeout);
     if (res.statusCode == 401 || res.statusCode == 403) {
@@ -66,12 +70,17 @@ class SubsonicClient {
     Map<String, dynamic>? r;
     try {
       final body = jsonDecode(utf8.decode(res.bodyBytes));
-      if (body is Map && body['subsonic-response'] is Map) r = (body['subsonic-response'] as Map).cast<String, dynamic>();
+      if (body is Map && body['subsonic-response'] is Map) {
+        r = (body['subsonic-response'] as Map).cast<String, dynamic>();
+      }
     } on FormatException {
       r = null;
     }
     if (r == null) {
-      throw SubsonicException(0, 'That address doesn\'t answer like a Navidrome / Subsonic server. Check the server address.');
+      throw SubsonicException(
+        0,
+        'That address doesn\'t answer like a Navidrome / Subsonic server. Check the server address.',
+      );
     }
     if (r['status'] != 'ok') {
       final e = (r['error'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -339,15 +348,19 @@ class SubsonicClient {
 
   /// Tell the server what's playing, paused or stopped and where (OpenSubsonic playbackReport). Encore counts
   /// plays itself, so this only updates "now playing" (Discord status on the laptop, other apps).
-  Future<void> reportPlayback(String id, {required String state, required int positionMs, double rate = 1}) =>
-      call('reportPlayback', {
-        'mediaId': id,
-        'mediaType': 'song',
-        'positionMs': '$positionMs',
-        'state': state,
-        'playbackRate': '$rate',
-        'ignoreScrobble': 'true',
-      }, null, const Duration(seconds: 10));
+  Future<void> reportPlayback(String id, {required String state, required int positionMs, double rate = 1}) => call(
+    'reportPlayback',
+    {
+      'mediaId': id,
+      'mediaType': 'song',
+      'positionMs': '$positionMs',
+      'state': state,
+      'playbackRate': '$rate',
+      'ignoreScrobble': 'true',
+    },
+    null,
+    const Duration(seconds: 10),
+  );
 
   /// Add / change / remove a station (Navidrome allows this for admin accounts).
   Future<void> createRadio(String name, String streamUrl, {String homePageUrl = ''}) => call(

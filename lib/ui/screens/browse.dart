@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/account.dart';
+import '../../data/artist_extra.dart';
 import '../../data/library.dart';
+import '../../data/library_pins.dart';
 import '../../data/models.dart';
 import '../../data/share_links.dart';
 import '../../data/radio_browser.dart';
@@ -192,7 +194,13 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                       ),
                     IconButton(
                       icon: const Icon(Icons.more_vert_rounded),
-                      onPressed: () => showCollectionMenu(context, ref, a.name, () async => playable),
+                      onPressed: () => showCollectionMenu(
+                        context,
+                        ref,
+                        a.name,
+                        () async => playable,
+                        pin: LibraryPin('album', a.id, a.name, cover: a.coverArt, subtitle: 'Album · ${a.artist}'),
+                      ),
                     ),
                   ],
                 ),
@@ -216,6 +224,72 @@ class ArtistScreen extends ConsumerStatefulWidget {
 
 class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDownloading {
   bool _bioOpen = false;
+  bool _allPopular = false;
+
+  static String _compact(int n) => n >= 1000000
+      ? '${(n / 1000000).toStringAsFixed(n >= 10000000 ? 0 : 1)}M'
+      : n >= 1000
+      ? '${(n / 1000).toStringAsFixed(n >= 10000 ? 0 : 1)}K'
+      : '$n';
+
+  /// Popular songs: the artist's top 10 (Deezer), your own copy when you have it, ⬇ when you don't.
+  List<Widget> _popular(BuildContext context, Artist a, List<Song> topOwn, ArtistExtra extra, List<Song> own) {
+    var list = <Song>[];
+    if (extra.top.isEmpty) {
+      list = topOwn;
+    } else {
+      final mine = {
+        for (final s in [...topOwn, ...own]) normName(s.title): s,
+      };
+      list = [for (final s in extra.top) mine[normName(s.title)] ?? s];
+    }
+    if (list.isEmpty) return const [];
+    final shown = list.take(_allPopular ? 10 : 5).toList();
+    final playable = shown.where((s) => !s.isLookup).toList();
+    return [
+      const SectionTitle('Popular'),
+      for (var i = 0; i < shown.length; i++)
+        shown[i].isLookup ? SongTile(shown[i]) : SongTile(shown[i], list: playable, index: playable.indexOf(shown[i])),
+      if (list.length > 5)
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: TextButton(
+            onPressed: () => setState(() => _allPopular = !_allPopular),
+            child: Text(_allPopular ? 'Show less' : 'See more'),
+          ),
+        ),
+    ];
+  }
+
+  /// Everything they released: albums, singles & EPs, compilations. Yours open normally; the rest are ⬇.
+  List<Widget> _discography(List<Album> own, List<Album> missing, ArtistExtra extra) {
+    Shelf shelf(String title, List<Album> l) => Shelf(
+      title: title,
+      height: 220,
+      children: [for (final al in l) AlbumCard(al, showArtist: false, showYear: true)],
+    );
+    if (extra.albums.isEmpty) {
+      return [if (own.isNotEmpty) shelf('Albums', own), if (missing.isNotEmpty) shelf('Not in your library', missing)];
+    }
+    final byName = {for (final al in own) normName(al.name): al};
+    final used = <String>{};
+    final groups = <String, List<Album>>{'album': [], 'single': [], 'compile': []};
+    for (final (al, type) in extra.albums) {
+      final k = normName(al.name);
+      final mine = byName[k];
+      if (mine != null) used.add(mine.id);
+      final g = type == 'ep' || type == 'single' ? 'single' : (type == 'compile' ? 'compile' : 'album');
+      groups[g]!.add(mine ?? al);
+    }
+    // your albums Deezer doesn't list (live recordings, bootlegs...) still show, first
+    final extraOwn = own.where((al) => !used.contains(al.id)).toList();
+    groups['album'] = [...extraOwn, ...groups['album']!];
+    return [
+      if (groups['album']!.isNotEmpty) shelf('Albums', groups['album']!),
+      if (groups['single']!.isNotEmpty) shelf('Singles and EPs', groups['single']!),
+      if (groups['compile']!.isNotEmpty) shelf('Compilations', groups['compile']!),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -234,6 +308,12 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
         final top = ref.watch(topSongsProvider(a.name)).value ?? const <Song>[];
         final topOwn = top.where((s) => !s.isLookup).take(5).toList();
         final bio = info.value?.biography ?? '';
+        final extra =
+            ref.watch(artistExtraProvider('${a.name}|${info.hasValue && bio.isEmpty ? 1 : 0}')).value ??
+            const ArtistExtra();
+        final ownSongs = ref.watch(ownArtistSongsProvider(a.name)).value ?? const <Song>[];
+        final bioText = bio.isNotEmpty ? bio : extra.wiki;
+        final fans = extra.fans;
         final t = Theme.of(context).textTheme;
         Future<List<Song>> allSongs() async {
           final repo = ref.read(repoProvider);
@@ -254,7 +334,10 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
               artist: a.name,
               lines: [
                 Text(
-                  '${own.length} albums${missing.isNotEmpty ? ' · ${missing.length} more you don\'t have' : ''}',
+                  [
+                    if (fans != null) '${_compact(fans)} fans',
+                    own.length == 1 ? '1 album in your library' : '${own.length} albums in your library',
+                  ].join(' · '),
                   style: t.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ],
@@ -287,32 +370,48 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
                 ),
               ],
             ),
-            if (topOwn.isNotEmpty) ...[
-              const SectionTitle('Popular'),
-              for (var i = 0; i < topOwn.length; i++) SongTile(topOwn[i], list: topOwn, index: i),
-            ],
-            if (own.isNotEmpty)
-              Shelf(
-                title: 'Albums',
-                height: 220,
-                children: [for (final al in own) AlbumCard(al, showArtist: false, showYear: true)],
-              ),
-            if (missing.isNotEmpty)
-              Shelf(
-                title: 'Not in your library',
-                height: 220,
-                children: [for (final al in missing) AlbumCard(al, showArtist: false, showYear: true)],
-              ),
-            if (bio.isNotEmpty) ...[
+            ..._popular(context, a, topOwn, extra, ownSongs),
+            if (bioText.isNotEmpty) ...[
               const SectionTitle('About'),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: InkWell(
-                  onTap: () => setState(() => _bioOpen = !_bioOpen),
-                  child: Text(bio, maxLines: _bioOpen ? null : 4, overflow: _bioOpen ? null : TextOverflow.ellipsis),
+                child: Material(
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(16),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => setState(() => _bioOpen = !_bioOpen),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (fans != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '${_compact(fans)} fans on Deezer',
+                                style: t.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          Text(
+                            bioText,
+                            maxLines: _bioOpen ? null : 4,
+                            overflow: _bioOpen ? null : TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _bioOpen ? (bio.isEmpty ? 'From Wikipedia' : '') : 'Read more',
+                            style: t.labelMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
+            ..._discography(own, missing, extra),
             ...switch (ref.watch(soundAlikeArtistsProvider(a.name))) {
               AsyncData(:final value) when value.isNotEmpty => [
                 Shelf(
@@ -454,7 +553,13 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                         ref.invalidate(playlistsProvider);
                       }
                     case 'menu':
-                      showCollectionMenu(context, ref, p.name, () async => p.songs);
+                      showCollectionMenu(
+                        context,
+                        ref,
+                        p.name,
+                        () async => p.songs,
+                        pin: LibraryPin('playlist', p.id, p.name, cover: p.coverArt, subtitle: 'Playlist'),
+                      );
                     case 'delete':
                       if (await confirm(context, 'Delete "${p.name}"?', 'This deletes the playlist on your server.')) {
                         await c.deletePlaylist(p.id);
@@ -467,7 +572,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                 }
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(value: 'menu', child: Text('Queue / download…')),
+                PopupMenuItem(value: 'menu', child: Text('Pin, queue, download…')),
                 PopupMenuItem(value: 'edit', child: Text('Reorder / remove songs')),
                 PopupMenuItem(value: 'rename', child: Text('Rename')),
                 PopupMenuItem(value: 'delete', child: Text('Delete')),
@@ -674,6 +779,7 @@ class RadioScreen extends ConsumerWidget {
 
   Future<void> _menu(BuildContext context, WidgetRef ref, InternetRadio r) async {
     final v = await showModalBottomSheet<String>(
+      useRootNavigator: true,
       context: context,
       showDragHandle: true,
       builder: (ctx) => SafeArea(
