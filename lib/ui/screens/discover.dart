@@ -462,11 +462,15 @@ class _AiResultsScreenState extends ConsumerState<AiResultsScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text('${widget.subtitle} · ${nSongs(songs.length)}', style: Theme.of(context).textTheme.bodySmall),
+                child: Text(
+                  '${widget.subtitle} · ${nSongs(songs.length)}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
               ),
               PlayButtons(
-                onPlay: () => audioHandler.playSongs(songs),
-                onShuffle: () => audioHandler.playSongs(songs, shuffle: true),
+                source: 'ai:${widget.title}',
+                onPlay: () => audioHandler.playSongs(songs, source: 'ai:${widget.title}'),
+                onShuffle: () => audioHandler.playSongs(songs, shuffle: true, source: 'ai:${widget.title}'),
                 extra: [
                   const SizedBox(width: 4),
                   IconButton.filledTonal(
@@ -518,7 +522,10 @@ class _AlchemyScreenState extends ConsumerState<AlchemyScreen> {
               leading: Cover(s.coverArt, size: 40, radius: 6, icon: Icons.music_note),
               title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text(s.artist, maxLines: 1),
-              trailing: IconButton(icon: const Icon(Icons.close), onPressed: () => _safeSetState(() => songs.remove(s))),
+              trailing: IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => _safeSetState(() => songs.remove(s)),
+              ),
             ),
           Padding(
             padding: const EdgeInsets.only(left: 8),

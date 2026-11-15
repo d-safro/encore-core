@@ -435,9 +435,12 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
   @override
   void initState() {
     super.initState();
-    audioHandler.equalizer.parameters.timeout(const Duration(seconds: 4)).then((p) => _safeSetState(() => _params = p)).catchError((Object e) {
-      _safeSetState(() => _error = 'Start playing a song first, then open the equalizer.');
-    });
+    audioHandler.equalizer.parameters
+        .timeout(const Duration(seconds: 4))
+        .then((p) => _safeSetState(() => _params = p))
+        .catchError((Object e) {
+          _safeSetState(() => _error = 'Start playing a song first, then open the equalizer.');
+        });
   }
 
   void _save() {
@@ -656,8 +659,9 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   ),
                 ),
                 PlayButtons(
-                  onPlay: () => audioHandler.playSongs(songs),
-                  onShuffle: () => audioHandler.playSongs(songs, shuffle: true),
+                  source: 'downloads',
+                  onPlay: () => audioHandler.playSongs(songs, source: 'downloads'),
+                  onShuffle: () => audioHandler.playSongs(songs, shuffle: true, source: 'downloads'),
                 ),
                 for (var i = 0; i < songs.length; i++) SongTile(songs[i], list: songs, index: i),
               ],

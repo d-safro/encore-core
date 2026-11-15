@@ -73,6 +73,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   final Set<String> _usedPicks = {}; // picked already this session (not suggested twice)
   final List<Song> _pickPool = []; // fetched picks not placed yet
   PlayContext? playContext;
+  String? playSource; // which page's songs are playing (album:<id>, playlist:<id>, …), for its play button
   bool _rearranging = false, _filling = false, _smartNoticeShown = false;
   bool isSuggested(String id) => _suggested.contains(id);
 
@@ -210,9 +211,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     bool allowLookup = false,
     Song? radio,
     PlayContext? context,
+    String? source,
   }) async {
     radioSeed = radio;
     playContext = context;
+    playSource = source ?? context?.key;
     var list = songs.where((s) => (allowLookup || !s.isLookup) && canPlay(s)).toList();
     if (list.isEmpty) {
       if (songs.isNotEmpty) {
@@ -383,6 +386,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _suggested.clear();
     _pickPool.clear();
     playContext = null;
+    playSource = null;
     _rebroadcast();
   }
 
@@ -708,6 +712,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         if (_original != null) 'original': _original!.map((s) => s.id).toList(),
         'suggested': _suggested.toList(),
         if (playContext != null) 'context': playContext!.toJson(),
+        if (playSource != null) 'source': playSource,
       }),
     );
     final c = container.read(clientProvider);
@@ -739,6 +744,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }
       _suggested.addAll(((j['suggested'] as List?) ?? const []).map((e) => '$e').where(byId.containsKey));
       playContext = PlayContext.fromJson(j['context']);
+      playSource = j['source'] as String? ?? playContext?.key;
       await _load(songs, index, position: Duration(milliseconds: (j['position'] as num?)?.toInt() ?? 0));
       _broadcastQueue();
       _rebroadcast();

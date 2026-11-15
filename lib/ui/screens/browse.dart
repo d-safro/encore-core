@@ -170,6 +170,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                 ),
               if (playable.isNotEmpty)
                 PlayButtons(
+                  source: PlayContext.album(a.id, a.name).key,
                   onPlay: () => audioHandler.playSongs(playable, context: PlayContext.album(a.id, a.name)),
                   onShuffle: () =>
                       audioHandler.playSongs(playable, shuffle: true, context: PlayContext.album(a.id, a.name)),
@@ -253,8 +254,9 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
               ],
             ),
             PlayButtons(
-              onPlay: () async => audioHandler.playSongs(await allSongs()),
-              onShuffle: () async => audioHandler.playSongs(await allSongs(), shuffle: true),
+              source: 'artist:${a.id}',
+              onPlay: () async => audioHandler.playSongs(await allSongs(), source: 'artist:${a.id}'),
+              onShuffle: () async => audioHandler.playSongs(await allSongs(), shuffle: true, source: 'artist:${a.id}'),
               leading: [
                 IconButton(
                   iconSize: 26,
@@ -509,6 +511,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
               ),
               if (songs.isNotEmpty)
                 PlayButtons(
+                  source: PlayContext.playlist(p.id, p.name).key,
                   onPlay: () => audioHandler.playSongs(songs, context: PlayContext.playlist(p.id, p.name)),
                   onShuffle: () =>
                       audioHandler.playSongs(songs, shuffle: true, context: PlayContext.playlist(p.id, p.name)),
@@ -538,10 +541,16 @@ class GenreScreen extends ConsumerWidget {
       body: ListView(
         children: [
           PlayButtons(
-            onPlay: () async =>
-                audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 200, genre: name)),
-            onShuffle: () async =>
-                audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 200, genre: name), shuffle: true),
+            source: 'genre:$name',
+            onPlay: () async => audioHandler.playSongs(
+              await ref.read(repoProvider).randomSongs(size: 200, genre: name),
+              source: 'genre:$name',
+            ),
+            onShuffle: () async => audioHandler.playSongs(
+              await ref.read(repoProvider).randomSongs(size: 200, genre: name),
+              shuffle: true,
+              source: 'genre:$name',
+            ),
           ),
           albums.when(
             data: (l) => Shelf(title: 'Albums', children: [for (final a in l.where((a) => !a.isLookup)) AlbumCard(a)]),
@@ -600,8 +609,9 @@ class _FoldersScreenState extends ConsumerState<FoldersScreen> {
             children: [
               if (songs.isNotEmpty)
                 PlayButtons(
-                  onPlay: () => audioHandler.playSongs(songs),
-                  onShuffle: () => audioHandler.playSongs(songs, shuffle: true),
+                  source: 'folder:${widget.id}',
+                  onPlay: () => audioHandler.playSongs(songs, source: 'folder:${widget.id}'),
+                  onShuffle: () => audioHandler.playSongs(songs, shuffle: true, source: 'folder:${widget.id}'),
                 ),
               for (final e in entries.where((e) => e.isDir))
                 ListTile(

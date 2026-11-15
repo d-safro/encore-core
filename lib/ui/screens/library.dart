@@ -325,9 +325,14 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
       itemBuilder: (_, i) {
         if (i == 0) {
           return PlayButtons(
-            onPlay: () async => audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 500)),
-            onShuffle: () async =>
-                audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 500), shuffle: true),
+            source: 'songs',
+            onPlay: () async =>
+                audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 500), source: 'songs'),
+            onShuffle: () async => audioHandler.playSongs(
+              await ref.read(repoProvider).randomSongs(size: 500),
+              shuffle: true,
+              source: 'songs',
+            ),
           );
         }
         if (i == _songs.length + 1) {
@@ -437,6 +442,7 @@ class _FavouritesTab extends ConsumerWidget {
           children: [
             if (songs.isNotEmpty)
               PlayButtons(
+                source: const PlayContext.liked().key,
                 onPlay: () => audioHandler.playSongs(songs, context: const PlayContext.liked()),
                 onShuffle: () => audioHandler.playSongs(songs, shuffle: true, context: const PlayContext.liked()),
                 leading: [DownloadToggle(pinKey: 'starred', songs: () async => songs)],

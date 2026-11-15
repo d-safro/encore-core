@@ -600,38 +600,51 @@ class MiniPlayer extends ConsumerWidget {
 }
 
 /// Round play button, shuffle, and optional extras, for album / playlist / artist pages.
-class PlayButtons extends StatelessWidget {
+/// [source] names the page's songs (the same key given to playSongs): while they're what's playing, the
+/// button shows pause and pauses / resumes instead of starting over.
+class PlayButtons extends ConsumerWidget {
   const PlayButtons({
     super.key,
     required this.onPlay,
     required this.onShuffle,
+    this.source,
     this.extra = const [],
     this.leading = const [],
   });
   final VoidCallback onPlay, onShuffle;
+  final String? source;
   final List<Widget> extra, leading;
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(8, 4, 16, 8),
-    child: Row(
-      children: [
-        ...leading,
-        ...extra,
-        const Spacer(),
-        IconButton(iconSize: 26, tooltip: 'Shuffle', icon: const Icon(Icons.shuffle_rounded), onPressed: onShuffle),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 56,
-          height: 56,
-          child: FilledButton(
-            style: FilledButton.styleFrom(shape: const CircleBorder(), padding: EdgeInsets.zero),
-            onPressed: onPlay,
-            child: const Icon(Icons.play_arrow_rounded, size: 32),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final playing = ref.watch(playbackStateProvider.select((s) => s.value?.playing ?? false));
+    ref.watch(queueProvider);
+    final ours = source != null && audioHandler.playSource == source && audioHandler.songs.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 16, 8),
+      child: Row(
+        children: [
+          ...leading,
+          ...extra,
+          const Spacer(),
+          IconButton(iconSize: 26, tooltip: 'Shuffle', icon: const Icon(Icons.shuffle_rounded), onPressed: onShuffle),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 56,
+            height: 56,
+            child: FilledButton(
+              style: FilledButton.styleFrom(shape: const CircleBorder(), padding: EdgeInsets.zero),
+              onPressed: !ours
+                  ? onPlay
+                  : playing
+                  ? audioHandler.pause
+                  : audioHandler.play,
+              child: Icon(ours && playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 32),
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 /// Spotify-style download switch for a whole collection: keeps it on the phone, new songs included.
