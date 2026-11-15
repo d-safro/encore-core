@@ -28,21 +28,73 @@ final onWifiProvider = Provider<bool>((ref) {
   return r.contains(ConnectivityResult.wifi) || r.contains(ConnectivityResult.ethernet);
 });
 
-/// Offline = switched to offline mode in settings, or no network at all.
-final offlineProvider = Provider<bool>((ref) {
-  if (ref.watch(settingsProvider.select((s) => s.offlineMode))) return true;
+/// No network at all.
+final noNetworkProvider = Provider<bool>((ref) {
   final r = ref.watch(connectivityProvider).value;
   return r != null && (r.isEmpty || r.every((e) => e == ConnectivityResult.none));
+});
+
+/// Can the server be reached right now? Checked with a quick ping when the app starts, when the network
+/// changes, after a request fails, and every 20 s while it's away (every 2 min while it's there). So when the
+/// phone has internet but the server is away (Tailscale off, the laptop asleep), the app switches to what's on
+/// the phone within seconds instead of waiting on every request.
+class ServerReachNotifier extends Notifier<bool> {
+  Timer? _timer;
+  bool _checking = false;
+
+  @override
+  bool build() {
+    ref.watch(clientProvider);
+    ref.watch(connectivityProvider);
+    ref.onDispose(() => _timer?.cancel());
+    Future.microtask(check);
+    return true; // optimistic until the first ping answers
+  }
+
+  Future<void> check() async {
+    final c = ref.read(clientProvider);
+    if (c == null || ref.read(noNetworkProvider) || _checking) return;
+    _checking = true;
+    var ok = false;
+    try {
+      await c.call('ping', const {}, null, const Duration(seconds: 6));
+      ok = true;
+    } on SubsonicException catch (e) {
+      ok = e.code != 0; // the server answered (even "wrong password" means it's there)
+    } catch (_) {
+      ok = false;
+    } finally {
+      _checking = false;
+    }
+    if (state != ok) state = ok;
+    _timer?.cancel();
+    _timer = Timer(ok ? const Duration(minutes: 2) : const Duration(seconds: 20), check);
+  }
+
+  /// A request just failed with a network error: check now.
+  void suspect() {
+    if (state) check();
+  }
+}
+
+final serverReachableProvider = NotifierProvider<ServerReachNotifier, bool>(ServerReachNotifier.new);
+
+/// Offline = switched to offline mode in settings, no network at all, or the server can't be reached.
+final offlineProvider = Provider<bool>((ref) {
+  if (ref.watch(settingsProvider.select((s) => s.offlineMode))) return true;
+  if (ref.watch(noNetworkProvider)) return true;
+  return !ref.watch(serverReachableProvider);
 });
 
 /// Everything the screens read goes through here: the server when online, the local copy otherwise
 /// (and as a fallback when the server can't be reached).
 class Repo {
-  Repo(this.client, this.db, this.offline, this.settings);
+  Repo(this.client, this.db, this.offline, this.settings, {this.onNetworkError});
   final SubsonicClient? client;
   final LibraryDb db;
   final bool offline;
   final Settings settings;
+  final void Function()? onNetworkError; // tells the reachability check to look again
 
   bool get online => client != null && !offline;
 
@@ -51,10 +103,13 @@ class Repo {
     try {
       return await remote(client!);
     } on IOException {
+      onNetworkError?.call();
       return local(); // no network, connection refused, TLS problems...
     } on TimeoutException {
+      onNetworkError?.call();
       return local();
     } on http.ClientException {
+      onNetworkError?.call();
       return local();
     }
   }
@@ -193,8 +248,13 @@ class Repo {
 }
 
 final repoProvider = Provider<Repo>(
-  (ref) =>
-      Repo(ref.watch(clientProvider), ref.watch(dbProvider), ref.watch(offlineProvider), ref.watch(settingsProvider)),
+  (ref) => Repo(
+    ref.watch(clientProvider),
+    ref.watch(dbProvider),
+    ref.watch(offlineProvider),
+    ref.watch(settingsProvider),
+    onNetworkError: () => ref.read(serverReachableProvider.notifier).suspect(),
+  ),
 );
 
 // ── Library sync (local copy for offline browsing / search) ──

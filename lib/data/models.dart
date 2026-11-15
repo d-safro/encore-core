@@ -430,6 +430,20 @@ class PodcastChannel {
     this.latest,
     this.episodes = const [],
   });
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'url': url,
+    'title': title,
+    'author': author,
+    'description': description,
+    'coverArt': coverArt,
+    'errorMessage': error,
+    'unplayed': unplayed,
+    'episodeCount': episodeCount,
+    'latest': latest == null ? 0 : latest!.millisecondsSinceEpoch ~/ 1000,
+    'episode': [for (final e in episodes) e.toJson()],
+  };
+
   factory PodcastChannel.fromJson(Map<String, dynamic> j) {
     final eps = _list(j['episode']).map(PodcastEpisode.fromJson).toList();
     final latest = _int(j['latest']);
@@ -484,6 +498,22 @@ class PodcastEpisode {
     downloaded: j['downloaded'] == true,
     played: j['played'] == true,
   );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'channelId': channelId,
+    'title': title,
+    'album': show,
+    'artist': author,
+    'description': description,
+    'coverArt': coverArt,
+    'suffix': suffix,
+    'publishDate': published?.toIso8601String(),
+    'duration': duration,
+    'position': position,
+    'downloaded': downloaded,
+    'played': played,
+  };
 
   /// Started and not finished: worth resuming.
   bool get inProgress => !played && position > 15000 && (duration == 0 || position < duration * 1000 - 30000);

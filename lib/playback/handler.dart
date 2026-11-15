@@ -96,7 +96,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _broadcast,
       onError: (Object e, StackTrace st) async {
         // a song that can't be played (server gone, file missing): skip it instead of stopping
-        if (player.hasNext) await player.seekToNext();
+        container.read(serverReachableProvider.notifier).suspect();
+        await _skipToPlayable();
       },
     );
     player.currentIndexStream.listen(_onIndex);
@@ -387,6 +388,21 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     mediaItem.add(item);
     player.play();
+  }
+
+  /// After a song failed: the next one that can play (offline, only downloaded songs can).
+  Future<void> _skipToPlayable() async {
+    final from = (player.currentIndex ?? -1) + 1;
+    final files = container.read(downloadsProvider).files;
+    final offline = container.read(offlineProvider);
+    for (var i = from; i < _songs.length; i++) {
+      if (!offline || files.containsKey(_songs[i].id)) {
+        await player.seek(Duration.zero, index: i);
+        return;
+      }
+    }
+    await player.pause();
+    if (offline) playerNotices.add("Can't reach your server, and nothing else in the queue is downloaded");
   }
 
   // ── Podcasts ──

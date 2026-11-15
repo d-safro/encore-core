@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/settings.dart';
+import 'data/episode_alerts.dart';
 import 'data/account.dart';
 import 'data/library.dart';
 import 'playback/handler.dart';
@@ -106,7 +107,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/radio', builder: (_, _) => const RadioScreen()),
           GoRoute(path: '/liked', builder: (_, _) => const LikedSongsScreen()),
           GoRoute(path: '/podcasts/add', builder: (_, _) => const AddPodcastScreen()),
-          GoRoute(path: '/podcast/:id', builder: (_, s) => PodcastScreen(id: s.pathParameters['id']!)),
+          GoRoute(
+            path: '/podcast/:id',
+            builder: (_, s) => PodcastScreen(id: s.pathParameters['id']!),
+          ),
           GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
           GoRoute(path: '/equalizer', builder: (_, _) => const EqualizerScreen()),
           GoRoute(path: '/downloads', builder: (_, _) => const DownloadsScreen()),
@@ -170,16 +174,77 @@ class EncoreApp extends ConsumerStatefulWidget {
   ConsumerState<EncoreApp> createState() => _EncoreAppState();
 }
 
-class _EncoreAppState extends ConsumerState<EncoreApp> {
+class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startEpisodeAlerts();
     // when the network comes back: send plays made offline
     ref.listenManual(offlineProvider, (prev, next) {
       if (prev == true && next == false) audioHandler.flushOfflineScrobbles();
     });
     // keep downloaded collections up to date (new songs in playlists, newly hearted songs)
     Future.delayed(const Duration(seconds: 20), () => ref.read(downloadsProvider.notifier).refreshPins());
+    // keep the phone's copy of the library fresh (for offline browsing): at most every 12 hours
+    Future.delayed(const Duration(seconds: 45), _syncIfStale);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(serverReachableProvider.notifier).check();
+      _checkEpisodes();
+      _syncIfStale();
+    }
+  }
+
+  Future<void> _syncIfStale() async {
+    if (!mounted || !ref.read(repoProvider).online || ref.read(syncProvider).running) return;
+    final last = await ref.read(dbProvider).lastSync();
+    if (last == null || DateTime.now().difference(last) > const Duration(hours: 12)) {
+      await ref.read(syncProvider.notifier).sync();
+    }
+  }
+
+  // ── New podcast episode notifications ──
+  Future<void> _startEpisodeAlerts() async {
+    await initNotifications(onTap: _openFromNotification);
+    final launch = await notifications.getNotificationAppLaunchDetails();
+    final payload = launch?.notificationResponse?.payload;
+    if (launch?.didNotificationLaunchApp == true && payload != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openFromNotification(payload));
+    }
+    await startEpisodeChecks();
+    _checkEpisodes();
+  }
+
+  Future<void> _checkEpisodes() async {
+    if (!ref.read(repoProvider).online) return;
+    final n = await checkNewEpisodes(p: prefs);
+    final c = ref.read(clientProvider);
+    if (c != null) await warmPodcastCache(c); // so podcasts still show when the server is away
+    if (n > 0) {
+      ref.invalidate(podcastsProvider);
+      ref.invalidate(newestEpisodesProvider);
+    }
+    // the first time someone follows podcasts, ask Android for permission to notify
+    if (prefs.getStringList('podcastSeen')?.isNotEmpty == true) await askNotificationPermission(prefs);
+  }
+
+  void _openFromNotification(String payload) {
+    final router = ref.read(routerProvider);
+    if (payload.startsWith('podcast:')) {
+      router.push('/podcast/${payload.substring(8)}');
+    } else if (payload == 'podcasts') {
+      router.go('/library?tab=1');
+    }
   }
 
   /// Minimal dark look: near-black surfaces tinted by the accent, Inter, soft rounded shapes, no borders.

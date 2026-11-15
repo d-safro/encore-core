@@ -6,34 +6,103 @@ import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
+import '../../data/subsonic.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
 
-// ── Data ──
+// ── Data (the last answers are kept on the phone, for when the server can't be reached) ──
+Object? _cached(String key) {
+  try {
+    final m = jsonDecode(prefs.getString('podcastCache') ?? '{}') as Map<String, dynamic>;
+    return m[key];
+  } catch (_) {
+    return null;
+  }
+}
+
+void _cache(String key, Object value) {
+  Map<String, dynamic> m;
+  try {
+    m = jsonDecode(prefs.getString('podcastCache') ?? '{}') as Map<String, dynamic>;
+  } catch (_) {
+    m = {};
+  }
+  m[key] = value;
+  prefs.setString('podcastCache', jsonEncode(m));
+}
+
+/// A show with its newest 150 episodes (enough offline; keeps the phone's copy small).
+void _cacheShow(PodcastChannel p) {
+  final j = p.toJson();
+  j['episode'] = (j['episode'] as List).take(150).toList();
+  _cache('ch:${p.id}', j);
+}
+
+/// While connected: keep the phone's copy of your shows and their latest episodes, for offline use.
+Future<void> warmPodcastCache(SubsonicClient c) async {
+  try {
+    final l = await c.podcasts();
+    _cache('list', [for (final p in l) p.toJson()]);
+    for (final p in l) {
+      final full = await c.podcast(p.id);
+      if (full != null) _cacheShow(full);
+    }
+  } catch (_) {}
+}
+
+List<PodcastChannel> _cachedList(String key) => [
+  for (final e in (_cached(key) as List?) ?? const [])
+    if (e is Map) PodcastChannel.fromJson(e.cast<String, dynamic>()),
+];
+
 final podcastsProvider = FutureProvider.autoDispose<List<PodcastChannel>>((ref) async {
   final c = ref.watch(clientProvider);
-  if (c == null || !ref.watch(repoProvider).online) return const [];
-  return c.podcasts();
+  if (c == null || !ref.watch(repoProvider).online) return _cachedList('list');
+  try {
+    final l = await c.podcasts();
+    _cache('list', [for (final p in l) p.toJson()]);
+    return l;
+  } catch (_) {
+    return _cachedList('list');
+  }
 });
 
 final podcastProvider = FutureProvider.autoDispose.family<PodcastChannel?, String>((ref, id) async {
+  PodcastChannel? fromCache() {
+    final j = _cached('ch:$id');
+    return j is Map ? PodcastChannel.fromJson(j.cast<String, dynamic>()) : null;
+  }
+
   final c = ref.watch(clientProvider);
-  if (c == null || !ref.watch(repoProvider).online) return null;
-  return c.podcast(id);
+  if (c == null || !ref.watch(repoProvider).online) return fromCache();
+  try {
+    final p = await c.podcast(id);
+    if (p != null) _cacheShow(p);
+    return p;
+  } catch (_) {
+    return fromCache();
+  }
 });
 
 final newestEpisodesProvider = FutureProvider.autoDispose<List<PodcastEpisode>>((ref) async {
+  List<PodcastEpisode> fromCache() => [
+    for (final e in (_cached('newest') as List?) ?? const [])
+      if (e is Map) PodcastEpisode.fromJson(e.cast<String, dynamic>()),
+  ];
   final c = ref.watch(clientProvider);
-  if (c == null || !ref.watch(repoProvider).online) return const [];
+  if (c == null || !ref.watch(repoProvider).online) return fromCache();
   try {
-    return await c.newestEpisodes(count: 12);
+    final l = await c.newestEpisodes(count: 12);
+    _cache('newest', [for (final e in l) e.toJson()]);
+    return l;
   } catch (_) {
-    return const []; // a server without podcast support
+    return fromCache(); // away, or a server without podcast support
   }
 });
 
@@ -81,7 +150,9 @@ class PodcastsTab extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.all(32),
               child: Text(
-                online ? 'No podcasts yet. Tap Add podcast to find one.' : 'Podcasts need your server',
+                online
+                    ? 'No podcasts yet. Tap Add podcast to find one.'
+                    : "Can't reach your server. Your shows appear here once the app has seen them online.",
                 textAlign: TextAlign.center,
               ),
             ),
@@ -209,7 +280,10 @@ class _PodcastScreenState extends ConsumerState<PodcastScreen> {
                             Text(ch.author, style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
                           const SizedBox(height: 4),
                           Text(
-                            ['${ch.episodes.length} episodes', if (ch.unplayed > 0) '${ch.unplayed} new'].join(' · '),
+                            [
+                              '${ch.episodeCount > ch.episodes.length ? ch.episodeCount : ch.episodes.length} episodes',
+                              if (ch.unplayed > 0) '${ch.unplayed} new',
+                            ].join(' · '),
                             style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                           ),
                           if (ch.error.isNotEmpty)
@@ -430,6 +504,18 @@ Future<void> showEpisodeMenu(BuildContext context, WidgetRef ref, PodcastEpisode
                   leading: Icon(e.played ? Icons.radio_button_unchecked : Icons.check_circle_outline_rounded),
                   title: Text(e.played ? 'Mark as not played' : 'Mark as played'),
                   onTap: () => act(() => c.podcastProgress(e.id, played: !e.played)),
+                ),
+              if (c != null)
+                ListTile(
+                  leading: Icon(e.downloaded ? Icons.cloud_off_outlined : Icons.cloud_download_outlined),
+                  title: Text(e.downloaded ? 'Remove from your server' : 'Save on your server'),
+                  subtitle: Text(
+                    e.downloaded ? 'It will stream from the podcast again' : 'Kept even if the podcast removes it',
+                  ),
+                  onTap: () => act(
+                    () => c.keepEpisodeOnServer(e.id, !e.downloaded),
+                    e.downloaded ? 'Removed from your server' : 'Saving on your server',
+                  ),
                 ),
               ListTile(
                 leading: Icon(onPhone ? Icons.delete_outline : Icons.download_rounded),

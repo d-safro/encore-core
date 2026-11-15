@@ -6,6 +6,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../core/settings.dart';
 import '../../data/account.dart';
+import '../../data/episode_alerts.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../data/online_lyrics.dart';
@@ -103,6 +104,17 @@ class SettingsScreen extends ConsumerWidget {
               ),
               onTap: () => showDialog(context: context, builder: (_) => const _LyricsSourcesDialog()),
             ),
+          SwitchListTile(
+            secondary: const Icon(Icons.podcasts_rounded),
+            title: const Text('New podcast episodes'),
+            subtitle: const Text('A notification when a show you follow has a new episode'),
+            value: prefs.getBool('podcastAlerts') ?? true,
+            onChanged: (v) async {
+              await prefs.setBool('podcastAlerts', v);
+              if (v) await askNotificationPermission(prefs);
+              ref.invalidate(settingsProvider); // redraw
+            },
+          ),
           SwitchListTile(
             secondary: const Icon(Icons.history),
             title: const Text('Scrobble plays'),
