@@ -402,6 +402,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
     } catch (e) {
       if (mounted) toast(context, 'Couldn\'t save: $e');
     }
+    if (!mounted) return;
     setState(() {
       _editing = false;
       _edit = null;
@@ -425,28 +426,33 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
             PopupMenuButton<String>(
               onSelected: (v) async {
                 final p = pl.value!;
-                final c = ref.read(clientProvider)!;
-                switch (v) {
-                  case 'edit':
-                    setState(() {
-                      _editing = true;
-                      _edit = [...p.songs];
-                    });
-                  case 'rename':
-                    final n = await askText(context, 'Rename playlist', 'Name', initial: p.name);
-                    if (n != null && n.isNotEmpty) {
-                      await c.updatePlaylist(p.id, name: n);
-                      ref.invalidate(playlistProvider(widget.id));
-                      ref.invalidate(playlistsProvider);
-                    }
-                  case 'menu':
-                    showCollectionMenu(context, ref, p.name, () async => p.songs);
-                  case 'delete':
-                    if (await confirm(context, 'Delete "${p.name}"?', 'This deletes the playlist on your server.')) {
-                      await c.deletePlaylist(p.id);
-                      ref.invalidate(playlistsProvider);
-                      if (context.mounted) context.pop();
-                    }
+                final c = ref.read(clientProvider);
+                if (c == null) return;
+                try {
+                  switch (v) {
+                    case 'edit':
+                      setState(() {
+                        _editing = true;
+                        _edit = [...p.songs];
+                      });
+                    case 'rename':
+                      final n = await askText(context, 'Rename playlist', 'Name', initial: p.name);
+                      if (n != null && n.isNotEmpty) {
+                        await c.updatePlaylist(p.id, name: n);
+                        ref.invalidate(playlistProvider(widget.id));
+                        ref.invalidate(playlistsProvider);
+                      }
+                    case 'menu':
+                      showCollectionMenu(context, ref, p.name, () async => p.songs);
+                    case 'delete':
+                      if (await confirm(context, 'Delete "${p.name}"?', 'This deletes the playlist on your server.')) {
+                        await c.deletePlaylist(p.id);
+                        ref.invalidate(playlistsProvider);
+                        if (context.mounted) context.pop();
+                      }
+                  }
+                } catch (e) {
+                  if (context.mounted) toast(context, "Couldn't do that: $e");
                 }
               },
               itemBuilder: (_) => const [
@@ -590,8 +596,12 @@ class _FoldersScreenState extends ConsumerState<FoldersScreen> {
   @override
   void initState() {
     super.initState();
-    final c = ref.read(clientProvider)!;
-    _future = widget.id == null ? c.indexes() : c.directory(widget.id!);
+    final c = ref.read(clientProvider);
+    _future = c == null
+        ? Future.error('Not signed in')
+        : widget.id == null
+        ? c.indexes()
+        : c.directory(widget.id!);
   }
 
   @override

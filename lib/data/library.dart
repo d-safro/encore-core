@@ -131,7 +131,10 @@ class Repo {
   Future<List<Playlist>> playlists() => _either((c) => c.playlists(), db.playlists);
 
   Future<Playlist> playlist(String id) => _either((c) => c.playlist(id), () async {
-    final pl = (await db.playlists()).firstWhere((p) => p.id == id);
+    final pl = (await db.playlists()).firstWhere(
+      (p) => p.id == id,
+      orElse: () => throw Exception("This playlist isn't saved on the phone"),
+    );
     return Playlist(id: pl.id, name: pl.name, comment: pl.comment, songs: await db.playlistSongs(id));
   });
 
@@ -240,7 +243,9 @@ class SyncNotifier extends Notifier<SyncState> {
       final playlists = await c.playlists();
       final plSongs = <String, List<String>>{};
       for (final p in playlists) {
-        plSongs[p.id] = (await c.playlist(p.id)).songs.map((s) => s.id).toList();
+        try {
+          plSongs[p.id] = (await c.playlist(p.id)).songs.map((s) => s.id).toList();
+        } catch (_) {} // one playlist that won't load shouldn't stop the whole sync
       }
       await ref
           .read(dbProvider)
@@ -418,28 +423,35 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   Future<void> unpin(String key, List<Song> songs) async {
     _savePins({...state.pins}..remove(key));
     if (state.pins.contains('library')) return;
-    final keep = {...await _songsOfPins(), ...prefs.getStringList('manualDownloads') ?? const <String>[]};
+    final keep = <String>{...prefs.getStringList('manualDownloads') ?? const <String>[]};
+    for (final k in state.pins) {
+      final l = await _pinSongs(k);
+      if (l == null) return; // can't tell what another kept collection needs: delete nothing rather than too much
+      keep.addAll(l.map((s) => s.id));
+    }
     await remove(songs.map((s) => s.id).where((id) => !keep.contains(id)));
   }
 
-  Future<List<Song>> _pinSongs(String key) async {
+  /// The songs of a kept collection, or null when they can't be looked up right now.
+  Future<List<Song>?> _pinSongs(String key) async {
     final repo = ref.read(repoProvider);
     try {
       if (key == 'library') return await ref.read(dbProvider).allSongs();
       if (key == 'starred') return (await repo.starred()).songs;
       if (key.startsWith('album:')) return (await repo.album(key.substring(6))).songs;
       if (key.startsWith('playlist:')) return (await repo.playlist(key.substring(9))).songs;
-    } catch (_) {}
-    return const [];
+      return const [];
+    } catch (_) {
+      return null;
+    }
   }
-
-  Future<Set<String>> _songsOfPins() async => {for (final k in state.pins) ...(await _pinSongs(k)).map((s) => s.id)};
 
   /// Download what's new in every kept collection (songs added to a playlist, newly hearted songs...).
   Future<void> refreshPins() async {
     if (!ref.read(repoProvider).online) return;
     for (final k in state.pins) {
-      await download((await _pinSongs(k)).where((s) => !s.isLookup && !has(s.id)).toList());
+      final l = await _pinSongs(k);
+      if (l != null) await download(l.where((s) => !s.isLookup && !has(s.id)).toList());
     }
   }
 }

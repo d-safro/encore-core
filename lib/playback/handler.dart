@@ -449,6 +449,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     } finally {
       _rearranging = false;
     }
+    _onIndex(player.currentIndex); // the song may have ended while the queue was rebuilt
     _broadcastQueue();
     _rebroadcast();
     _scheduleSave();
@@ -468,6 +469,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     } finally {
       _rearranging = false;
     }
+    _onIndex(player.currentIndex);
     final now = player.currentIndex;
     _suggested.removeWhere((id) => now == null || now >= _songs.length || _songs[now].id != id);
     _pickPool.clear();
@@ -510,8 +512,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (_shuffleKind != ShuffleKind.smart || picks.isEmpty) return;
       (i, last) = where(); // the queue may have moved on while fetching
       var pos = last + 1;
-      _rearranging = true;
-      try {
+      {
         for (final p in picks) {
           var plain = 0;
           while (pos < _songs.length && plain < 3) {
@@ -528,8 +529,6 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
           await player.insertAudioSource(pos, _source(p));
           pos++;
         }
-      } finally {
-        _rearranging = false;
       }
       _broadcastQueue();
       _scheduleSave();
@@ -684,8 +683,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final left = <String>[];
     for (final e in list) {
       final p = e.split('|');
+      final ms = p.length == 2 ? int.tryParse(p[1]) : null;
+      if (ms == null) continue; // a broken entry: drop it
       try {
-        await c.scrobble(p[0], submission: true, time: DateTime.fromMillisecondsSinceEpoch(int.parse(p[1])));
+        await c.scrobble(p[0], submission: true, time: DateTime.fromMillisecondsSinceEpoch(ms));
       } catch (_) {
         left.add(e);
       }

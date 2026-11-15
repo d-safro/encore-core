@@ -362,8 +362,12 @@ class _PlaylistsTab extends ConsumerWidget {
               onPressed: () async {
                 final name = await askText(context, 'New playlist', 'Name');
                 if (name == null || name.isEmpty) return;
-                await ref.read(clientProvider)!.createPlaylist(name, const []);
-                ref.invalidate(playlistsProvider);
+                try {
+                  await ref.read(clientProvider)?.createPlaylist(name, const []);
+                  ref.invalidate(playlistsProvider);
+                } catch (e) {
+                  if (context.mounted) toast(context, "Couldn't create the playlist: $e");
+                }
               },
             )
           : null,
