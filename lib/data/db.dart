@@ -7,11 +7,14 @@ import 'models.dart';
 
 /// Local copy of the library (for offline browsing and search) plus the list of downloaded songs.
 class LibraryDb {
-  LibraryDb._(this.db);
+  LibraryDb._(this.db, this.file);
   final Database db;
+  final String file; // one per server
 
-  static Future<LibraryDb> open() async {
-    final path = p.join(await getDatabasesPath(), 'encore.db');
+  Future<void> close() => db.close();
+
+  static Future<LibraryDb> open({String file = 'encore.db'}) async {
+    final path = p.join(await getDatabasesPath(), file);
     final db = await openDatabase(
       path,
       version: 1,
@@ -37,7 +40,7 @@ class LibraryDb {
         await b.commit(noResult: true);
       },
     );
-    return LibraryDb._(db);
+    return LibraryDb._(db, file);
   }
 
   // ── Writing (library sync) ──

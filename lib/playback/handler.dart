@@ -1101,6 +1101,25 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
   }
 
+  /// Switching servers: keep this server's queue where it is (it comes back when you switch back) and stop.
+  Future<void> leaveServer() async {
+    _saveTimer?.cancel();
+    _cancelFade();
+    await _saveQueue();
+    _songs.clear();
+    radioStation = null;
+    _resetShuffle();
+    await player.stop();
+    await player.clearAudioSources();
+    mediaItem.add(null);
+    _broadcastQueue();
+    _loaded = false;
+    _lastSongId = null;
+  }
+
+  /// After switching servers: that server's queue, as you left it.
+  Future<void> enterServer() => _restoreQueue();
+
   Future<void> _restoreQueue() async {
     final raw = prefs.getString('queue');
     if (raw == null || container.read(clientProvider) == null) return;

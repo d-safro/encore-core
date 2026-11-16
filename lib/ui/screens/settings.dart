@@ -20,6 +20,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../update.dart';
 import '../widgets.dart';
+import 'login.dart';
 
 const _formats = {'raw': 'Original', 'opus': 'Opus', 'mp3': 'MP3', 'aac': 'AAC'};
 const _bitrates = [64, 96, 128, 160, 192, 256, 320];
@@ -48,13 +49,14 @@ class SettingsScreen extends ConsumerWidget {
             trailing: TextButton(
               onPressed: () async {
                 if (await confirm(context, 'Sign out?', 'Downloads stay on the phone.', ok: 'Sign out')) {
-                  await audioHandler.clearQueue();
-                  ref.read(accountProvider.notifier).signOut();
+                  await ref.read(accountProvider.notifier).signOut(beforeSwitch: audioHandler.leaveServer);
+                  await audioHandler.enterServer();
                 }
               },
               child: const Text('Sign out'),
             ),
           ),
+          const _OtherServers(),
           SwitchListTile(
             secondary: const Icon(Icons.cloud_off_outlined),
             title: const Text('Offline mode'),
@@ -478,6 +480,50 @@ class _QualityTile extends StatelessWidget {
 }
 
 /// Pictures kept on the phone (covers, artist photos), with a way to free the space.
+/// Other saved servers (tap to switch), and adding one.
+class _OtherServers extends ConsumerWidget {
+  const _OtherServers();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cur = ref.watch(accountProvider).value;
+    return FutureBuilder<List<SavedAccount>>(
+      future: savedAccounts(),
+      builder: (ctx, snap) {
+        final others = (snap.data ?? const <SavedAccount>[])
+            .where((a) => cur == null || !(a.server == cur.base && a.user == cur.username))
+            .toList();
+        return Column(
+          children: [
+            for (final a in others)
+              ListTile(
+                leading: const Icon(Icons.swap_horiz_rounded),
+                title: Text(a.server),
+                subtitle: Text('${a.user} · tap to switch'),
+                onTap: () async {
+                  toast(context, 'Switching to ${a.server}…');
+                  try {
+                    await ref.read(accountProvider.notifier).switchTo(a, beforeSwitch: audioHandler.leaveServer);
+                    await audioHandler.enterServer();
+                  } catch (e) {
+                    if (context.mounted) toast(context, "Couldn't switch: $e");
+                  }
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.add_rounded),
+              title: const Text('Add another server'),
+              subtitle: const Text('Each keeps its own downloads, queue and pins'),
+              onTap: () => Navigator.of(context, rootNavigator: true).push(
+                MaterialPageRoute(builder: (_) => const LoginScreen(adding: true)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _CoverCacheTile extends StatefulWidget {
   const _CoverCacheTile();
   @override

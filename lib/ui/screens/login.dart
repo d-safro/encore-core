@@ -1,3 +1,4 @@
+import '../../playback/handler.dart';
 import '../widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,7 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/account.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.adding = false});
+  final bool adding; // another server, from Settings (the current one stays saved)
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
@@ -35,7 +37,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _error = null;
     });
     try {
-      await ref.read(accountProvider.notifier).signIn(_server.text, _user.text, _pass.text);
+      await ref.read(accountProvider.notifier).signIn(
+        _server.text,
+        _user.text,
+        _pass.text,
+        beforeSwitch: audioHandler.leaveServer,
+      );
+      await audioHandler.enterServer();
+      if (widget.adding && mounted) Navigator.of(context).pop();
     } catch (e) {
       _safeSetState(() => _error = '$e'.replaceFirst('Exception: ', ''));
     } finally {
@@ -47,6 +56,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     return Scaffold(
+      appBar: widget.adding ? AppBar(title: const Text('Add a server')) : null,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
