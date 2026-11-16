@@ -1,5 +1,6 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -124,6 +125,37 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
+/// A plain-words strip above the player when the server answers but can't play music.
+class _ServerTrouble extends StatelessWidget {
+  const _ServerTrouble();
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<String?>(
+    valueListenable: serverTrouble,
+    builder: (ctx, msg, _) {
+      if (msg == null) return const SizedBox.shrink();
+      final cs = Theme.of(ctx).colorScheme;
+      return Material(
+        color: cs.errorContainer,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+          child: Row(
+            children: [
+              Icon(Icons.report_problem_rounded, size: 20, color: cs.onErrorContainer),
+              const SizedBox(width: 12),
+              Expanded(child: Text(msg, style: TextStyle(color: cs.onErrorContainer))),
+              IconButton(
+                tooltip: 'Hide',
+                icon: Icon(Icons.close_rounded, color: cs.onErrorContainer),
+                onPressed: () => serverTrouble.value = null,
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _Shell extends ConsumerWidget {
   const _Shell({required this.location, required this.child});
   final String location;
@@ -141,6 +173,7 @@ class _Shell extends ConsumerWidget {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          const _ServerTrouble(),
           const MiniPlayer(),
           NavigationBar(
             selectedIndex: _lastTab,
@@ -186,7 +219,10 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     _startEpisodeAlerts();
     // when the network comes back: send plays made offline
     ref.listenManual(offlineProvider, (prev, next) {
-      if (prev == true && next == false) audioHandler.flushOfflineScrobbles();
+      if (prev == true && next == false) {
+        audioHandler.flushOfflineScrobbles();
+        FileDownloader().resumeAll(); // downloads that stopped while the server was away carry on
+      }
     });
     // keep downloaded collections up to date (new songs in playlists, newly hearted songs)
     Future.delayed(const Duration(seconds: 20), () => ref.read(downloadsProvider.notifier).refreshPins());

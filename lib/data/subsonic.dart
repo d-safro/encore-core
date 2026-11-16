@@ -535,6 +535,25 @@ class SubsonicClient {
   }
 
   // ── Media URLs ──
+  /// Why a song won't stream: the server's error message, or null when it does stream.
+  Future<String?> streamProblem(String id) async {
+    try {
+      final r = await _http
+          .get(streamUrl(id), headers: {'Range': 'bytes=0-1023'})
+          .timeout(const Duration(seconds: 15));
+      final type = r.headers['content-type'] ?? '';
+      if (r.statusCode < 300 && !type.contains('json') && !type.contains('xml') && !type.contains('html')) return null;
+      try {
+        final j = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+        return '${((j['subsonic-response'] as Map?)?['error'] as Map?)?['message'] ?? 'error ${r.statusCode}'}';
+      } catch (_) {
+        return 'error ${r.statusCode}';
+      }
+    } catch (_) {
+      return null; // can't reach it at all: that's the offline case, handled elsewhere
+    }
+  }
+
   Uri streamUrl(String id, {String? format, int? maxBitRate}) => url('stream', {
     'id': id,
     if (format != null && format != 'raw') 'format': format,

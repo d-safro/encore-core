@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -101,6 +102,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       },
     );
     player.currentIndexStream.listen(_onIndex);
+    player.processingStateStream.listen((st) {
+      final s = currentSong;
+      if (st == ProcessingState.ready && s != null && !_onPhone.contains(s.id) && player.playing) {
+        serverTrouble.value = null; // streaming works again
+      }
+    });
     player.sequenceStream.listen((_) => _onIndex(player.currentIndex)); // same index, different song
     player.positionStream.listen(_onPosition);
     player.icyMetadataStream.listen((m) {
@@ -441,7 +448,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
           initialIndex: i,
           initialPosition: i == index ? position : null,
         );
-        if (i != index && !quiet) playerNotices.add("Couldn't play \"${list[index].title}\", skipped it");
+        if (i != index && !quiet) {
+          playerNotices.add("Couldn't play \"${list[index].title}\", skipped it");
+          if (!offline) _diagnose(list[index]);
+        }
         _loaded = true;
         return true;
       } on PlayerException catch (_) {
@@ -451,6 +461,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }
     }
     _loaded = false;
+    if (!offline && index < list.length) _diagnose(list[index]);
     if (!quiet) {
       playerNotices.add(
         offline ? "Can't reach your server, and none of these songs are downloaded" : "Couldn't play these songs right now",
@@ -595,6 +606,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     await useDownloadedFiles();
     if (cur != null && cur < _songs.length && !container.read(offlineProvider)) {
       playerNotices.add("Couldn't play \"${_songs[cur].title}\", skipped it");
+      _diagnose(_songs[cur]);
     }
     final from = (cur ?? -1) + 1;
     final offline = container.read(offlineProvider);
@@ -606,6 +618,20 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     await player.pause();
     if (offline) playerNotices.add("Can't reach your server, and nothing else in the queue is downloaded");
+  }
+
+  /// The server answers but a song won't play: ask it why, and say so plainly (a banner over the player).
+  Future<void> _diagnose(Song s) async {
+    if (isPodcastId(s.id) || s.isLookup) return;
+    final why = await container.read(clientProvider)?.streamProblem(s.id);
+    if (why == null) return;
+    final w = why.toLowerCase();
+    serverTrouble.value = w.contains('input/output') || w.contains('i/o error')
+        ? "Your server can't read its music drive right now (a USB drive may have disconnected). "
+              'Downloaded songs still play.'
+        : w.contains('no such file') || w.contains('not found')
+        ? 'Some songs are missing on your server (moved or deleted). A library rescan may help.'
+        : 'Your server had trouble playing a song: $why';
   }
 
   // ── Podcasts ──
@@ -1479,3 +1505,6 @@ late EncoreAudioHandler audioHandler; // created in main()
 
 /// Short messages from the player for the app to show (e.g. nothing playable while offline).
 final playerNotices = StreamController<String>.broadcast();
+
+/// A problem on the server side worth a banner (null: none).
+final serverTrouble = ValueNotifier<String?>(null);

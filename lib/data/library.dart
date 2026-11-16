@@ -490,7 +490,10 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         baseDirectory: BaseDirectory.applicationSupport,
         updates: Updates.statusAndProgress,
         requiresWiFi: s.downloadWifiOnly,
-        retries: 3,
+        // a dropped connection carries on from where it stopped (not from the start), and big files survive
+        // Android's 9-minute limit on background work
+        retries: 6,
+        allowPause: true,
         metaData: song.id,
         displayName: '${song.artist} - ${song.title}',
       );
