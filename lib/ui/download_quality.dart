@@ -86,7 +86,7 @@ class _ShrinkCardState extends ConsumerState<ShrinkCard> {
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(settingsProvider);
-    ref.watch(downloadsProvider.select((d) => d.files.length));
+    ref.watch(downloadsProvider.select((d) => d.files)); // swapped for smaller copies: look again
     final dl = ref.read(downloadsProvider.notifier);
     _big = dl.oversized();
     final cs = Theme.of(context).colorScheme;

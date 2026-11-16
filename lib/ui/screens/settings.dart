@@ -795,9 +795,15 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
   late Future<List<(Song, String, int)>> _future = ref.read(dbProvider).downloads();
   late final Future<(int, int)> _library = _librarySize();
 
+  /// Songs in the library, and the space they'd take at the download quality (original sizes for Lossless).
   Future<(int, int)> _librarySize() async {
     final all = await ref.read(dbProvider).allSongs();
-    return (all.length, all.fold<int>(0, (n, x) => n + (x.size ?? 0)));
+    final set = ref.read(settingsProvider);
+    final raw = set.downloadFormat == 'raw';
+    return (
+      all.length,
+      all.fold<int>(0, (n, x) => n + (raw ? (x.size ?? 0) : DownloadsNotifier.sizeAt(x, set.downloadBitrate))),
+    );
   }
 
   String _gb(int bytes) =>
@@ -821,6 +827,10 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       if (a?.files.length != b.files.length) _safeSetState(() => _future = ref.read(dbProvider).downloads());
     });
     final dl = ref.watch(downloadsProvider);
+    // files added, removed or swapped for smaller copies: read the list (and sizes) again
+    ref.listen(downloadsProvider.select((d) => d.files), (prev, next) {
+      if (prev != next) setState(() => _future = ref.read(dbProvider).downloads());
+    });
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
