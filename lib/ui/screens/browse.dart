@@ -9,6 +9,7 @@ import '../../data/artist_extra.dart';
 import '../../data/library.dart';
 import '../../data/library_pins.dart';
 import '../../data/models.dart';
+import '../../data/updates.dart' show openUrl;
 import '../../data/share_links.dart';
 import '../../data/radio_browser.dart';
 import '../../playback/handler.dart';
@@ -108,13 +109,18 @@ class AlbumScreen extends ConsumerStatefulWidget {
 }
 
 class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownloading {
+  final _title = ScrollTitle();
   @override
   Widget build(BuildContext context) {
     final album = ref.watch(albumProvider(widget.id));
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(backgroundColor: overArtBar(context), surfaceTintColor: Colors.transparent),
-      body: AsyncView(album, (Album a) {
+      appBar: AppBar(
+        backgroundColor: overArtBar(context),
+        surfaceTintColor: Colors.transparent,
+        title: _title.title(album.value?.name ?? ''),
+      ),
+      body: _title.wrap(AsyncView(album, (Album a) {
         pollIf(a.songs.any((s) => s.lookup == LookupState.downloading), () => ref.invalidate(albumProvider(widget.id)));
         final playable = a.songs.where((s) => !s.isLookup).toList();
         final missing = a.songs.length - playable.length;
@@ -210,7 +216,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
             ],
           ),
         );
-      }, onRetry: () => ref.invalidate(albumProvider(widget.id))),
+      }, onRetry: () => ref.invalidate(albumProvider(widget.id)))),
     );
   }
 }
@@ -224,6 +230,7 @@ class ArtistScreen extends ConsumerStatefulWidget {
 }
 
 class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDownloading {
+  final _title = ScrollTitle();
   bool _bioOpen = false;
   bool _allPopular = false;
 
@@ -298,8 +305,12 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
     final info = ref.watch(artistInfoProvider(widget.id));
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: AppBar(backgroundColor: overArtBar(context), surfaceTintColor: Colors.transparent),
-      body: AsyncView(artist, (Artist a) {
+      appBar: AppBar(
+        backgroundColor: overArtBar(context),
+        surfaceTintColor: Colors.transparent,
+        title: _title.title(artist.value?.name ?? ''),
+      ),
+      body: _title.wrap(AsyncView(artist, (Artist a) {
         final own = a.albums.where((x) => !x.isLookup).toList()..sort((x, y) => (y.year ?? 0).compareTo(x.year ?? 0));
         final missing = a.albums.where((x) => x.isLookup).toList();
         pollIf(
@@ -314,7 +325,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
             : const <Song>[];
         final topOwn = top.where((s) => !s.isLookup).take(5).toList();
         final bio = info.value?.biography ?? '';
-        final (wiki, _) = info.hasValue && bio.isEmpty
+        final (wiki, wikiUrl) = info.hasValue && bio.isEmpty
             ? ref.watch(artistWikiProvider(a.name)).value ?? ('', '')
             : ('', '');
         final ownSongs = ref.watch(ownArtistSongsProvider(a.name)).value ?? const <Song>[];
@@ -406,10 +417,18 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
                             overflow: _bioOpen ? null : TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 6),
-                          Text(
-                            _bioOpen ? (bio.isEmpty ? 'From Wikipedia' : '') : 'Read more',
-                            style: t.labelMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
-                          ),
+                          if (_bioOpen && bio.isEmpty && wikiUrl.isNotEmpty)
+                            TextButton.icon(
+                              style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
+                              icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                              label: const Text('From Wikipedia: read the whole article'),
+                              onPressed: () => openUrl(wikiUrl).catchError((_) {}),
+                            )
+                          else
+                            Text(
+                              _bioOpen ? (bio.isEmpty ? 'From Wikipedia' : '') : 'Read more',
+                              style: t.labelMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
+                            ),
                         ],
                       ),
                     ),
@@ -491,7 +510,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
             const SizedBox(height: 24),
           ],
         );
-      }, onRetry: () => ref.invalidate(artistProvider(widget.id))),
+      }, onRetry: () => ref.invalidate(artistProvider(widget.id)))),
     );
   }
 }
@@ -505,6 +524,7 @@ class PlaylistScreen extends ConsumerStatefulWidget {
 }
 
 class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhileDownloading {
+  final _title = ScrollTitle();
   bool _editing = false;
   List<Song>? _edit;
 
@@ -535,7 +555,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
       appBar: AppBar(
         backgroundColor: _editing ? null : overArtBar(context),
         surfaceTintColor: Colors.transparent,
-        title: _editing ? const Text('Edit playlist') : null,
+        title: _editing ? const Text('Edit playlist') : _title.title(pl.value?.name ?? ''),
         actions: [
           if (_editing)
             TextButton(onPressed: _save, child: const Text('Save'))
@@ -596,7 +616,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
             ),
         ],
       ),
-      body: AsyncView(pl, (Playlist p) {
+      body: _title.wrap(AsyncView(pl, (Playlist p) {
         if (_editing) {
           return ReorderableListView.builder(
             itemCount: _edit!.length,
@@ -661,7 +681,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
             footer: const [SizedBox(height: 24)],
           ),
         );
-      }, onRetry: () => ref.invalidate(playlistProvider(widget.id))),
+      }, onRetry: () => ref.invalidate(playlistProvider(widget.id)))),
     );
   }
 }
@@ -729,11 +749,15 @@ class _FoldersScreenState extends ConsumerState<FoldersScreen> {
   void initState() {
     super.initState();
     final c = ref.read(clientProvider);
+    final id = widget.id;
     _future = c == null
         ? Future.error('Not signed in')
-        : widget.id == null
-        ? c.indexes()
-        : c.directory(widget.id!);
+        : id == null
+        // your real folders when the server can show them; else Navidrome's (artist / album) view
+        ? c.realFolder('').then((r) => r ?? c.indexes())
+        : id.startsWith('path:')
+        ? c.realFolder(id.substring(5)).then((r) => r ?? (throw Exception("Couldn't open this folder")))
+        : c.directory(id);
   }
 
   @override

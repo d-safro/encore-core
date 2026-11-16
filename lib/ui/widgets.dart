@@ -160,6 +160,26 @@ class _OnlineCover extends ConsumerWidget {
   }
 }
 
+/// A page's name that fades into the top bar once its header has scrolled away.
+class ScrollTitle {
+  final shown = ValueNotifier(false);
+  Widget title(String text) => ValueListenableBuilder<bool>(
+    valueListenable: shown,
+    builder: (_, v, _) => AnimatedOpacity(
+      opacity: v ? 1 : 0,
+      duration: const Duration(milliseconds: 180),
+      child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
+    ),
+  );
+  Widget wrap(Widget body) => NotificationListener<ScrollUpdateNotification>(
+    onNotification: (n) {
+      if (n.depth == 0) shown.value = n.metrics.pixels > 280;
+      return false;
+    },
+    child: body,
+  );
+}
+
 /// For pages whose header art runs under the app bar: see-through at the top, solid once the list is
 /// scrolled under it (so the back button never floats over song titles).
 WidgetStateColor overArtBar(BuildContext context) {

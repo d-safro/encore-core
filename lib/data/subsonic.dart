@@ -479,6 +479,21 @@ class SubsonicClient {
     return rules is Map && rules.isNotEmpty ? rules.cast<String, dynamic>() : null;
   }
 
+  /// The real folders on disk under [path] (music-lookup's getFolder); null without it.
+  Future<List<DirEntry>?> realFolder(String path) async {
+    try {
+      final f = _m((await call('getFolder', {'path': path}))['folder']);
+      return [
+        for (final d in _l(f['dir']))
+          DirEntry(id: 'path:${d['path']}', name: '${d['name']}', coverArt: '${d['coverArt'] ?? ''}'),
+        for (final s in _l(f['song']))
+          DirEntry(id: '${s['id']}', name: '${s['title']}', isDir: false, song: Song.fromJson(s)),
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Your listening for a week / month / year (offset 1 = the one before) or all time (music-lookup).
   Future<ListeningStats> listeningStats(String period, {int offset = 0}) async {
     final r = await call('getListeningStats', {'period': period, 'offset': offset});
