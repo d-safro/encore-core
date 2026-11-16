@@ -148,7 +148,8 @@ class _TopBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final s = song;
-    final local = s != null && ref.watch(downloadsProvider).files.containsKey(s.id);
+    final file = s == null ? null : ref.watch(downloadsProvider.select((d) => d.files[s.id]));
+    final local = file != null;
     final wifi = ref.watch(onWifiProvider);
     final set = ref.watch(settingsProvider);
     final fmt = wifi ? set.wifiFormat : set.mobileFormat;
@@ -162,7 +163,7 @@ class _TopBar extends ConsumerWidget {
     final quality = s == null
         ? ''
         : local
-        ? 'Downloaded · ${s.suffix.toUpperCase()}'
+        ? 'Downloaded · ${file.split('.').last.toUpperCase()}'
         : fmt == 'raw'
         ? '${s.suffix.toUpperCase()}${s.bitRate != null ? ' · ${s.bitRate} kbps' : ''}'
         : '${fmt.toUpperCase()} · ${wifi ? set.wifiBitrate : set.mobileBitrate} kbps';

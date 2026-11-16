@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:encore/core/settings.dart';
+import 'package:encore/data/library.dart';
 import 'package:encore/data/models.dart';
 import 'package:encore/data/subsonic.dart';
 import 'package:encore/data/updates.dart';
@@ -26,6 +28,21 @@ void main() {
       expect(pickApk(names, ['arm64-v8a', 'armeabi-v7a']), 'encore-1.7.0-arm64-v8a.apk');
       expect(pickApk(names, ['x86_64']), 'encore-1.7.0-universal.apk');
       expect(pickApk(['notes.txt'], ['arm64-v8a']), isNull);
+    });
+  });
+
+  group('download quality', () {
+    test("levels match Spotify's names and High is the default", () {
+      expect(downloadLevels.map((l) => l.$1), ['Low', 'Normal', 'High', 'Very high', 'Lossless']);
+      const d = Settings();
+      expect(downloadLevelOf(d.downloadFormat, d.downloadBitrate)?.$1, 'High');
+      expect(downloadLevelOf('raw', 0)?.$1, 'Lossless');
+      expect(downloadLevelOf('mp3', 192), isNull);
+    });
+
+    test('a 4-minute song at High is about 4.8 MB', () {
+      final mb = DownloadsNotifier.sizeAt(const Song(id: 'x', title: 't', duration: 240), 160) / 1e6;
+      expect(mb, closeTo(4.8, 0.01));
     });
   });
 

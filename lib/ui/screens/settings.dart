@@ -20,6 +20,7 @@ import '../../data/online_lyrics.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../update.dart';
+import '../download_quality.dart';
 import '../widgets.dart';
 import 'login.dart';
 
@@ -272,12 +273,14 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text(nSongs(ref.watch(downloadsProvider).files.length)),
             onTap: () => context.push('/downloads'),
           ),
-          _QualityTile(
-            icon: Icons.download_outlined,
-            title: 'Download quality',
-            format: s.downloadFormat,
-            bitrate: s.downloadBitrate,
-            onChanged: (f, b) => n.update({'downloadFormat': f, 'downloadBitrate': b}),
+          ListTile(
+            leading: const Icon(Icons.download_outlined),
+            title: const Text('Download quality'),
+            subtitle: Text(
+              downloadLevelOf(s.downloadFormat, s.downloadBitrate)?.$1 ??
+                  '${s.downloadFormat.toUpperCase()} · ${s.downloadBitrate} kbps',
+            ),
+            onTap: () => pickDownloadQuality(context, ref),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.wifi_lock),
@@ -856,6 +859,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   ],
                 ),
               ),
+              const ShrinkCard(),
               FutureBuilder<(int, int)>(
                 future: _library,
                 builder: (ctx, lib) => SwitchListTile(

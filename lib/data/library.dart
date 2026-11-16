@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:background_downloader/background_downloader.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
@@ -402,6 +403,13 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
 
   /// Loads the saved downloads, dropping any whose file is gone or isn't audio (e.g. a server error page).
   Future<void> _loadFiles() async {
+    // files replaced by smaller copies while the player was using them
+    for (final p in prefs.getStringList('deleteLater') ?? const <String>[]) {
+      try {
+        File(p).deleteSync();
+      } catch (_) {}
+    }
+    prefs.remove('deleteLater');
     try {
       final rows = await ref.read(dbProvider).downloads();
       final m = {for (final (song, path, _) in rows) song.id: path};
@@ -514,6 +522,10 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   Future<void> _handleUpdate(TaskUpdate u) async {
     final id = u.task.metaData;
     if (id.isEmpty) return;
+    if (id.startsWith('shrink:')) {
+      if (u is TaskStatusUpdate && u.status.isFinalState) await _shrinkDone(id.substring(7), u);
+      return;
+    }
     if (u is TaskProgressUpdate) {
       if (u.progress >= 0) state = state.copy(progress: {...state.progress, id: u.progress});
     } else if (u is TaskStatusUpdate) {
@@ -548,6 +560,99 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         final twins = _waiting.remove(id);
         if (twins != null && twins.isNotEmpty) await download(twins); // that copy failed: try the others
       }
+    }
+  }
+
+  // ── Smaller downloads (like Spotify's download quality) ──
+  /// Set by the player: is this song queued to play from its file right now? (then its old file is
+  /// deleted on the next start instead of under the player)
+  static bool Function(String songId)? fileInUse;
+
+  /// Bytes a song takes at [kbps].
+  static int sizeAt(Song s, int kbps) => (s.duration ?? 240) * kbps * 125;
+
+  /// Downloaded files bigger than the download quality would make them: (songs sharing the file, path, bytes).
+  Future<List<(List<Song>, String, int)>> oversized() async {
+    final set = ref.read(settingsProvider);
+    if (set.downloadFormat == 'raw') return const [];
+    final byPath = <String, List<Song>>{};
+    for (final (song, path, _) in await ref.read(dbProvider).downloads()) {
+      if (isPodcastId(song.id)) continue; // episodes stay as the show published them
+      (byPath[path] ??= []).add(song);
+    }
+    final out = <(List<Song>, String, int)>[];
+    for (final e in byPath.entries) {
+      final st = File(e.key).statSync();
+      if (st.type == FileSystemEntityType.notFound) continue;
+      if (st.size > sizeAt(e.value.first, set.downloadBitrate) * 1.3 + 65536) out.add((e.value, e.key, st.size));
+    }
+    return out;
+  }
+
+  /// (done, total) while shrinking; null otherwise.
+  final shrinking = ValueNotifier<(int, int)?>(null);
+
+  /// Re-downloads [files] at the download quality. Each old file stays until its smaller copy has arrived.
+  Future<void> shrink(List<(List<Song>, String, int)> files) async {
+    final c = ref.read(clientProvider);
+    final set = ref.read(settingsProvider);
+    if (c == null || files.isEmpty || set.downloadFormat == 'raw') return;
+    shrinking.value = (0, files.length);
+    for (final (songs, oldPath, _) in files) {
+      final s = songs.first;
+      final task = DownloadTask(
+        taskId: 'shrink-${s.id}',
+        url: c.streamUrl(s.id, format: set.downloadFormat, maxBitRate: set.downloadBitrate).toString(),
+        filename: '${s.id}-${set.downloadBitrate}.${set.downloadFormat}',
+        directory: 'music',
+        baseDirectory: BaseDirectory.applicationSupport,
+        updates: Updates.status,
+        requiresWiFi: set.downloadWifiOnly,
+        retries: 4,
+        metaData: 'shrink:${s.id}',
+        displayName: 'Making smaller: ${s.artist} - ${s.title}',
+      );
+      _shrinkOld[s.id] = (songs, oldPath);
+      await FileDownloader().enqueue(task);
+    }
+  }
+
+  final _shrinkOld = <String, (List<Song>, String)>{};
+
+  Future<void> _shrinkDone(String id, TaskStatusUpdate u) async {
+    final job = _shrinkOld.remove(id);
+    final p = shrinking.value;
+    if (p != null) shrinking.value = p.$1 + 1 >= p.$2 ? null : (p.$1 + 1, p.$2);
+    if (u.status != TaskStatus.complete) return; // the old file stays
+    final newPath = await u.task.filePath();
+    if (job == null || !await _isAudio(newPath)) {
+      try {
+        await File(newPath).delete();
+      } catch (_) {}
+      return;
+    }
+    final (songs, oldPath) = job;
+    final size = await File(newPath).length();
+    final db = ref.read(dbProvider);
+    final files = {...state.files};
+    for (final e in state.files.entries.where((e) => e.value == oldPath).toList()) {
+      final song = songs.where((x) => x.id == e.key).firstOrNull ?? songs.first;
+      await db.addDownload(song, newPath, e.key == songs.first.id ? size : 0);
+      files[e.key] = newPath;
+    }
+    for (final l in _copies.values) {
+      for (var i = 0; i < l.length; i++) {
+        if (l[i].$2 == oldPath) l[i] = (l[i].$1, newPath);
+      }
+    }
+    state = state.copy(files: files);
+    final busy = files.entries.any((e) => e.value == newPath && (fileInUse?.call(e.key) ?? false));
+    if (busy) {
+      await prefs.setStringList('deleteLater', [...?prefs.getStringList('deleteLater'), oldPath]);
+    } else {
+      try {
+        await File(oldPath).delete();
+      } catch (_) {}
     }
   }
 

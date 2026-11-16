@@ -53,8 +53,8 @@ class Settings {
     this.mobileFormat = 'opus',
     this.wifiBitrate = 0,
     this.mobileBitrate = 128,
-    this.downloadFormat = 'raw',
-    this.downloadBitrate = 0,
+    this.downloadFormat = 'opus',
+    this.downloadBitrate = 160,
     this.downloadWifiOnly = true,
     this.replayGain = ReplayGainMode.auto,
     this.replayGainPreamp = 0,
@@ -161,6 +161,25 @@ class Settings {
 }
 
 late SharedPreferences prefs; // set in main() before runApp
+
+/// Download quality, like Spotify's levels (which use Ogg Vorbis at ~24 / 96 / 160 / 320 kbps). Opus sounds
+/// better than Vorbis at the same size, so these match Spotify's quality in less space.
+/// (name, format, kbps, what it means)
+const downloadLevels = [
+  ('Low', 'opus', 48, 'About 22 MB an hour. Fine for talk and background music'),
+  ('Normal', 'opus', 96, 'About 43 MB an hour'),
+  ('High', 'opus', 160, 'About 72 MB an hour. Sounds like the original to almost everyone'),
+  ('Very high', 'opus', 256, 'About 115 MB an hour'),
+  ('Lossless', 'raw', 0, 'The original files: FLAC is 250–600 MB an hour, hi-res more'),
+];
+
+/// The level for a format + bitrate, or null for a custom one.
+(String, String, int, String)? downloadLevelOf(String format, int kbps) {
+  for (final l in downloadLevels) {
+    if (l.$2 == format && (format == 'raw' || l.$3 == kbps)) return l;
+  }
+  return null;
+}
 
 /// Shown in Settings. Keep in step with `version:` in pubspec.yaml.
 const appVersion = '1.7.0';

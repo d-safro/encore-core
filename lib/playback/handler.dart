@@ -103,6 +103,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         await _skipToPlayable();
       },
     );
+    // the downloader asks before deleting a file the queue may be playing from
+    DownloadsNotifier.fileInUse = (id) => _onPhone.contains(id) && _songs.any((s) => s.id == id);
     player.currentIndexStream.listen(_onIndex);
     player.processingStateStream.listen((st) {
       final s = currentSong;
@@ -415,14 +417,15 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     if (song == null) return;
     final file = container.read(downloadsProvider).files[song.id];
-    final suffix = song.suffix.toLowerCase();
+    final suffix = (file?.split('.').last ?? song.suffix).toLowerCase(); // a download may be a smaller Opus copy
     // m4a over ~600 kbps is Apple Lossless, which speakers can't play: converted like any other format
     final native = castNative[suffix] != null && !(suffix == 'm4a' && (song.bitRate ?? 0) > 600);
     String src, type;
+    final serverNative = castNative[song.suffix.toLowerCase()] != null;
     if (file != null && native) {
       (src, type) = (file, castNative[suffix]!);
-    } else if (c != null && native) {
-      (src, type) = (c.streamUrl(song.id).toString(), castNative[suffix]!);
+    } else if (c != null && serverNative) {
+      (src, type) = (c.streamUrl(song.id).toString(), castNative[song.suffix.toLowerCase()]!);
     } else if (c != null) {
       (src, type) = (c.streamUrl(song.id, format: 'mp3', maxBitRate: 320).toString(), 'audio/mpeg');
     } else {
