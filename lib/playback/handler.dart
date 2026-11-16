@@ -781,6 +781,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         if (_podDone != s.id) {
           _podDone = s.id;
           await c.podcastProgress(s.id, played: true);
+          // remembered, so the phone's copy can go after a week (see cleanPlayedEpisodes)
+          final done = (jsonDecode(prefs.getString('podcastDone') ?? '{}') as Map).cast<String, dynamic>();
+          done[s.id] = DateTime.now().millisecondsSinceEpoch;
+          await prefs.setString('podcastDone', jsonEncode(done));
         }
       } else if (pos > 5000) {
         await c.podcastProgress(s.id, positionMs: pos);

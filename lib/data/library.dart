@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
@@ -548,6 +549,19 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         if (twins != null && twins.isNotEmpty) await download(twins); // that copy failed: try the others
       }
     }
+  }
+
+  /// Episodes you finished more than a week ago don't stay on the phone (your place and "played" do).
+  Future<void> cleanPlayedEpisodes() async {
+    final done = (jsonDecode(prefs.getString('podcastDone') ?? '{}') as Map).cast<String, dynamic>();
+    final week = DateTime.now().subtract(const Duration(days: 7)).millisecondsSinceEpoch;
+    final old = [
+      for (final e in done.entries)
+        if ((e.value as num) < week && state.files.containsKey(e.key)) e.key,
+    ];
+    if (old.isNotEmpty) await remove(old);
+    done.removeWhere((k, v) => (v as num) < week);
+    await prefs.setString('podcastDone', jsonEncode(done));
   }
 
   Future<void> remove(Iterable<String> ids) async {

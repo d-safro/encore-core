@@ -54,7 +54,7 @@ Future<String> currentDbFile() async {
 /// to another server, and brought back when you switch back.
 const _perServerKeys = {
   'queue', 'downloadPins', 'libraryPins', 'manualDownloads', 'pendingScrobbles', 'podcastSeen', 'recentSearch',
-  'searchHistory', 'smartShuffle', 'smartShuffleHidden', 'lyricsPicks', 'radioArt', 'jamUrl', 'jamToken',
+  'searchHistory', 'smartShuffle', 'smartShuffleHidden', 'lyricsPicks', 'radioArt', 'jamUrl', 'jamToken', 'podcastDone',
 };
 bool _perServer(String k) =>
     !k.contains('@') && (_perServerKeys.contains(k) || k.startsWith('shown:') || k.startsWith('podcastCache'));

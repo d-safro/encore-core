@@ -244,7 +244,10 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       }
     });
     // keep downloaded collections up to date (new songs in playlists, newly hearted songs)
-    Future.delayed(const Duration(seconds: 20), () => ref.read(downloadsProvider.notifier).refreshPins());
+    Future.delayed(const Duration(seconds: 20), () async {
+      await ref.read(downloadsProvider.notifier).refreshPins();
+      await ref.read(downloadsProvider.notifier).cleanPlayedEpisodes();
+    });
     // keep the phone's copy of the library fresh (for offline browsing): at most every 12 hours
     Future.delayed(const Duration(seconds: 45), _syncIfStale);
     // a newer Encore on GitHub? (at most twice a day; Settings can turn this off)
