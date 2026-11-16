@@ -482,7 +482,9 @@ class SubsonicClient {
   /// The real folders on disk under [path] (music-lookup's getFolder); null without it.
   Future<List<DirEntry>?> realFolder(String path) async {
     try {
-      final f = _m((await call('getFolder', {'path': path}))['folder']);
+      final r = await call('getFolder', {'path': path});
+      if (r['folder'] is! Map) return null; // not music-lookup
+      final f = _m(r['folder']);
       return [
         for (final d in _l(f['dir']))
           DirEntry(id: 'path:${d['path']}', name: '${d['name']}', coverArt: '${d['coverArt'] ?? ''}'),

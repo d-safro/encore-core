@@ -89,7 +89,8 @@ List<int> _varint(int v) {
   return out;
 }
 
-Uint8List _encode(String source, String dest, String ns, String json) {
+/// One Cast message on the wire (public for the tests).
+Uint8List encodeCastMessage(String source, String dest, String ns, String json) {
   final b = BytesBuilder();
   void str(int field, String s) {
     final bytes = utf8.encode(s);
@@ -115,7 +116,7 @@ Uint8List _encode(String source, String dest, String ns, String json) {
 }
 
 /// (source, destination, namespace, payload) from one message.
-(String, String, String, String) _decode(Uint8List m) {
+(String, String, String, String) decodeCastMessage(Uint8List m) {
   var i = 0;
   int varint() {
     var shift = 0, v = 0;
@@ -211,7 +212,7 @@ class CastSession {
   void _send(String dest, String ns, Map<String, dynamic> payload) {
     if (!isOpen) return;
     try {
-      _socket.add(_encode('sender-0', dest, ns, jsonEncode(payload)));
+      _socket.add(encodeCastMessage('sender-0', dest, ns, jsonEncode(payload)));
     } catch (_) {
       _onClosed();
     }
@@ -235,7 +236,7 @@ class CastSession {
     while (bytes.length >= 4) {
       final len = ByteData.sublistView(bytes, 0, 4).getUint32(0);
       if (bytes.length < 4 + len) break;
-      _onMessage(_decode(Uint8List.sublistView(bytes, 4, 4 + len)));
+      _onMessage(decodeCastMessage(Uint8List.sublistView(bytes, 4, 4 + len)));
       bytes = Uint8List.sublistView(bytes, 4 + len);
     }
     _buf.add(bytes);
@@ -364,8 +365,8 @@ class CastRelay {
   final _songs = <String, (String, String)>{};
   final _art = <String, String>{};
 
-  static Future<CastRelay?> start() async {
-    final ip = await _wifiAddress();
+  static Future<CastRelay?> start({String? host}) async {
+    final ip = host ?? await _wifiAddress();
     if (ip == null) return null;
     final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
     final rnd = Random.secure();
