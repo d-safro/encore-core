@@ -175,14 +175,14 @@ class _JumpBackIn extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final albums =
-        ref.watch(albumListProvider('recent')).value?.where((a) => !a.isLookup).take(6).toList() ?? const <Album>[];
+        ref.watch(albumListProvider('recent')).value?.where((a) => !a.isLookup).take(MediaQuery.sizeOf(context).width >= 900 ? 9 : 6).toList() ?? const <Album>[];
     if (albums.isEmpty) return const SizedBox(height: 8);
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: GridView.count(
-        crossAxisCount: 2,
+        crossAxisCount: MediaQuery.sizeOf(context).width >= 900 ? 3 : 2, // wider screens: three across
         padding: EdgeInsets.zero,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),

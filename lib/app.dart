@@ -168,6 +168,32 @@ class _Shell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final idx = _tabs.indexWhere(location.startsWith);
     if (idx >= 0) _lastTab = idx; // detail pages keep the tab they were opened from
+    // tablets and landscape: the tabs move to a rail on the side, pages get the width
+    final wide = MediaQuery.sizeOf(context).width >= 700;
+    if (wide) {
+      return Scaffold(
+        body: Row(
+          children: [
+            NavigationRail(
+              selectedIndex: _lastTab,
+              labelType: NavigationRailLabelType.all,
+              groupAlignment: -0.8,
+              leading: const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: EncoreLogo(size: 36)),
+              onDestinationSelected: (i) => context.go(_tabs[i]),
+              destinations: [
+                for (final d in _destinations)
+                  NavigationRailDestination(icon: d.icon, selectedIcon: d.selectedIcon, label: Text(d.label)),
+              ],
+            ),
+            Expanded(child: child),
+          ],
+        ),
+        bottomNavigationBar: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [_ServerTrouble(), MiniPlayer(), SizedBox(height: 8)],
+        ),
+      );
+    }
     return Scaffold(
       body: child,
       bottomNavigationBar: Column(
@@ -180,29 +206,22 @@ class _Shell extends ConsumerWidget {
             height: 64,
             labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
             onDestinationSelected: (i) => context.go(_tabs[i]),
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home_rounded),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.auto_awesome_outlined),
-                selectedIcon: Icon(Icons.auto_awesome),
-                label: 'Discover',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.library_music_outlined),
-                selectedIcon: Icon(Icons.library_music_rounded),
-                label: 'Library',
-              ),
-              NavigationDestination(icon: Icon(Icons.search_rounded), label: 'Search'),
+            destinations: [
+              for (final d in _destinations)
+                NavigationDestination(icon: d.icon, selectedIcon: d.selectedIcon, label: d.label),
             ],
           ),
         ],
       ),
     );
   }
+
+  static const _destinations = [
+    (icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Home'),
+    (icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'Discover'),
+    (icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music_rounded), label: 'Library'),
+    (icon: Icon(Icons.search_rounded), selectedIcon: Icon(Icons.search_rounded), label: 'Search'),
+  ];
 }
 
 class EncoreApp extends ConsumerStatefulWidget {

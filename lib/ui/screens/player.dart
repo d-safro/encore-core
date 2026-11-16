@@ -90,22 +90,45 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     onVerticalDragEnd: (d) {
                       if ((d.primaryVelocity ?? 0) > 600) context.pop();
                     },
-                    child: Column(
-                      children: [
-                        _TopBar(song: song),
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 250),
-                            child: _lyrics && song != null
-                                ? LyricsView(key: ValueKey('lyrics-${song.id}'), song: song)
-                                : _Art(key: ValueKey('art-${item.id}'), song: song),
-                          ),
-                        ),
-                        _Titles(item: item, song: song),
-                        const _SeekBar(),
-                        const _Controls(),
-                        _BottomRow(song: song, lyrics: _lyrics, onLyrics: () => setState(() => _lyrics = !_lyrics)),
-                      ],
+                    child: Builder(
+                      builder: (context) {
+                        final main = AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          child: _lyrics && song != null
+                              ? LyricsView(key: ValueKey('lyrics-${song.id}'), song: song)
+                              : _Art(key: ValueKey('art-${item.id}'), song: song),
+                        );
+                        final controls = [
+                          _Titles(item: item, song: song),
+                          const _SeekBar(),
+                          const _Controls(),
+                          _BottomRow(song: song, lyrics: _lyrics, onLyrics: () => setState(() => _lyrics = !_lyrics)),
+                        ];
+                        // landscape / tablets: cover (or lyrics) on the left, everything else on the right
+                        final size = MediaQuery.sizeOf(context);
+                        if (size.width > size.height && size.width >= 600) {
+                          return Column(
+                            children: [
+                              _TopBar(song: song),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Expanded(child: main),
+                                    Expanded(
+                                      child: Center(
+                                        child: SingleChildScrollView(
+                                          child: Column(mainAxisSize: MainAxisSize.min, children: controls),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                        return Column(children: [_TopBar(song: song), Expanded(child: main), ...controls]);
+                      },
                     ),
                   ),
                 ),
