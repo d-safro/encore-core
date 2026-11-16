@@ -5,9 +5,11 @@ import 'dart:math';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import 'cast.dart';
 import '../core/settings.dart';
 import '../data/account.dart';
 import '../data/ai.dart';
@@ -120,6 +122,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     });
     player.playingStream.distinct().listen((playing) {
       if (!playing && _fadeFrom != null) _cancelFade(); // paused mid-blend: the rest plays plainly
+      final c = _cast;
+      if (c != null && c.isOpen) {
+        _castCommandAt = DateTime.now();
+        playing ? c.play() : c.pause();
+      }
       _periodicSave?.cancel();
       _periodicSave = playing
           ? Timer.periodic(const Duration(seconds: 30), (_) {
@@ -213,7 +220,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   double _mainVolume = 1, _fadeShare = 1;
   void _setMainVolume(double v) {
     _mainVolume = v;
-    _quiet(() => player.setVolume(v * _fadeShare));
+    _quiet(() => player.setVolume(_cast != null ? 0 : v * _fadeShare)); // casting: the phone plays along silently
   }
 
   /// The ReplayGain volume for a song (only the quieter-than-reference part; for the crossfade player).
@@ -245,7 +252,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   bool _fadeAllowed(int i) {
     final cf = _settings.crossfade;
-    if (cf <= 0 || radioStation != null || i + 1 >= _songs.length || player.loopMode == LoopMode.one) return false;
+    if (cf <= 0 || _cast != null || radioStation != null || i + 1 >= _songs.length || player.loopMode == LoopMode.one) return false;
     final a = _songs[i], b = _songs[i + 1];
     if (isPodcastId(a.id) || isPodcastId(b.id) || a.isLookup || b.isLookup) return false;
     if (!canPlay(b)) return false;
@@ -334,6 +341,126 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (_fadeShare != 1) {
       _fadeShare = 1;
       _setMainVolume(_mainVolume);
+    }
+  }
+
+  // ── Casting (Chromecast / Google Cast) ──
+  // The phone keeps playing silently and stays in charge (queue, scrobbles, lock screen); the speaker plays
+  // the same song at the same place, fetched through the relay.
+  CastSession? _cast;
+  CastRelay? _relay;
+  StreamSubscription<CastMediaStatus>? _castSub;
+  Timer? _castSync;
+  DateTime _castCommandAt = DateTime(0);
+  (Duration, DateTime)? _castPos; // the speaker's position, and when it said so
+  String _castState = 'IDLE';
+
+  bool get casting => _cast != null;
+
+  Future<void> startCasting(CastDevice d) async {
+    if (_cast != null) await stopCasting();
+    castInfo.value = CastInfo(d.name, connecting: true);
+    try {
+      _relay ??= await CastRelay.start();
+      if (_relay == null) throw Exception('connect the phone to the same Wi-Fi as the speaker');
+      final s = await CastSession.connect(d);
+      _cast = s;
+      _cancelFade();
+      _setMainVolume(_mainVolume); // silences the phone
+      _castSub = s.status.stream.listen(_onCastStatus);
+      s.closed.future.then((_) => _castEnded(s));
+      await _castCurrent();
+      castInfo.value = CastInfo(d.name, volume: s.volume);
+      _castSync = Timer.periodic(const Duration(seconds: 5), (_) => _castDrift());
+    } catch (e) {
+      _cast = null;
+      _setMainVolume(_mainVolume);
+      castInfo.value = null;
+      playerNotices.add("Couldn't cast to ${d.name}: ${'$e'.replaceFirst('Exception: ', '')}");
+    }
+  }
+
+  Future<void> stopCasting() async {
+    final s = _cast;
+    if (s == null) return;
+    await s.close();
+  }
+
+  void setCastVolume(double v) {
+    _cast?.setVolume(v);
+    final i = castInfo.value;
+    if (i != null) castInfo.value = CastInfo(i.name, volume: v);
+  }
+
+  void _castEnded(CastSession s) {
+    if (_cast != s) return;
+    _cast = null;
+    _castSub?.cancel();
+    _castSync?.cancel();
+    castInfo.value = null;
+    player.pause(); // like Spotify: the music doesn't suddenly come out of the phone
+    _setMainVolume(_mainVolume);
+    playerNotices.add('Stopped casting to ${s.device.name}');
+  }
+
+  /// Send the song that's playing to the speaker.
+  Future<void> _castCurrent() async {
+    final s = _cast, relay = _relay, c = container.read(clientProvider);
+    final song = currentSong;
+    if (s == null || relay == null) return;
+    final station = radioStation;
+    if (station != null) {
+      await s.load(station.streamUrl, contentType: 'audio/mpeg', title: station.name, artist: 'Internet radio');
+      return;
+    }
+    if (song == null) return;
+    final file = container.read(downloadsProvider).files[song.id];
+    final suffix = song.suffix.toLowerCase();
+    // m4a over ~600 kbps is Apple Lossless, which speakers can't play: converted like any other format
+    final native = castNative[suffix] != null && !(suffix == 'm4a' && (song.bitRate ?? 0) > 600);
+    String src, type;
+    if (file != null && native) {
+      (src, type) = (file, castNative[suffix]!);
+    } else if (c != null && native) {
+      (src, type) = (c.streamUrl(song.id).toString(), castNative[suffix]!);
+    } else if (c != null) {
+      (src, type) = (c.streamUrl(song.id, format: 'mp3', maxBitRate: 320).toString(), 'audio/mpeg');
+    } else {
+      return playerNotices.add("This song can't be cast without your server");
+    }
+    final art = c != null && song.coverArt.isNotEmpty
+        ? relay.artUrl(song.coverArt, c.coverUrl(song.coverArt, size: 600).toString())
+        : null;
+    _castCommandAt = DateTime.now();
+    await s.load(
+      relay.songUrl(song.id, src, type),
+      contentType: type,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      image: art,
+      position: player.position,
+      play: player.playing,
+    );
+  }
+
+  void _onCastStatus(CastMediaStatus st) {
+    _castState = st.state;
+    _castPos = (st.position, DateTime.now());
+    // paused or played from the TV remote / Google Home: follow it (not our own commands echoing back)
+    if (DateTime.now().difference(_castCommandAt) < const Duration(seconds: 3)) return;
+    if (st.state == 'PAUSED' && player.playing) player.pause();
+    if (st.state == 'PLAYING' && !player.playing) player.play();
+  }
+
+  /// Keep the speaker within a couple of seconds of the phone.
+  void _castDrift() {
+    final s = _cast, p = _castPos;
+    if (s == null || p == null || !player.playing || _castState != 'PLAYING') return;
+    final there = p.$1 + DateTime.now().difference(p.$2);
+    if ((there - player.position).inMilliseconds.abs() > 2500) {
+      _castCommandAt = DateTime.now();
+      s.seek(player.position);
     }
   }
 
@@ -963,6 +1090,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     mediaItem.add(_mediaItem(s));
     _applyReplayGain();
+    if (_cast != null) _castCurrent();
     _listened = Duration.zero;
     _lastTick = null;
     _submitted = null;
@@ -1210,6 +1338,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Future<void> seek(Duration position) async {
     if (_fadeFrom != null) _cancelFade();
     await player.seek(position);
+    _cast?.seek(position);
     _reportSoon();
   }
 
@@ -1527,3 +1656,13 @@ final playerNotices = StreamController<String>.broadcast();
 
 /// A problem on the server side worth a banner (null: none).
 final serverTrouble = ValueNotifier<String?>(null);
+
+/// The speaker being cast to (null: playing on the phone).
+class CastInfo {
+  const CastInfo(this.name, {this.connecting = false, this.volume = 1});
+  final String name;
+  final bool connecting;
+  final double volume;
+}
+
+final castInfo = ValueNotifier<CastInfo?>(null);

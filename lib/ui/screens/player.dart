@@ -18,6 +18,7 @@ import '../widgets.dart';
 import 'podcasts.dart';
 import 'radio.dart';
 import '../../data/cover_cache.dart';
+import '../cast_sheet.dart';
 import 'jam.dart';
 
 /// Colours taken from the current album art (Material You from the cover).
@@ -182,6 +183,17 @@ class _TopBar extends ConsumerWidget {
                 ),
                 Text(quality, style: t.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               ],
+            ),
+          ),
+          ValueListenableBuilder<CastInfo?>(
+            valueListenable: castInfo,
+            builder: (ctx, info, _) => IconButton(
+              tooltip: info == null ? 'Play on a speaker or TV' : 'Playing on ${info.name}',
+              icon: Icon(
+                info == null ? Icons.cast_rounded : Icons.cast_connected_rounded,
+                color: info == null ? null : Theme.of(ctx).colorScheme.primary,
+              ),
+              onPressed: () => showCastSheet(ctx),
             ),
           ),
           IconButton(
