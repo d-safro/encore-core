@@ -170,15 +170,19 @@ class _Shell extends ConsumerWidget {
     if (idx >= 0) _lastTab = idx; // detail pages keep the tab they were opened from
     // tablets and landscape: the tabs move to a rail on the side, pages get the width
     final wide = MediaQuery.sizeOf(context).width >= 700;
+    final tall = MediaQuery.sizeOf(context).height >= 560;
     if (wide) {
       return Scaffold(
         body: Row(
           children: [
             NavigationRail(
               selectedIndex: _lastTab,
-              labelType: NavigationRailLabelType.all,
+              // a phone turned sideways is short: no logo, and only the open tab's name
+              labelType: tall ? NavigationRailLabelType.all : NavigationRailLabelType.selected,
               groupAlignment: -0.8,
-              leading: const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: EncoreLogo(size: 36)),
+              leading: tall
+                  ? const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: EncoreLogo(size: 36))
+                  : null,
               onDestinationSelected: (i) => context.go(_tabs[i]),
               destinations: [
                 for (final d in _destinations)

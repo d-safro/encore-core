@@ -163,7 +163,7 @@ class Settings {
 late SharedPreferences prefs; // set in main() before runApp
 
 /// Shown in Settings. Keep in step with `version:` in pubspec.yaml.
-const appVersion = '1.6.0';
+const appVersion = '1.7.0';
 
 class SettingsNotifier extends Notifier<Settings> {
   static const _key = 'settings';

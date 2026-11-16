@@ -514,7 +514,7 @@ class _AppIconPickerState extends State<_AppIconPicker> {
         const ListTile(
           leading: Icon(Icons.apps_rounded),
           title: Text('App icon'),
-          subtitle: Text('Your home screen may take a moment to show the change'),
+          subtitle: Text('Changes when you leave Encore; your home screen may take a moment to show it'),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),

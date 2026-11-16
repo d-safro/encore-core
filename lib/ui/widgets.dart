@@ -129,12 +129,24 @@ final _serverCoverProvider = FutureProvider.autoDispose.family<File?, (String, i
     final hit = await cache.getFileFromCache(key);
     if (hit != null) {
       final f = await _checked(hit.file);
-      _remember(key, f);
-      return f;
+      // a real picture is kept as it is. Navidrome's "no picture" is asked about again after 6 hours, and
+      // anything else (an error the server sent while it had trouble) right away: one bad moment mustn't
+      // hide a cover for good.
+      final noCover = f == null && await hit.file.length() == _placeholderLength;
+      final fresh = DateTime.now().difference(await hit.file.lastModified()) < const Duration(hours: 6);
+      if (f != null || (noCover && fresh) || offline) {
+        if (!offline || f != null) _remember(key, f);
+        return f;
+      }
+      await cache.removeFile(key);
     }
     if (offline) return null; // not remembered: it may be there next time we're online
     final got = await cache.downloadFile(c.coverUrl(k.$1, size: k.$2).toString(), key: key);
     final f = await _checked(got.file);
+    if (f == null && (await got.file.length()) != _placeholderLength) {
+      await cache.removeFile(key); // an error message, not Navidrome's "no cover": try again next time
+      return null;
+    }
     _remember(key, f);
     return f;
   } catch (_) {
