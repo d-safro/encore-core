@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
@@ -291,6 +292,7 @@ class SettingsScreen extends ConsumerWidget {
             title: Text('Encore $appVersion'),
             subtitle: Text('A music player for Navidrome and other Subsonic servers'),
           ),
+          const _AppIconPicker(),
           const _CoverCacheTile(),
           SwitchListTile(
             secondary: const Icon(Icons.system_update_rounded),
@@ -480,6 +482,83 @@ class _QualityTile extends StatelessWidget {
 }
 
 /// Pictures kept on the phone (covers, artist photos), with a way to free the space.
+/// The launcher icon: Encore's, one drawn like line icon packs (Arcticons), or the original.
+class _AppIconPicker extends StatefulWidget {
+  const _AppIconPicker();
+  @override
+  State<_AppIconPicker> createState() => _AppIconPickerState();
+}
+
+class _AppIconPickerState extends State<_AppIconPicker> {
+  static const _system = MethodChannel('encore/system');
+  static const _choices = [
+    ('IconScript', 'assets/icons/script.png', 'Encore'),
+    ('IconLine', 'assets/icons/line.png', 'Line (icon packs)'),
+    ('IconOriginal', 'assets/icons/original.png', 'Original'),
+  ];
+  String? _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _system.invokeMethod<String>('icon').then((v) => mounted ? setState(() => _current = v) : null, onError: (_) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const ListTile(
+          leading: Icon(Icons.apps_rounded),
+          title: Text('App icon'),
+          subtitle: Text('Your home screen may take a moment to show the change'),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Row(
+            children: [
+              for (final (name, asset, label) in _choices)
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () async {
+                      setState(() => _current = name);
+                      try {
+                        await _system.invokeMethod('setIcon', {'name': name});
+                      } catch (e) {
+                        if (context.mounted) toast(context, "Couldn't change the icon: $e");
+                      }
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: _current == name ? cs.primary : Colors.transparent, width: 2.5),
+                            ),
+                            child: ClipOval(child: Image.asset(asset, width: 64, height: 64)),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(label, style: t.labelMedium, textAlign: TextAlign.center),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Other saved servers (tap to switch), and adding one.
 class _OtherServers extends ConsumerWidget {
   const _OtherServers();

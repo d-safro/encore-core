@@ -315,7 +315,7 @@ class _Bars extends StatelessWidget {
                       ),
                       SizedBox(
                         height: 18,
-                        child: Text(label, style: t.labelSmall, maxLines: 1, overflow: TextOverflow.visible),
+                        child: OverflowBox(maxWidth: 40, child: Text(label, style: t.labelSmall, maxLines: 1, softWrap: false)),
                       ),
                     ],
                   ),

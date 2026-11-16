@@ -49,8 +49,8 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo u, {bool fromChec
 
 /// Release notes are Markdown; show them as plain text.
 String _plain(String md) => md
-    .replaceAll(RegExp(r'\*\*(.+?)\*\*'), r'$1')
-    .replaceAll(RegExp(r'`([^`]*)`'), r'$1')
+    .replaceAllMapped(RegExp(r'\*\*(.+?)\*\*'), (m) => m[1]!)
+    .replaceAllMapped(RegExp(r'`([^`]*)`'), (m) => m[1]!)
     .replaceAll(RegExp(r'^- ', multiLine: true), '• ')
     .trim();
 

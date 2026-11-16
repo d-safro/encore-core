@@ -771,7 +771,10 @@ class EncoreLogo extends StatelessWidget {
   const EncoreLogo({super.key, this.size = 64});
   final double size;
   @override
-  Widget build(BuildContext context) => SizedBox.square(dimension: size, child: CustomPaint(painter: _LogoPainter()));
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: CustomPaint(painter: _LogoPainter()),
+  );
 }
 
 class _LogoPainter extends CustomPainter {
@@ -795,17 +798,24 @@ class _LogoPainter extends CustomPainter {
       canvas.drawCircle(c, r * s, groove);
     }
     canvas.drawCircle(c, 17.5 * s, Paint()..color = ink);
+    // the handwritten e (docs/logo.svg), measured from the centre
+    double p(double x) => c.dx + x * s;
+    double q(double y) => c.dy + y * s;
     final e = Path()
-      ..moveTo(c.dx - 9.5 * s, c.dy)
-      ..lineTo(c.dx + 9.5 * s, c.dy)
-      ..arcTo(Rect.fromCircle(center: c, radius: 9.5 * s), 0, -(2 * 3.141592653589793 - 3.141592653589793 / 4), false);
+      ..moveTo(p(-9.49), q(4.55))
+      ..cubicTo(p(-4.54), q(4.01), p(2.48), q(1.3), p(5.0), q(-2.65))
+      ..cubicTo(p(6.8), q(-5.53), p(5.0), q(-8.33), p(1.76), q(-8.14))
+      ..cubicTo(p(-2.2), q(-7.88), p(-5.09), q(-3.2), p(-4.9), q(1.3))
+      ..cubicTo(p(-4.73), q(5.8), p(-1.48), q(8.33), p(2.3), q(8.15))
+      ..cubicTo(p(5.17), q(7.97), p(7.7), q(6.35), p(9.49), q(4.01));
     canvas.drawPath(
       e,
       Paint()
         ..shader = gradient
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 4.6 * s
-        ..strokeCap = StrokeCap.round,
+        ..strokeWidth = 3.9 * s
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
     );
   }
 
