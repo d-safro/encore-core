@@ -21,6 +21,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../update.dart';
 import '../download_quality.dart';
+import '../usb_card.dart';
 import '../widgets.dart';
 import 'login.dart';
 
@@ -869,6 +870,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   ],
                 ),
               ),
+              const UsbCard(),
               const ShrinkCard(),
               FutureBuilder<(int, int)>(
                 future: _library,

@@ -5,13 +5,18 @@ import 'dart:io';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../core/settings.dart';
 import 'account.dart';
 import 'db.dart';
 import 'models.dart';
+import 'song_download.dart';
+import 'usb_link.dart';
 import 'subsonic.dart';
 
 late LibraryDb libraryDb; // opened in main() before runApp
@@ -351,7 +356,6 @@ class DownloadsState {
 }
 
 class DownloadsNotifier extends Notifier<DownloadsState> {
-  final _pending = <String, Song>{};
   StreamSubscription? _sub;
 
   // No duplicate files: the same recording that's in your library twice (album + compilation, a single and its
@@ -393,8 +397,24 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   @override
   DownloadsState build() {
     _sub ??= FileDownloader().updates.listen(_onUpdate);
-    ref.onDispose(() => _sub?.cancel());
-    loaded = _loadFiles();
+    ref.onDispose(() {
+      _sub?.cancel();
+      _disposed = true; // switched to another server: stop, keeping what has arrived
+      _retry?.cancel();
+      _net?.close(force: true);
+      _system.invokeMethod('downloading', {'count': 0}).catchError((_) => null);
+    });
+    // carry on when downloading becomes possible again, and stop (keeping what has arrived) when it isn't
+    ref.listen(offlineProvider, (a, b) => b ? _pump() : resume());
+    ref.listen(onWifiProvider, (a, b) => b ? resume() : _pump());
+    ref.listen(settingsProvider.select((s) => s.downloadWifiOnly), (a, b) => _pump());
+    ref.listen(clientProvider, (a, b) => resume());
+    ref.listen(usbLinkProvider, (a, b) => resume()); // cable in: carry on through it; out: over the network
+    loaded = _loadFiles().then((_) {
+      _loadQueue();
+      // after start-up settles (the first ping of the server)
+      Future.delayed(const Duration(seconds: 3), resume);
+    });
     return DownloadsState(pins: (prefs.getStringList('downloadPins') ?? const []).toSet());
   }
 
@@ -457,6 +477,43 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
 
   bool has(String id) => state.files.containsKey(id);
 
+  // ── The download queue ──
+  // Encore downloads songs itself (not through Android's download jobs) so that nothing is lost when a
+  // download stops: the queue is saved, every song keeps what has arrived in a .part file, and when the app
+  // is open again and can reach the server it carries on from the byte it reached (see resumableDownload).
+  final _queue = <String, _Queued>{}; // song id -> what to fetch, in the order asked for
+  final _running = <String>{};
+  final _cancel = <String>{}; // running downloads to stop
+  final _shown = <String, int>{}; // song id -> when its progress was last shown (ms)
+  HttpClient? _net;
+  Timer? _retry;
+  bool _disposed = false;
+  static const _parallel = 3;
+  static const _parallelCable = 4; // the server converting songs is what limits it then
+  static const _system = MethodChannel('encore/system');
+
+  static Future<Directory> musicDir() async => Directory(p.join((await getApplicationSupportDirectory()).path, 'music'));
+
+  void _loadQueue() {
+    try {
+      for (final j in jsonDecode(prefs.getString('downloadQueue') ?? '[]') as List) {
+        final q = _Queued.fromJson((j as Map).cast<String, dynamic>());
+        if (!has(q.song.id)) _queue[q.song.id] = q;
+      }
+    } catch (_) {}
+    for (final q in _queue.values) {
+      (_inFlight[_recording(q.song)] ??= []).add((q.song.duration, q.song.id));
+    }
+    if (_queue.isNotEmpty) {
+      state = state.copy(progress: {...state.progress, for (final id in _queue.keys) id: state.progress[id] ?? 0});
+    }
+  }
+
+  void _saveQueue() {
+    if (_disposed) return;
+    prefs.setString('downloadQueue', jsonEncode([for (final q in _queue.values) q.toJson()]));
+  }
+
   /// [manual]: picked one by one (song menu), so switching off a collection never removes it.
   Future<void> download(List<Song> songs, {bool manual = false}) async {
     if (manual) {
@@ -465,17 +522,11 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         {...prefs.getStringList('manualDownloads') ?? const <String>[], ...songs.map((s) => s.id)}.toList(),
       );
     }
-    final c = ref.read(clientProvider);
-    if (c == null) return;
+    await loaded; // what's on the phone and what was still on its way
     final s = ref.read(settingsProvider);
-    Set<String> queued; // downloads still running from before (e.g. the app was closed meanwhile)
-    try {
-      queued = (await FileDownloader().allTaskIds()).toSet();
-    } catch (_) {
-      queued = {};
-    }
+    final progress = {...state.progress};
     for (final song in songs.where((x) => !x.isLookup && !has(x.id))) {
-      if (_pending.containsKey(song.id) || queued.contains('song-${song.id}')) continue; // already on its way
+      if (_queue.containsKey(song.id)) continue; // already on its way
       final copy = _copyOf(song);
       if (copy != null) {
         await _alias(song, copy); // the same recording is already on the phone
@@ -486,31 +537,189 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         (_waiting[twin] ??= []).add(song); // gets that file when it arrives
         continue;
       }
-      final raw = s.downloadFormat == 'raw';
-      final url = raw
-          ? c.downloadUrl(song.id)
-          : c.streamUrl(song.id, format: s.downloadFormat, maxBitRate: s.downloadBitrate);
-      final ext = raw ? (song.suffix.isEmpty ? 'mp3' : song.suffix) : s.downloadFormat;
-      final task = DownloadTask(
-        taskId: 'song-${song.id}',
-        url: url.toString(),
-        filename: '${song.id}.$ext',
-        directory: 'music',
-        baseDirectory: BaseDirectory.applicationSupport,
-        updates: Updates.statusAndProgress,
-        requiresWiFi: s.downloadWifiOnly,
-        // a dropped connection carries on from where it stopped (not from the start), and big files survive
-        // Android's 9-minute limit on background work
-        retries: 6,
-        allowPause: true,
-        metaData: song.id,
-        displayName: '${song.artist} - ${song.title}',
-      );
-      _pending[song.id] = song;
+      _queue[song.id] = _Queued(song, s.downloadFormat, s.downloadBitrate);
       (_inFlight[_recording(song)] ??= []).add((song.duration, song.id));
-      state = state.copy(progress: {...state.progress, song.id: 0});
-      await FileDownloader().enqueue(task);
+      progress[song.id] = 0;
     }
+    state = state.copy(progress: progress);
+    _saveQueue();
+    _pump();
+  }
+
+  /// Carry on with the queue now (the app came back, the server is reachable again...): songs that failed
+  /// a moment ago try again straight away.
+  void resume() {
+    for (final q in _queue.values) {
+      q.waitUntil = null;
+    }
+    _pump();
+  }
+
+  /// Songs still to download (for the downloads screen).
+  int get queued => _queue.length;
+
+  bool get _allowed {
+    if (_disposed || ref.read(clientProvider) == null) return false;
+    if (ref.read(usbLinkProvider)) return true; // plugged into the server's computer: through the cable
+    if (ref.read(offlineProvider)) return false;
+    return !ref.read(settingsProvider).downloadWifiOnly || ref.read(onWifiProvider);
+  }
+
+  void _pump() {
+    if (_disposed) return;
+    if (!_allowed) {
+      // e.g. left Wi-Fi with "Wi-Fi only" on: stop, keeping what has arrived
+      _cancel.addAll(_running);
+      _keepAwake();
+      return;
+    }
+    final now = DateTime.now();
+    DateTime? next;
+    for (final q in _queue.values.toList()) {
+      if (_running.length >= (ref.read(usbLinkProvider) ? _parallelCable : _parallel)) break;
+      if (_running.contains(q.song.id)) continue;
+      final w = q.waitUntil;
+      if (w != null && w.isAfter(now)) {
+        if (next == null || w.isBefore(next)) next = w;
+        continue;
+      }
+      _run(q);
+    }
+    _retry?.cancel();
+    if (next != null) _retry = Timer(next.difference(now), _pump);
+    _keepAwake();
+  }
+
+  /// Keeps Encore running while songs download with the app in the background (a "Downloading" notification),
+  /// like Spotify. Without it Android pauses the app soon after you leave it.
+  void _keepAwake() {
+    final n = _running.isNotEmpty ? _queue.length : 0;
+    _system.invokeMethod('downloading', {'count': n}).catchError((_) => null);
+  }
+
+  Future<void> _run(_Queued q) async {
+    final id = q.song.id;
+    final c = ref.read(clientProvider);
+    if (c == null) return;
+    _running.add(id);
+    final raw = q.format == 'raw';
+    var url = raw ? c.downloadUrl(id) : c.streamUrl(id, format: q.format, maxBitRate: q.kbps);
+    if (ref.read(usbLinkProvider)) url = UsbLinkNotifier.viaCable(url); // plugged in: through the cable
+    final ext = raw ? (q.song.suffix.isEmpty ? 'mp3' : q.song.suffix) : q.format;
+    final guess = raw ? q.song.size : sizeAt(q.song, q.kbps); // when the server doesn't say how big
+    try {
+      final dir = await musicDir();
+      final net = _net ??= HttpClient()
+        ..connectionTimeout = const Duration(seconds: 20)
+        ..idleTimeout = const Duration(seconds: 30);
+      final f = await resumableDownload(
+        net,
+        url,
+        File(p.join(dir.path, '$id.$ext')),
+        onProgress: (got, total) => _progress(id, got, total ?? guess),
+        cancelled: () => _disposed || _cancel.contains(id),
+      );
+      q.tries = 0;
+      if (!_disposed) await _done(q, f.path);
+    } on DownloadCancelled {
+      // removed: its partial file goes too; otherwise it carries on later from where it stopped
+      if (!_disposed && !_queue.containsKey(id)) await _deletePart(id);
+    } on DownloadFailed catch (e) {
+      if (e.permanent) {
+        await _drop(q); // the song is gone from the server
+      } else {
+        _later(q);
+      }
+    } catch (_) {
+      _later(q); // no signal, the server went away...: kept, and tried again
+    } finally {
+      _running.remove(id);
+      _cancel.remove(id);
+      _shown.remove(id);
+      _pump();
+    }
+  }
+
+  /// Try this song again later: 15 s, 30 s, 1 min ... at most every 10 min (sooner when the app comes back).
+  void _later(_Queued q) {
+    q.tries++;
+    q.waitUntil = DateTime.now().add(Duration(seconds: (15 << (q.tries - 1).clamp(0, 6)).clamp(15, 600)));
+  }
+
+  void _progress(String id, int got, int? total) {
+    if (_disposed || !_queue.containsKey(id)) return; // removed meanwhile
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - (_shown[id] ?? 0) < 400) return; // a few times a second is plenty
+    _shown[id] = now;
+    final v = total == null || total <= 0 ? 0.0 : (got / total).clamp(0.0, 0.99);
+    state = state.copy(progress: {...state.progress, id: v});
+  }
+
+  Future<void> _done(_Queued q, String path) async {
+    final id = q.song.id;
+    if (!await _isAudio(path)) {
+      // The server answered with an error instead of the song; don't keep it as a download.
+      try {
+        await File(path).delete();
+      } catch (_) {}
+      await _drop(q);
+      return;
+    }
+    _queue.remove(id);
+    _saveQueue();
+    await ref.read(dbProvider).addDownload(q.song, path, await File(path).length());
+    _addCopy(q.song, path);
+    _inFlight[_recording(q.song)]?.removeWhere((e) => e.$2 == id);
+    state = state.copy(files: {...state.files, id: path}, progress: {...state.progress}..remove(id));
+    for (final twin in _waiting.remove(id) ?? const <Song>[]) {
+      await _alias(twin, path);
+    }
+  }
+
+  /// Gives up on a song (gone from the server, or it sent something that isn't audio).
+  Future<void> _drop(_Queued q) async {
+    final id = q.song.id;
+    _queue.remove(id);
+    _saveQueue();
+    _inFlight[_recording(q.song)]?.removeWhere((e) => e.$2 == id);
+    state = state.copy(progress: {...state.progress}..remove(id));
+    await _deletePart(id);
+    final twins = _waiting.remove(id);
+    if (twins != null && twins.isNotEmpty) await download(twins); // that copy failed: try the others
+  }
+
+  Future<void> _deletePart(String id) async {
+    try {
+      await for (final f in (await musicDir()).list()) {
+        final name = p.basename(f.path);
+        if (name.startsWith('$id.') && name.endsWith('.part')) await f.delete();
+      }
+    } catch (_) {}
+  }
+
+  /// Songs Encore 1.7 and older left with Android's download jobs (still queued, or failed while the server
+  /// was away) move to the queue above, so they're not forgotten. Called once FileDownloader has started.
+  Future<void> adoptOldDownloads() async {
+    try {
+      final ids = <String>{};
+      final tasks = <String>[];
+      for (final t in await FileDownloader().allTasks()) {
+        if (t.taskId.startsWith('song-')) tasks.add(t.taskId);
+      }
+      if (tasks.isNotEmpty) await FileDownloader().cancelTasksWithIds(tasks);
+      for (final r in await FileDownloader().database.allRecords()) {
+        if (!r.taskId.startsWith('song-')) continue;
+        if (r.status != TaskStatus.complete) ids.add(r.task.metaData);
+        await FileDownloader().database.deleteRecordWithId(r.taskId);
+      }
+      for (final t in tasks) {
+        ids.add(t.substring(5));
+      }
+      ids.removeWhere((id) => id.isEmpty || has(id) || _queue.containsKey(id));
+      if (ids.isEmpty) return;
+      final songs = await ref.read(dbProvider).songsByIds(ids.toList());
+      await download(songs);
+    } catch (_) {}
   }
 
   Future<void> _onUpdate(TaskUpdate u) async {
@@ -519,48 +728,32 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     } catch (_) {} // e.g. a download that finished while the app was closed, and the server is offline now
   }
 
+  /// Android's download jobs: making songs smaller, and songs an older Encore finished while it was closed.
   Future<void> _handleUpdate(TaskUpdate u) async {
     final id = u.task.metaData;
-    if (id.isEmpty) return;
+    if (id.isEmpty || u is! TaskStatusUpdate) return;
     if (id.startsWith('shrink:')) {
-      if (u is TaskStatusUpdate && u.status.isFinalState) await _shrinkDone(id.substring(7), u);
+      if (u.status.isFinalState) await _shrinkDone(id.substring(7), u);
       return;
     }
-    if (u is TaskProgressUpdate) {
-      if (u.progress >= 0) state = state.copy(progress: {...state.progress, id: u.progress});
-    } else if (u is TaskStatusUpdate) {
-      if (u.status == TaskStatus.complete) {
-        final path = await u.task.filePath();
-        if (!await _isAudio(path)) {
-          // The server answered with an error instead of the song; don't keep it as a download.
-          final song = _pending.remove(id);
-          if (song != null) _inFlight[_recording(song)]?.removeWhere((e) => e.$2 == id);
-          final twins = _waiting.remove(id);
-          try {
-            await File(path).delete();
-          } catch (_) {}
-          state = state.copy(progress: {...state.progress}..remove(id));
-          if (twins != null && twins.isNotEmpty) await download(twins); // the other copies try on their own
-          return;
-        }
-        final song = _pending.remove(id) ?? await ref.read(clientProvider)?.song(id);
-        if (song != null) {
-          await ref.read(dbProvider).addDownload(song, path, await File(path).length());
-          _addCopy(song, path);
-          _inFlight[_recording(song)]?.removeWhere((e) => e.$2 == id);
-        }
-        state = state.copy(files: {...state.files, id: path}, progress: {...state.progress}..remove(id));
-        for (final twin in _waiting.remove(id) ?? const <Song>[]) {
-          await _alias(twin, path);
-        }
-      } else if (u.status.isFinalState) {
-        final song = _pending.remove(id);
-        if (song != null) _inFlight[_recording(song)]?.removeWhere((e) => e.$2 == id);
-        state = state.copy(progress: {...state.progress}..remove(id));
-        final twins = _waiting.remove(id);
-        if (twins != null && twins.isNotEmpty) await download(twins); // that copy failed: try the others
-      }
+    if (u.status != TaskStatus.complete || has(id)) return;
+    final path = await u.task.filePath();
+    if (!await _isAudio(path)) {
+      try {
+        await File(path).delete();
+      } catch (_) {}
+      return;
     }
+    final song = (await ref.read(dbProvider).songsByIds([id])).firstOrNull ?? await ref.read(clientProvider)?.song(id);
+    if (song == null) return;
+    await ref.read(dbProvider).addDownload(song, path, await File(path).length());
+    _addCopy(song, path);
+    final q = _queue.remove(id);
+    if (q != null) {
+      _cancel.add(id);
+      _saveQueue();
+    }
+    state = state.copy(files: {...state.files, id: path}, progress: {...state.progress}..remove(id));
   }
 
   // ── Smaller downloads (like Spotify's download quality) ──
@@ -672,7 +865,20 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   Future<void> remove(Iterable<String> ids) async {
     final files = {...state.files};
     final gone = <String>{};
+    final progress = {...state.progress};
+    var dequeued = false;
     for (final id in ids) {
+      final q = _queue.remove(id); // still on its way: called off, and its partial file goes
+      if (q != null) {
+        dequeued = true;
+        progress.remove(id);
+        _inFlight[_recording(q.song)]?.removeWhere((e) => e.$2 == id);
+        if (_running.contains(id)) {
+          _cancel.add(id);
+        } else {
+          await _deletePart(id);
+        }
+      }
       final path = files.remove(id);
       await ref.read(dbProvider).removeDownload(id);
       if (path != null && !files.containsValue(path)) gone.add(path); // no other copy uses the file
@@ -687,7 +893,8 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     }
     final manual = (prefs.getStringList('manualDownloads') ?? const <String>[]).toSet()..removeAll(ids);
     prefs.setStringList('manualDownloads', manual.toList());
-    state = state.copy(files: files);
+    if (dequeued) _saveQueue();
+    state = state.copy(files: files, progress: progress);
   }
 
   // ── Collections kept downloaded (like Spotify's download switch) ──
@@ -741,3 +948,20 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
 }
 
 final downloadsProvider = NotifierProvider<DownloadsNotifier, DownloadsState>(DownloadsNotifier.new);
+
+/// A song waiting to download, and how (kept across restarts in the 'downloadQueue' setting).
+class _Queued {
+  _Queued(this.song, this.format, this.kbps);
+  final Song song;
+  final String format; // 'raw' (the original file) or what the server converts to, e.g. 'opus'
+  final int kbps;
+  int tries = 0;
+  DateTime? waitUntil; // failed a moment ago: tried again after this
+
+  Map<String, dynamic> toJson() => {'song': song.toJson(), 'format': format, 'kbps': kbps};
+  static _Queued fromJson(Map<String, dynamic> j) => _Queued(
+    Song.fromJson((j['song'] as Map).cast<String, dynamic>()),
+    '${j['format'] ?? 'raw'}',
+    (j['kbps'] as num?)?.toInt() ?? 160,
+  );
+}

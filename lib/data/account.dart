@@ -53,7 +53,7 @@ Future<String> currentDbFile() async {
 /// Settings that belong to one server (its queue, pins, searches, podcasts seen…): put aside when you switch
 /// to another server, and brought back when you switch back.
 const _perServerKeys = {
-  'queue', 'downloadPins', 'libraryPins', 'manualDownloads', 'pendingScrobbles', 'podcastSeen', 'recentSearch',
+  'queue', 'downloadPins', 'downloadQueue', 'libraryPins', 'manualDownloads', 'pendingScrobbles', 'podcastSeen', 'recentSearch',
   'searchHistory', 'smartShuffle', 'smartShuffleHidden', 'lyricsPicks', 'radioArt', 'jamUrl', 'jamToken', 'podcastDone',
 };
 bool _perServer(String k) =>
@@ -176,6 +176,7 @@ class AccountNotifier extends AsyncNotifier<Credentials?> {
     await _storage.deleteAll();
     await ref.read(dbProvider).clearLibrary();
     await prefs.remove('queue');
+    await prefs.remove('downloadQueue');
     state = const AsyncData(null);
   }
 }

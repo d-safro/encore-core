@@ -1,6 +1,5 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:background_downloader/background_downloader.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,6 +7,7 @@ import 'core/settings.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
 import 'data/library.dart';
+import 'data/usb_link.dart';
 import 'playback/handler.dart';
 import 'ui/screens/browse.dart';
 import 'ui/screens/discover.dart';
@@ -244,7 +244,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     ref.listenManual(offlineProvider, (prev, next) {
       if (prev == true && next == false) {
         audioHandler.flushOfflineScrobbles();
-        FileDownloader().resumeAll(); // downloads that stopped while the server was away carry on
+        ref.read(downloadsProvider.notifier).resume(); // downloads that stopped while the server was away carry on
       }
     });
     // keep downloaded collections up to date (new songs in playlists, newly hearted songs)
@@ -276,6 +276,8 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       ref.read(serverReachableProvider.notifier).check();
       _checkEpisodes();
       _syncIfStale();
+      ref.read(usbLinkProvider.notifier).check(); // plugged into the server's computer meanwhile?
+      ref.read(downloadsProvider.notifier).resume(); // carry on from where they stopped
     }
   }
 
