@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:background_downloader/background_downloader.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -489,7 +489,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   Timer? _retry;
   bool _disposed = false;
   static const _parallel = 3;
-  static const _parallelCable = 4; // the server converting songs is what limits it then
+  static const _parallelCable = 6; // the server converting songs to Opus is what limits it then
   static const _system = MethodChannel('encore/system');
 
   static Future<Directory> musicDir() async => Directory(p.join((await getApplicationSupportDirectory()).path, 'music'));
@@ -699,6 +699,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
 
   /// Songs Encore 1.7 and older left with Android's download jobs (still queued, or failed while the server
   /// was away) move to the queue above, so they're not forgotten. Called once FileDownloader has started.
+  /// (Android's jobs for them are called off as the app starts: EncoreApplication.kt.)
   Future<void> adoptOldDownloads() async {
     try {
       final ids = <String>{};
@@ -707,7 +708,8 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         if (t.taskId.startsWith('song-')) tasks.add(t.taskId);
       }
       if (tasks.isNotEmpty) await FileDownloader().cancelTasksWithIds(tasks);
-      for (final r in await FileDownloader().database.allRecords()) {
+      final records = await FileDownloader().database.allRecords();
+      for (final r in records) {
         if (!r.taskId.startsWith('song-')) continue;
         if (r.status != TaskStatus.complete) ids.add(r.task.metaData);
         await FileDownloader().database.deleteRecordWithId(r.taskId);
@@ -716,10 +718,14 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         ids.add(t.substring(5));
       }
       ids.removeWhere((id) => id.isEmpty || has(id) || _queue.containsKey(id));
+      debugPrint('Encore: ${tasks.length} old download jobs, ${records.length} records, ${ids.length} songs to move over');
       if (ids.isEmpty) return;
       final songs = await ref.read(dbProvider).songsByIds(ids.toList());
       await download(songs);
-    } catch (_) {}
+      debugPrint('Encore: moved ${songs.length} songs to the download queue (${_queue.length} queued)');
+    } catch (e) {
+      debugPrint('Encore: moving old downloads failed: $e');
+    }
   }
 
   Future<void> _onUpdate(TaskUpdate u) async {
@@ -813,7 +819,18 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   final _shrinkOld = <String, (List<Song>, String)>{};
 
   Future<void> _shrinkDone(String id, TaskStatusUpdate u) async {
-    final job = _shrinkOld.remove(id);
+    var job = _shrinkOld.remove(id);
+    if (job == null && u.status == TaskStatus.complete) {
+      // finished while the app was closed (what it replaces was only kept in memory): it replaces the
+      // file this song has now, for every song sharing that file
+      await loaded;
+      final old = state.files[id];
+      if (old != null && old != await u.task.filePath()) {
+        final songs = [for (final (s, path, _) in await ref.read(dbProvider).downloads()) if (path == old) s];
+        songs.sort((a, b) => a.id == id ? -1 : (b.id == id ? 1 : 0));
+        if (songs.isNotEmpty) job = (songs, old);
+      }
+    }
     final p = shrinking.value;
     if (p != null) shrinking.value = p.$1 + 1 >= p.$2 ? null : (p.$1 + 1, p.$2);
     if (u.status != TaskStatus.complete) return; // the old file stays
