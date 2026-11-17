@@ -9,6 +9,26 @@ enum ReplayGainMode { off, track, album, auto }
 
 enum AlbumSort { recent, newest, alphabetical, artist, year, frequent, random, starred }
 
+// ── Appearance (Settings → Appearance; the looks that bundle these are in appearance.dart) ──
+
+/// How round corners are: covers, cards, the mini player, sheets.
+enum Corners { square, small, soft, round }
+
+/// How big album cards are on shelves and in the library grid.
+enum CardSize { small, medium, large }
+
+/// The player screen: a big cover; a smaller cover with the lyrics under it; or a small cover and big titles.
+enum PlayerLayout { bigCover, coverLyrics, minimal }
+
+/// The blurred copy of the artwork behind the player.
+enum PlayerBlur { off, soft, strong }
+
+/// The bar above the tabs: a floating card, a flat full-width strip, or a thinner card without the heart.
+enum MiniPlayerStyle { floating, flat, slim }
+
+/// Names under the bottom tabs.
+enum NavLabels { always, selected, never }
+
 /// Every user setting, stored as one JSON blob in shared preferences.
 class Settings {
   final ThemeSource themeSource;
@@ -45,6 +65,20 @@ class Settings {
   final List<double> eqGains; // dB per band
   final int cacheMb;
 
+  // Appearance
+  final bool highContrast; // brighter secondary text and clearer edges between surfaces
+  final String fontFamily; // 'inter' (Encore's) or 'system' (the phone's)
+  final double textScale; // on top of the phone's own text size
+  final Corners corners;
+  final bool compact; // tighter rows and buttons
+  final CardSize cardSize;
+  final bool showQuickPills, showJumpBackIn, showGreeting; // parts of Home
+  final PlayerLayout playerLayout;
+  final PlayerBlur playerBlur;
+  final MiniPlayerStyle miniPlayer;
+  final List<String> navTabs; // the bottom tabs, in order (Home always stays)
+  final NavLabels navLabels;
+
   const Settings({
     this.themeSource = ThemeSource.wallpaper,
     this.accentColor = 0xFF6750A4,
@@ -78,9 +112,24 @@ class Settings {
     this.eqEnabled = false,
     this.eqGains = const [],
     this.cacheMb = 1024,
+    this.highContrast = false,
+    this.fontFamily = 'inter',
+    this.textScale = 1.0,
+    this.corners = Corners.soft,
+    this.compact = false,
+    this.cardSize = CardSize.medium,
+    this.showQuickPills = true,
+    this.showJumpBackIn = true,
+    this.showGreeting = true,
+    this.playerLayout = PlayerLayout.bigCover,
+    this.playerBlur = PlayerBlur.soft,
+    this.miniPlayer = MiniPlayerStyle.floating,
+    this.navTabs = defaultNavTabs,
+    this.navLabels = NavLabels.selected,
   });
 
   static const defaultHomeSections = ['recent', 'newest', 'frequent', 'starred', 'random', 'playlists'];
+  static const defaultNavTabs = ['home', 'discover', 'library', 'search'];
 
   Map<String, dynamic> toJson() => {
     'themeSource': themeSource.name,
@@ -115,6 +164,20 @@ class Settings {
     'eqEnabled': eqEnabled,
     'eqGains': eqGains,
     'cacheMb': cacheMb,
+    'highContrast': highContrast,
+    'fontFamily': fontFamily,
+    'textScale': textScale,
+    'corners': corners.name,
+    'compact': compact,
+    'cardSize': cardSize.name,
+    'showQuickPills': showQuickPills,
+    'showJumpBackIn': showJumpBackIn,
+    'showGreeting': showGreeting,
+    'playerLayout': playerLayout.name,
+    'playerBlur': playerBlur.name,
+    'miniPlayer': miniPlayer.name,
+    'navTabs': navTabs,
+    'navLabels': navLabels.name,
   };
 
   factory Settings.fromJson(Map<String, dynamic> j) {
@@ -154,10 +217,35 @@ class Settings {
       eqEnabled: j['eqEnabled'] ?? d.eqEnabled,
       eqGains: (j['eqGains'] as List?)?.map((e) => (e as num).toDouble()).toList() ?? d.eqGains,
       cacheMb: j['cacheMb'] ?? d.cacheMb,
+      highContrast: j['highContrast'] ?? d.highContrast,
+      fontFamily: j['fontFamily'] == 'system' ? 'system' : 'inter',
+      textScale: ((j['textScale'] as num?)?.toDouble() ?? d.textScale).clamp(0.8, 1.4),
+      corners: pick(Corners.values, j['corners'], d.corners),
+      compact: j['compact'] ?? d.compact,
+      cardSize: pick(CardSize.values, j['cardSize'], d.cardSize),
+      showQuickPills: j['showQuickPills'] ?? d.showQuickPills,
+      showJumpBackIn: j['showJumpBackIn'] ?? d.showJumpBackIn,
+      showGreeting: j['showGreeting'] ?? d.showGreeting,
+      playerLayout: pick(PlayerLayout.values, j['playerLayout'], d.playerLayout),
+      playerBlur: pick(PlayerBlur.values, j['playerBlur'], d.playerBlur),
+      miniPlayer: pick(MiniPlayerStyle.values, j['miniPlayer'], d.miniPlayer),
+      navTabs: _cleanTabs(j['navTabs']),
+      navLabels: pick(NavLabels.values, j['navLabels'], d.navLabels),
     );
   }
 
   Settings copyWith(Map<String, dynamic> changes) => Settings.fromJson({...toJson(), ...changes});
+
+  /// Known tabs only, no repeats, Home always there, at least two.
+  static List<String> _cleanTabs(dynamic raw) {
+    final tabs = <String>[];
+    for (final t in (raw as List?) ?? defaultNavTabs) {
+      if (defaultNavTabs.contains(t) && !tabs.contains(t)) tabs.add('$t');
+    }
+    if (!tabs.contains('home')) tabs.insert(0, 'home');
+    if (tabs.length < 2) tabs.add(defaultNavTabs.firstWhere((t) => !tabs.contains(t)));
+    return tabs;
+  }
 }
 
 late SharedPreferences prefs; // set in main() before runApp
@@ -182,7 +270,7 @@ const downloadLevels = [
 }
 
 /// Shown in Settings. Keep in step with `version:` in pubspec.yaml.
-const appVersion = '1.7.5';
+const appVersion = '1.7.6';
 
 class SettingsNotifier extends Notifier<Settings> {
   static const _key = 'settings';

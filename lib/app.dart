@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/appearance.dart';
 import 'core/settings.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
@@ -10,6 +11,7 @@ import 'data/library.dart';
 import 'data/local_link.dart';
 import 'data/usb_link.dart';
 import 'playback/handler.dart';
+import 'ui/screens/appearance.dart';
 import 'ui/screens/browse.dart';
 import 'ui/screens/discover.dart';
 import 'ui/screens/home.dart';
@@ -124,6 +126,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 PodcasterScreen(name: s.uri.queryParameters['name'] ?? '', showId: s.uri.queryParameters['show'] ?? ''),
           ),
           GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+          GoRoute(path: '/appearance', builder: (_, _) => const AppearanceScreen()),
           GoRoute(path: '/equalizer', builder: (_, _) => const EqualizerScreen()),
           GoRoute(path: '/downloads', builder: (_, _) => const DownloadsScreen()),
         ],
@@ -168,13 +171,16 @@ class _Shell extends ConsumerWidget {
   final String location;
   final Widget child;
 
-  static const _tabs = ['/home', '/discover', '/library', '/search'];
-  static int _lastTab = 0;
+  static String _lastTab = 'home';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final idx = _tabs.indexWhere(location.startsWith);
-    if (idx >= 0) _lastTab = idx; // detail pages keep the tab they were opened from
+    final s = ref.watch(settingsProvider);
+    final tabs = [for (final k in s.navTabs) _destinations[k]!];
+    final here = Settings.defaultNavTabs.where((k) => location.startsWith(_destinations[k]!.path)).firstOrNull;
+    if (here != null) _lastTab = here; // detail pages keep the tab they were opened from
+    final selected = s.navTabs.indexOf(_lastTab).clamp(0, tabs.length - 1);
+    void go(int i) => context.go(tabs[i].path);
     // tablets and landscape: the tabs move to a rail on the side, pages get the width
     final wide = MediaQuery.sizeOf(context).width >= 700;
     final tall = MediaQuery.sizeOf(context).height >= 560;
@@ -183,16 +189,20 @@ class _Shell extends ConsumerWidget {
         body: Row(
           children: [
             NavigationRail(
-              selectedIndex: _lastTab,
+              selectedIndex: selected,
               // a phone turned sideways is short: no logo, and only the open tab's name
-              labelType: tall ? NavigationRailLabelType.all : NavigationRailLabelType.selected,
+              labelType: switch (s.navLabels) {
+                NavLabels.never => NavigationRailLabelType.none,
+                NavLabels.always when tall => NavigationRailLabelType.all,
+                _ => NavigationRailLabelType.selected,
+              },
               groupAlignment: -0.8,
               leading: tall
                   ? const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: EncoreLogo(size: 36))
                   : null,
-              onDestinationSelected: (i) => context.go(_tabs[i]),
+              onDestinationSelected: go,
               destinations: [
-                for (final d in _destinations)
+                for (final d in tabs)
                   NavigationRailDestination(icon: d.icon, selectedIcon: d.selectedIcon, label: Text(d.label)),
               ],
             ),
@@ -213,13 +223,16 @@ class _Shell extends ConsumerWidget {
           const _ServerTrouble(),
           const MiniPlayer(),
           NavigationBar(
-            selectedIndex: _lastTab,
-            height: 64,
-            labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
-            onDestinationSelected: (i) => context.go(_tabs[i]),
+            selectedIndex: selected,
+            height: s.navLabels == NavLabels.never ? 56 : 64,
+            labelBehavior: switch (s.navLabels) {
+              NavLabels.always => NavigationDestinationLabelBehavior.alwaysShow,
+              NavLabels.selected => NavigationDestinationLabelBehavior.onlyShowSelected,
+              NavLabels.never => NavigationDestinationLabelBehavior.alwaysHide,
+            },
+            onDestinationSelected: go,
             destinations: [
-              for (final d in _destinations)
-                NavigationDestination(icon: d.icon, selectedIcon: d.selectedIcon, label: d.label),
+              for (final d in tabs) NavigationDestination(icon: d.icon, selectedIcon: d.selectedIcon, label: d.label),
             ],
           ),
         ],
@@ -227,12 +240,8 @@ class _Shell extends ConsumerWidget {
     );
   }
 
-  static const _destinations = [
-    (icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Home'),
-    (icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'Discover'),
-    (icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music_rounded), label: 'Library'),
-    (icon: Icon(Icons.search_rounded), selectedIcon: Icon(Icons.search_rounded), label: 'Search'),
-  ];
+  /// Every tab there can be, by the name stored in Settings.navTabs.
+  static const _destinations = navDestinations;
 }
 
 class EncoreApp extends ConsumerStatefulWidget {
@@ -332,26 +341,39 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
   }
 
   /// Minimal dark look: near-black surfaces tinted by the accent, Inter, soft rounded shapes, no borders.
-  ThemeData _theme(ColorScheme scheme, bool pureBlack) {
-    final base = pureBlack
+  /// Settings → Appearance changes the black, contrast, typeface, roundness and density.
+  static ThemeData theme(ColorScheme scheme, Settings s) {
+    final look = AppLook.from(s);
+    double r(double v) => look.r(v);
+    final base = s.pureBlack
         ? Colors.black
         : Color.alphaBlend(scheme.primary.withValues(alpha: 0.03), const Color(0xFF0E0F13));
+    // high contrast: surfaces step apart more clearly and secondary text is nearly white
+    final step = s.highContrast ? 1.8 : 1.0;
     final cs = scheme.copyWith(
       surface: base,
       surfaceContainerLowest: base,
-      surfaceContainerLow: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.03), base),
-      surfaceContainer: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.05), base),
-      surfaceContainerHigh: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.08), base),
-      surfaceContainerHighest: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.11), base),
+      surfaceContainerLow: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.03 * step), base),
+      surfaceContainer: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.05 * step), base),
+      surfaceContainerHigh: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.08 * step), base),
+      surfaceContainerHighest: Color.alphaBlend(scheme.onSurface.withValues(alpha: 0.11 * step), base),
+      onSurfaceVariant: s.highContrast
+          ? Color.lerp(scheme.onSurfaceVariant, scheme.onSurface, 0.6)
+          : scheme.onSurfaceVariant,
+      outline: s.highContrast ? Color.lerp(scheme.outline, scheme.onSurface, 0.5) : scheme.outline,
+      outlineVariant: s.highContrast ? Color.lerp(scheme.outlineVariant, scheme.onSurface, 0.35) : scheme.outlineVariant,
     );
+    final font = s.fontFamily == 'system' ? null : 'Inter';
     final text = Typography.material2021(platform: TargetPlatform.android).white
-        .apply(fontFamily: 'Inter', bodyColor: cs.onSurface, displayColor: cs.onSurface);
-    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
+        .apply(fontFamily: font, bodyColor: cs.onSurface, displayColor: cs.onSurface);
+    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(r(16)));
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: cs,
-      fontFamily: 'Inter',
+      fontFamily: font,
+      visualDensity: s.compact ? VisualDensity.compact : VisualDensity.standard,
+      extensions: [look],
       textTheme: text.copyWith(
         headlineMedium: text.headlineMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.6),
         headlineSmall: text.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.4),
@@ -377,7 +399,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
         labelTextStyle: WidgetStatePropertyAll(text.labelSmall?.copyWith(fontWeight: FontWeight.w600)),
       ),
       cardTheme: CardThemeData(color: cs.surfaceContainerLow, elevation: 0, shape: shape, margin: EdgeInsets.zero),
-      listTileTheme: ListTileThemeData(shape: shape, iconColor: cs.onSurfaceVariant),
+      listTileTheme: ListTileThemeData(shape: shape, iconColor: cs.onSurfaceVariant, dense: s.compact),
       chipTheme: ChipThemeData(
         shape: const StadiumBorder(),
         side: BorderSide.none,
@@ -387,22 +409,27 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       tabBarTheme: TabBarThemeData(
         dividerHeight: 0,
         indicatorSize: TabBarIndicatorSize.tab,
-        indicator: BoxDecoration(color: cs.primary.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(20)),
+        indicator: BoxDecoration(color: cs.primary.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(r(20))),
         labelColor: cs.primary,
         unselectedLabelColor: cs.onSurfaceVariant,
         labelStyle: text.labelLarge?.copyWith(fontWeight: FontWeight.w600),
         labelPadding: const EdgeInsets.symmetric(horizontal: 18),
-        splashBorderRadius: BorderRadius.circular(20),
+        splashBorderRadius: BorderRadius.circular(r(20)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: cs.surfaceContainer,
         surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(r(28)))),
       ),
-      dialogTheme: DialogThemeData(backgroundColor: cs.surfaceContainer, surfaceTintColor: Colors.transparent),
+      dialogTheme: DialogThemeData(
+        backgroundColor: cs.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(r(28))),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: cs.surfaceContainerHigh,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(r(14)), borderSide: BorderSide.none),
       ),
       searchBarTheme: SearchBarThemeData(
         backgroundColor: WidgetStatePropertyAll(cs.surfaceContainerHigh),
@@ -412,7 +439,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: cs.inverseSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(r(12))),
       ),
       sliderTheme: const SliderThemeData(year2023: false),
       progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
@@ -441,12 +468,41 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
           title: 'Encore',
           debugShowCheckedModeBanner: false,
           themeMode: ThemeMode.dark,
-          theme: _theme(scheme, s.pureBlack),
-          darkTheme: _theme(scheme, s.pureBlack),
+          theme: theme(scheme, s),
+          darkTheme: theme(scheme, s),
           routerConfig: router,
           scaffoldMessengerKey: messengerKey,
+          // Appearance's text size goes on top of the phone's own
+          builder: (ctx, child) {
+            final mq = MediaQuery.of(ctx);
+            if (s.textScale == 1.0) return child!;
+            return MediaQuery(
+              data: mq.copyWith(textScaler: _TimesScaler(mq.textScaler, s.textScale)),
+              child: child!,
+            );
+          },
         );
       },
     );
   }
+}
+
+/// The phone's text scaling (which Android makes gentler for big text), then Appearance's text size on top.
+class _TimesScaler extends TextScaler {
+  const _TimesScaler(this.base, this.factor);
+  final TextScaler base;
+  final double factor;
+
+  @override
+  double scale(double fontSize) => base.scale(fontSize) * factor;
+
+  @override
+  // ignore: deprecated_member_use
+  double get textScaleFactor => base.textScaleFactor * factor;
+
+  @override
+  bool operator ==(Object other) => other is _TimesScaler && other.base == base && other.factor == factor;
+
+  @override
+  int get hashCode => Object.hash(base, factor);
 }

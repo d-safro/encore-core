@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../core/appearance.dart';
 import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/cover_cache.dart';
@@ -29,7 +30,6 @@ import 'login.dart';
 
 const _formats = {'raw': 'Original', 'opus': 'Opus', 'mp3': 'MP3', 'aac': 'AAC'};
 const _bitrates = [64, 96, 128, 160, 192, 256, 320];
-const _accents = [0xFF6750A4, 0xFF006A6A, 0xFF8B5000, 0xFFB3261E, 0xFF386A20, 0xFF0061A4, 0xFF984061, 0xFF5D5F00];
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -148,56 +148,17 @@ class SettingsScreen extends ConsumerWidget {
           const SectionTitle('Look'),
           ListTile(
             leading: const Icon(Icons.palette_outlined),
-            title: const Text('Colours'),
-            subtitle: SegmentedButton<ThemeSource>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: ThemeSource.wallpaper, label: Text('Wallpaper')),
-                ButtonSegment(value: ThemeSource.albumArt, label: Text('Album art')),
-                ButtonSegment(value: ThemeSource.fixed, label: Text('Pick')),
-              ],
-              selected: {s.themeSource},
-              onSelectionChanged: (v) => set('themeSource', v.first.name),
+            title: const Text('Appearance'),
+            subtitle: Text(
+              '${lookOf(s)?.label ?? 'Custom'} look · colours, text, Home, player and tabs',
             ),
-          ),
-          if (s.themeSource == ThemeSource.fixed)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 72, vertical: 4),
-              child: Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  for (final c in _accents)
-                    InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: () => set('accentColor', c),
-                      child: CircleAvatar(
-                        radius: 18,
-                        backgroundColor: Color(c),
-                        child: s.accentColor == c ? const Icon(Icons.check, color: Colors.white) : null,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          SwitchListTile(
-            secondary: const Icon(Icons.contrast),
-            title: const Text('Pure black'),
-            subtitle: const Text('Black backgrounds (saves battery on OLED screens)'),
-            value: s.pureBlack,
-            onChanged: (v) => set('pureBlack', v),
+            onTap: () => context.push('/appearance'),
           ),
           ListTile(
             leading: const Icon(Icons.widgets_outlined),
             title: const Text('Add the widget to your home screen'),
             subtitle: const Text('What\'s playing, with play, pause and skip'),
             onTap: () => HomeWidget.requestPinWidget(qualifiedAndroidName: 'dev.safro.encore.EncoreWidget'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.dashboard_customize_outlined),
-            title: const Text('Home screen'),
-            subtitle: Text(s.homeSections.map(_sectionName).join(', ')),
-            onTap: () => _editHome(context, ref, s),
           ),
 
           const SectionTitle('Playback'),
@@ -320,60 +281,6 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  static String _sectionName(String k) =>
-      const {
-        'recent': 'Recently played',
-        'newest': 'Recently added',
-        'frequent': 'Most played',
-        'starred': 'Favourite albums',
-        'random': 'Discover',
-        'highest': 'Top rated',
-        'playlists': 'Playlists',
-      }[k] ??
-      k;
-
-  Future<void> _editHome(BuildContext context, WidgetRef ref, Settings s) async {
-    final all = ['recent', 'newest', 'frequent', 'starred', 'random', 'highest', 'playlists'];
-    var chosen = [...s.homeSections.where(all.contains)];
-    await showModalBottomSheet(
-      useRootNavigator: true,
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, set) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ListTile(title: Text('Home screen sections'), subtitle: Text('Drag to reorder')),
-              Flexible(
-                child: ReorderableListView(
-                  shrinkWrap: true,
-                  onReorder: (a, b) => set(() {
-                    final order = [...chosen, ...all.where((x) => !chosen.contains(x))];
-                    if (b > a) b--;
-                    order.insert(b, order.removeAt(a));
-                    chosen = order.where(chosen.contains).toList();
-                  }),
-                  children: [
-                    for (final k in [...chosen, ...all.where((x) => !chosen.contains(x))])
-                      CheckboxListTile(
-                        key: ValueKey(k),
-                        value: chosen.contains(k),
-                        title: Text(_sectionName(k)),
-                        secondary: const Icon(Icons.drag_handle),
-                        onChanged: (v) => set(() => v! ? chosen.add(k) : chosen.remove(k)),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-    ref.read(settingsProvider.notifier).update({'homeSections': chosen});
   }
 
   Future<void> _replayGain(BuildContext context, WidgetRef ref, Settings s) async {

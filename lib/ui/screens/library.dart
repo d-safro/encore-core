@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/appearance.dart';
 import '../../core/settings.dart';
 import '../../data/library.dart';
 import '../../data/library_pins.dart';
@@ -201,8 +202,8 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
             SliverPadding(
               padding: const EdgeInsets.all(8),
               sliver: SliverGrid(
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 190,
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: AppLook.of(context).gridExtent,
                   childAspectRatio: 0.74,
                   mainAxisSpacing: 4,
                   crossAxisSpacing: 4,
@@ -219,7 +220,7 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
               itemBuilder: (_, i) {
                 final a = _albums[i];
                 return ListTile(
-                  leading: Cover(a.coverArt, size: 52),
+                  leading: Cover(a.coverArt, size: AppLook.of(context).compact ? 44 : 52),
                   title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text([a.artist, if (a.year != null) '${a.year}'].join(' · '), maxLines: 1),
                   onTap: () => context.push('/album/${a.id}'),

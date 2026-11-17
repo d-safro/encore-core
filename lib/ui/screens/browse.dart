@@ -273,7 +273,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
   List<Widget> _discography(List<Album> own, List<Album> missing, ArtistExtra extra) {
     Shelf shelf(String title, List<Album> l) => Shelf(
       title: title,
-      height: 220,
+      textHeight: 72,
       children: [for (final al in l) AlbumCard(al, showArtist: false, showYear: true)],
     );
     if (extra.albums.isEmpty) {

@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/appearance.dart';
 import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/library.dart';
@@ -71,6 +72,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         body: const Center(child: Text('Nothing playing')),
       );
     }
+    final look = AppLook.of(context);
+    final podcast = song != null && isPodcastId(song.id);
+    // episodes rarely have lyrics: they keep the big cover in the lyrics layout
+    final layout = podcast && look.playerLayout == PlayerLayout.coverLyrics ? PlayerLayout.bigCover : look.playerLayout;
+    final minimal = layout == PlayerLayout.minimal;
     return AnimatedTheme(
       data: theme,
       child: Builder(
@@ -78,14 +84,15 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           return Scaffold(
             body: Stack(
               children: [
-                Positioned.fill(
-                  child: ArtBackdrop(
-                    cover: song?.coverArt ?? '',
-                    artist: song?.artist ?? '',
-                    album: song?.album ?? '',
-                    strength: 0.45,
+                if (look.playerBlur != PlayerBlur.off)
+                  Positioned.fill(
+                    child: ArtBackdrop(
+                      cover: song?.coverArt ?? '',
+                      artist: song?.artist ?? '',
+                      album: song?.album ?? '',
+                      strength: look.playerBlur == PlayerBlur.strong ? 0.15 : 0.45,
+                    ),
                   ),
-                ),
                 SafeArea(
                   child: GestureDetector(
                     onVerticalDragEnd: (d) {
@@ -93,14 +100,26 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     },
                     child: Builder(
                       builder: (context) {
+                        final art = _Art(key: ValueKey('art-${item.id}'), song: song, small: minimal);
                         final main = AnimatedSwitcher(
                           duration: const Duration(milliseconds: 250),
                           child: _lyrics && song != null
                               ? LyricsView(key: ValueKey('lyrics-${song.id}'), song: song)
-                              : _Art(key: ValueKey('art-${item.id}'), song: song),
+                              : layout == PlayerLayout.coverLyrics && song != null
+                              // a smaller cover with the words under it; the lyrics button shows only the words
+                              ? LayoutBuilder(
+                                  key: ValueKey('both-${item.id}'),
+                                  builder: (ctx, box) => Column(
+                                    children: [
+                                      SizedBox(height: box.maxHeight * 0.48, child: art),
+                                      Expanded(child: LyricsView(song: song, compact: true)),
+                                    ],
+                                  ),
+                                )
+                              : art,
                         );
                         final controls = [
-                          _Titles(item: item, song: song),
+                          _Titles(item: item, song: song, large: minimal),
                           const _SeekBar(),
                           const _Controls(),
                           _BottomRow(song: song, lyrics: _lyrics, onLyrics: () => setState(() => _lyrics = !_lyrics)),
@@ -222,49 +241,57 @@ class _TopBar extends ConsumerWidget {
 }
 
 class _Art extends StatelessWidget {
-  const _Art({super.key, required this.song});
+  const _Art({super.key, required this.song, this.small = false});
   final Song? song;
+  final bool small; // the minimal layout: a small cover at the bottom left, over the big titles
   @override
   Widget build(BuildContext context) {
+    final look = AppLook.of(context);
     return LayoutBuilder(
       builder: (ctx, box) {
-        final size = (box.biggest.shortestSide - 40).clamp(120.0, 520.0);
-        return Center(
-          child: GestureDetector(
-            onHorizontalDragEnd: (d) {
-              final v = d.primaryVelocity ?? 0;
-              if (v < -300) audioHandler.skipToNext();
-              if (v > 300) audioHandler.skipToPrevious();
-            },
-            onDoubleTap: () {
-              final s = audioHandler.currentSong;
-              if (s != null) audioHandler.setRating(Rating.newHeartRating(!s.starred));
-            },
-            child: Hero(
-              tag: 'cover',
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(22),
-                  boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 48, offset: Offset(0, 20))],
-                ),
-                child: Cover(
-                  song?.coverArt ?? '',
-                  size: size,
-                  radius: 22,
-                  icon: Icons.music_note_outlined,
-                  artist: song?.artist ?? '',
-                  album: song?.album ?? '',
-                ),
+        final size = small
+            ? (box.biggest.shortestSide - 40).clamp(80.0, 168.0)
+            : (box.biggest.shortestSide - 40).clamp(120.0, 520.0);
+        final cover = GestureDetector(
+          onHorizontalDragEnd: (d) {
+            final v = d.primaryVelocity ?? 0;
+            if (v < -300) audioHandler.skipToNext();
+            if (v > 300) audioHandler.skipToPrevious();
+          },
+          onDoubleTap: () {
+            final s = audioHandler.currentSong;
+            if (s != null) audioHandler.setRating(Rating.newHeartRating(!s.starred));
+          },
+          child: Hero(
+            tag: 'cover',
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(look.r(22)),
+                boxShadow: small ? null : const [BoxShadow(color: Colors.black54, blurRadius: 48, offset: Offset(0, 20))],
+              ),
+              child: Cover(
+                song?.coverArt ?? '',
+                size: size,
+                radius: small ? 14 : 22,
+                icon: Icons.music_note_outlined,
+                artist: song?.artist ?? '',
+                album: song?.album ?? '',
               ),
             ),
           ),
         );
+        if (small) {
+          return Align(
+            alignment: Alignment.bottomLeft,
+            child: Padding(padding: const EdgeInsets.fromLTRB(24, 0, 24, 8), child: cover),
+          );
+        }
+        return Center(child: cover);
       },
     );
   }
 }
 
-/// Shuffle button with three states, like Spotify's: off → shuffle → smart shuffle → off.
 class ShuffleButton extends StatelessWidget {
   const ShuffleButton({super.key, required this.kind});
   final ShuffleKind kind;
@@ -364,9 +391,10 @@ class SmartPickBar extends ConsumerWidget {
 }
 
 class _Titles extends ConsumerWidget {
-  const _Titles({required this.item, required this.song});
+  const _Titles({required this.item, required this.song, this.large = false});
   final MediaItem item;
   final Song? song;
+  final bool large; // the minimal layout's big titles
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = Theme.of(context).textTheme;
@@ -382,9 +410,11 @@ class _Titles extends ConsumerWidget {
               children: [
                 Text(
                   item.title,
-                  maxLines: 1,
+                  maxLines: large ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
-                  style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
+                  style: large
+                      ? t.headlineLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -1, height: 1.1)
+                      : t.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
                 ),
                 const SizedBox(height: 2),
                 GestureDetector(
@@ -400,7 +430,10 @@ class _Titles extends ConsumerWidget {
                     item.artist ?? '',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: t.titleMedium?.copyWith(color: cs.onSurfaceVariant, fontWeight: FontWeight.w500),
+                    style: (large ? t.titleLarge : t.titleMedium)?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ],
@@ -804,7 +837,8 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
 
 /// Synced lyrics follow the song (tap a line to jump there); plain lyrics just scroll.
 class LyricsView extends ConsumerStatefulWidget {
-  const LyricsView({super.key, required this.song});
+  const LyricsView({super.key, required this.song, this.compact = false});
+  final bool compact; // under the cover: smaller words, less padding
   final Song song;
   @override
   ConsumerState<LyricsView> createState() => _LyricsViewState();
@@ -873,7 +907,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
           blendMode: BlendMode.dstIn,
           child: ListView.builder(
             controller: _scroll,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+            padding: EdgeInsets.symmetric(horizontal: 24, vertical: widget.compact ? 20 : 48),
             itemCount: l.lines.length + 1,
             itemBuilder: (_, i) {
               if (i == l.lines.length) {
@@ -904,7 +938,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: AnimatedDefaultTextStyle(
                     duration: const Duration(milliseconds: 200),
-                    style: (l.synced ? t.titleLarge! : t.bodyLarge!).copyWith(
+                    style: (l.synced ? (widget.compact ? t.titleMedium! : t.titleLarge!) : t.bodyLarge!).copyWith(
                       color: !l.synced || active ? cs.onSurface : cs.onSurface.withValues(alpha: 0.45),
                       fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                     ),

@@ -9,6 +9,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/appearance.dart';
+import '../core/settings.dart';
 import '../data/account.dart';
 import '../data/cover_cache.dart';
 import '../data/library.dart';
@@ -88,7 +90,8 @@ class Cover extends ConsumerWidget {
       };
     }
     final box = fill ? SizedBox.expand(child: img) : SizedBox(width: side, height: side, child: img);
-    return circle ? ClipOval(child: box) : ClipRRect(borderRadius: BorderRadius.circular(radius), child: box);
+    if (circle) return ClipOval(child: box);
+    return ClipRRect(borderRadius: BorderRadius.circular(AppLook.of(context).r(radius)), child: box);
   }
 }
 
@@ -327,6 +330,7 @@ class SongTile extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final t = Theme.of(context).textTheme;
     final dim = song.isLookup || !available;
+    final compact = AppLook.of(context).compact;
     return InkWell(
       onTap: !(available || song.isLookup)
           ? null
@@ -342,7 +346,7 @@ class SongTile extends ConsumerWidget {
             },
       onLongPress: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 6, 4, 6),
+        padding: EdgeInsets.fromLTRB(16, compact ? 2 : 6, 4, compact ? 2 : 6),
         child: Row(
           children: [
             if (showTrack)
@@ -359,7 +363,7 @@ class SongTile extends ConsumerWidget {
                   opacity: dim ? 0.55 : 1,
                   child: Cover(
                     song.coverArt,
-                    size: 46,
+                    size: compact ? 38 : 46,
                     radius: 8,
                     icon: Icons.music_note_outlined,
                     artist: song.artist,
@@ -449,9 +453,9 @@ class SongTile extends ConsumerWidget {
 }
 
 class AlbumCard extends ConsumerWidget {
-  const AlbumCard(this.album, {super.key, this.width = 148, this.showArtist = true, this.showYear = false});
+  const AlbumCard(this.album, {super.key, this.width, this.showArtist = true, this.showYear = false});
   final Album album;
-  final double width;
+  final double? width; // default: the card size picked in Settings → Appearance
   final bool showArtist, showYear;
 
   @override
@@ -459,7 +463,7 @@ class AlbumCard extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     return SizedBox(
-      width: width,
+      width: width ?? AppLook.of(context).cardWidth,
       child: GestureDetector(
         onTap: () => context.push('/album/${album.id}'),
         onLongPress: () => showCollectionMenu(
@@ -516,12 +520,21 @@ class AlbumCard extends ConsumerWidget {
 
 /// A titled horizontal row (home, artist pages, discover).
 class Shelf extends StatelessWidget {
-  const Shelf({super.key, required this.title, required this.children, this.onMore, this.height = 206, this.subtitle});
+  const Shelf({
+    super.key,
+    required this.title,
+    required this.children,
+    this.onMore,
+    this.height,
+    this.textHeight = 58,
+    this.subtitle,
+  });
   final String title;
   final String? subtitle;
   final List<Widget> children;
   final VoidCallback? onMore;
-  final double height;
+  final double? height; // default: fits an album card of the chosen size plus [textHeight] for its lines
+  final double textHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -531,7 +544,7 @@ class Shelf extends StatelessWidget {
       children: [
         SectionTitle(title, subtitle: subtitle, onMore: onMore),
         SizedBox(
-          height: height,
+          height: height ?? AppLook.of(context).cardWidth + textHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -597,93 +610,120 @@ class MiniPlayer extends ConsumerWidget {
     final frac = pos == null || pos.duration.inMilliseconds == 0
         ? 0.0
         : (pos.position.inMilliseconds / pos.duration.inMilliseconds).clamp(0.0, 1.0);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-      child: Material(
-        color: cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => context.push('/player'),
-          child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
-                child: Row(
-                  children: [
-                    Hero(
-                      tag: 'cover',
-                      child: Cover(
-                        song?.coverArt ?? '',
-                        size: 42,
-                        radius: 8,
-                        icon: Icons.music_note_outlined,
-                        artist: song?.artist ?? '',
-                        album: song?.album ?? '',
-                      ),
+    final look = AppLook.of(context);
+    final style = look.miniPlayer;
+    final flat = style == MiniPlayerStyle.flat;
+    final slim = style == MiniPlayerStyle.slim;
+    final progress = LinearProgressIndicator(
+      value: frac,
+      minHeight: 2,
+      backgroundColor: cs.onSurface.withValues(alpha: 0.08),
+    );
+    final bar = Material(
+      // flat: a full-width strip that sits on the tabs; else a floating card
+      color: flat ? cs.surfaceContainer : cs.surfaceContainerHigh,
+      borderRadius: flat ? null : BorderRadius.circular(look.r(slim ? 12 : 16)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => context.push('/player'),
+        child: Stack(
+          children: [
+            Padding(
+              padding: slim ? const EdgeInsets.fromLTRB(6, 4, 2, 4) : EdgeInsets.fromLTRB(flat ? 12 : 8, 8, 4, 8),
+              child: Row(
+                children: [
+                  Hero(
+                    tag: 'cover',
+                    child: Cover(
+                      song?.coverArt ?? '',
+                      size: slim ? 34 : 42,
+                      radius: slim ? 6 : 8,
+                      icon: Icons.music_note_outlined,
+                      artist: song?.artist ?? '',
+                      album: song?.album ?? '',
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onHorizontalDragEnd: (d) {
-                          final v = d.primaryVelocity ?? 0;
-                          if (v < -300) audioHandler.skipToNext();
-                          if (v > 300) audioHandler.skipToPrevious();
-                        },
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
-                            Text(
-                              item.artist ?? '',
+                  ),
+                  SizedBox(width: slim ? 10 : 12),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onHorizontalDragEnd: (d) {
+                        final v = d.primaryVelocity ?? 0;
+                        if (v < -300) audioHandler.skipToNext();
+                        if (v > 300) audioHandler.skipToPrevious();
+                      },
+                      child: slim
+                          // slim: title and artist on one line
+                          ? Text.rich(
+                              TextSpan(
+                                text: item.title,
+                                style: t.titleSmall,
+                                children: [
+                                  if ((item.artist ?? '').isNotEmpty)
+                                    TextSpan(
+                                      text: '  ·  ${item.artist}',
+                                      style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                                    ),
+                                ],
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
+                                Text(
+                                  item.artist ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
                     ),
-                    if (song != null && !isPodcastId(song.id))
-                      IconButton(
-                        icon: Icon(
-                          song.starred ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                          color: song.starred ? cs.primary : null,
-                        ),
-                        onPressed: () => toggleStarSong(context, ref, song),
+                  ),
+                  if (!slim && song != null && !isPodcastId(song.id))
+                    IconButton(
+                      icon: Icon(
+                        song.starred ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        color: song.starred ? cs.primary : null,
                       ),
-                    loading
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5)),
-                          )
-                        : IconButton(
-                            iconSize: 30,
-                            icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
-                            onPressed: playing ? audioHandler.pause : audioHandler.play,
+                      onPressed: () => toggleStarSong(context, ref, song),
+                    ),
+                  loading
+                      ? Padding(
+                          padding: EdgeInsets.all(slim ? 9 : 12),
+                          child: const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
                           ),
-                  ],
-                ),
+                        )
+                      : IconButton(
+                          iconSize: slim ? 26 : 30,
+                          visualDensity: slim ? VisualDensity.compact : null,
+                          icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                          onPressed: playing ? audioHandler.pause : audioHandler.play,
+                        ),
+                ],
               ),
+            ),
+            if (flat)
+              Positioned(left: 0, right: 0, top: 0, child: progress)
+            else
               Positioned(
                 left: 12,
                 right: 12,
                 bottom: 0,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: LinearProgressIndicator(
-                    value: frac,
-                    minHeight: 2,
-                    backgroundColor: cs.onSurface.withValues(alpha: 0.08),
-                  ),
-                ),
+                child: ClipRRect(borderRadius: BorderRadius.circular(2), child: progress),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );
+    if (flat) return bar;
+    return Padding(padding: const EdgeInsets.fromLTRB(8, 0, 8, 6), child: bar);
   }
 }
 

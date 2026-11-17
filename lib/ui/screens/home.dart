@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/appearance.dart';
 import '../../core/settings.dart';
 import '../../data/ai.dart';
 import '../../data/jam.dart';
@@ -28,7 +29,8 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sections = ref.watch(settingsProvider.select((s) => s.homeSections));
+    final set = ref.watch(settingsProvider);
+    final sections = set.homeSections;
     final offline = ref.watch(offlineProvider);
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
@@ -46,14 +48,16 @@ class HomeScreen extends ConsumerWidget {
             slivers: [
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 8, 4),
+                  padding: EdgeInsets.fromLTRB(20, set.showGreeting ? 20 : 4, 8, set.showGreeting ? 4 : 0),
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          _greeting(),
-                          style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.8),
-                        ),
+                        child: set.showGreeting
+                            ? Text(
+                                _greeting(),
+                                style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.8),
+                              )
+                            : const SizedBox.shrink(),
                       ),
                       if (offline)
                         Padding(
@@ -74,8 +78,8 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
               ),
-              const SliverToBoxAdapter(child: _QuickPills()),
-              const SliverToBoxAdapter(child: _JumpBackIn()),
+              if (set.showQuickPills) const SliverToBoxAdapter(child: _QuickPills()),
+              if (set.showJumpBackIn) const SliverToBoxAdapter(child: _JumpBackIn()),
               const SliverToBoxAdapter(child: NewEpisodesShelf()),
               for (final s in sections)
                 SliverToBoxAdapter(
@@ -193,7 +197,7 @@ class _JumpBackIn extends ConsumerWidget {
           for (final a in albums)
             Material(
               color: cs.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(AppLook.of(context).r(10)),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: () => context.push('/album/${a.id}'),
@@ -261,7 +265,7 @@ class _PlaylistShelf extends ConsumerWidget {
         children: [
           for (final p in l)
             SizedBox(
-              width: 148,
+              width: AppLook.of(context).cardWidth,
               child: GestureDetector(
                 onTap: () => context.push('/playlist/${p.id}'),
                 child: Column(
