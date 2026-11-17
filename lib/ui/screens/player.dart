@@ -388,7 +388,14 @@ class _Titles extends ConsumerWidget {
                 ),
                 const SizedBox(height: 2),
                 GestureDetector(
-                  onTap: s == null || s.artistId.isEmpty ? null : () => context.push('/artist/${s.artistId}'),
+                  // a song's artist, or for an episode the show and who makes it
+                  onTap: s == null
+                      ? null
+                      : isPodcastId(s.id)
+                      ? (s.albumId.isEmpty ? null : () => context.push(podcasterPath(show: s.albumId)))
+                      : s.artistId.isEmpty
+                      ? null
+                      : () => context.push('/artist/${s.artistId}'),
                   child: Text(
                     item.artist ?? '',
                     maxLines: 1,

@@ -112,6 +112,27 @@ void refreshPodcastViews(WidgetRef ref, [String? channelId]) {
   if (channelId != null) ref.invalidate(podcastProvider(channelId));
 }
 
+/// The podcaster page for a show's maker: [name] when known, otherwise worked out from the show.
+String podcasterPath({String name = '', String show = ''}) => Uri(
+  path: '/podcaster',
+  queryParameters: {if (name.isNotEmpty) 'name': name, if (show.isNotEmpty) 'show': show},
+).toString();
+
+/// Follows a show on your server by its feed address. True when it worked.
+Future<bool> followPodcast(BuildContext context, WidgetRef ref, String url, String name) async {
+  final c = ref.read(clientProvider);
+  if (c == null) return false;
+  try {
+    await c.subscribePodcast(url);
+    refreshPodcastViews(ref);
+    if (context.mounted) toast(context, 'Following $name. New episodes download to your server.');
+    return true;
+  } catch (e) {
+    if (context.mounted) toast(context, "Couldn't add it: $e");
+    return false;
+  }
+}
+
 String _ago(DateTime? d) {
   if (d == null) return '';
   final days = DateTime.now().difference(d).inDays;
@@ -277,7 +298,25 @@ class _PodcastScreenState extends ConsumerState<PodcastScreen> {
                         children: [
                           Text(ch.title, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
                           if (ch.author.isNotEmpty)
-                            Text(ch.author, style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+                            InkWell(
+                              borderRadius: BorderRadius.circular(6),
+                              onTap: () => context.push(podcasterPath(name: ch.author, show: ch.id)),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        ch.author,
+                                        style: t.bodyMedium?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                    Icon(Icons.chevron_right_rounded, size: 18, color: cs.primary),
+                                  ],
+                                ),
+                              ),
+                            ),
                           const SizedBox(height: 4),
                           Text(
                             [
@@ -386,8 +425,28 @@ class EpisodeTile extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      [_ago(e.published), if (showCover) e.show].where((x) => x.isNotEmpty).join(' · '),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(text: _ago(e.published)),
+                          if (showCover && e.show.isNotEmpty) ...[
+                            if (e.published != null) const TextSpan(text: ' · '),
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.baseline,
+                              baseline: TextBaseline.alphabetic,
+                              child: GestureDetector(
+                                onTap: () => context.push(podcasterPath(name: e.author, show: e.channelId)),
+                                child: Text(
+                                  e.show,
+                                  style: t.labelSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: t.labelSmall?.copyWith(color: cs.onSurfaceVariant),
                     ),
                     const SizedBox(height: 2),
@@ -476,6 +535,7 @@ Future<void> showEpisodeMenu(BuildContext context, WidgetRef ref, PodcastEpisode
       }
 
       final c = ref.read(clientProvider);
+      final atPath = GoRouter.of(context).routerDelegate.currentConfiguration.uri.path;
       return SafeArea(
         child: SingleChildScrollView(
           child: Column(
@@ -486,6 +546,24 @@ Future<void> showEpisodeMenu(BuildContext context, WidgetRef ref, PodcastEpisode
                 subtitle: Text(e.show),
               ),
               const Divider(height: 1),
+              if (e.channelId.isNotEmpty && atPath != '/podcast/${e.channelId}')
+                ListTile(
+                  leading: const Icon(Icons.podcasts_rounded),
+                  title: const Text('Go to show'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    context.push('/podcast/${e.channelId}');
+                  },
+                ),
+              if (e.author.isNotEmpty || e.channelId.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(e.author.isNotEmpty ? 'About ${e.author}' : 'About the show'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    context.push(podcasterPath(name: e.author, show: e.channelId));
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.play_arrow_rounded),
                 title: Text(e.inProgress ? 'Resume' : 'Play'),
@@ -590,19 +668,10 @@ class _AddPodcastScreenState extends ConsumerState<AddPodcastScreen> {
   }
 
   Future<void> _add(String url, String name) async {
-    final c = ref.read(clientProvider);
-    if (c == null) return;
     setState(() => _adding.add(url));
-    try {
-      await c.subscribePodcast(url);
-      refreshPodcastViews(ref);
-      if (mounted) setState(() => _added.add(url));
-      if (mounted) toast(context, 'Following $name. New episodes download to your server.');
-    } catch (e) {
-      if (mounted) toast(context, "Couldn't add it: $e");
-    } finally {
-      if (mounted) setState(() => _adding.remove(url));
-    }
+    final ok = await followPodcast(context, ref, url, name);
+    if (mounted) setState(() => _adding.remove(url));
+    if (ok && mounted) setState(() => _added.add(url));
   }
 
   @override

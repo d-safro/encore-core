@@ -13,6 +13,7 @@ import 'ui/screens/browse.dart';
 import 'ui/screens/discover.dart';
 import 'ui/screens/home.dart';
 import 'ui/screens/library.dart';
+import 'ui/screens/podcaster.dart';
 import 'ui/screens/podcasts.dart';
 import 'ui/screens/login.dart';
 import 'ui/screens/player.dart';
@@ -115,6 +116,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/podcast/:id',
             builder: (_, s) => PodcastScreen(id: s.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: '/podcaster',
+            builder: (_, s) =>
+                PodcasterScreen(name: s.uri.queryParameters['name'] ?? '', showId: s.uri.queryParameters['show'] ?? ''),
           ),
           GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
           GoRoute(path: '/equalizer', builder: (_, _) => const EqualizerScreen()),
