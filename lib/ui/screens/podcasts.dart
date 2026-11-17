@@ -298,29 +298,40 @@ class _PodcastScreenState extends ConsumerState<PodcastScreen> {
                         children: [
                           Text(ch.title, style: t.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
                           if (ch.author.isNotEmpty)
-                            InkWell(
-                              borderRadius: BorderRadius.circular(6),
+                            // its own button for screen readers ("About …"), not read as part of the header
+                            Semantics(
+                              container: true,
+                              button: true,
+                              label: 'About ${ch.author}',
+                              excludeSemantics: true,
                               onTap: () => context.push(podcasterPath(name: ch.author, show: ch.id)),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 2),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        ch.author,
-                                        style: t.bodyMedium?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(6),
+                                onTap: () => context.push(podcasterPath(name: ch.author, show: ch.id)),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          ch.author,
+                                          style: t.bodyMedium?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
+                                        ),
                                       ),
-                                    ),
-                                    Icon(Icons.chevron_right_rounded, size: 18, color: cs.primary),
-                                  ],
+                                      Icon(Icons.chevron_right_rounded, size: 18, color: cs.primary),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           const SizedBox(height: 4),
                           Text(
                             [
-                              '${ch.episodeCount > ch.episodes.length ? ch.episodeCount : ch.episodes.length} episodes',
+                              plural(
+                                ch.episodeCount > ch.episodes.length ? ch.episodeCount : ch.episodes.length,
+                                'episode',
+                              ),
                               if (ch.unplayed > 0) '${ch.unplayed} new',
                             ].join(' · '),
                             style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),

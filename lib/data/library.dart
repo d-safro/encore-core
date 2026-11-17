@@ -338,7 +338,7 @@ class SyncNotifier extends Notifier<SyncState> {
       await ref
           .read(dbProvider)
           .replaceLibrary(artists: artists, albums: albums, songs: songs, playlists: playlists, playlistSongs: plSongs);
-      state = SyncState(message: '${songs.length} songs, ${albums.length} albums saved', last: DateTime.now());
+      state = SyncState(message: '${songs.length} ${songs.length == 1 ? 'song' : 'songs'}, ${albums.length} ${albums.length == 1 ? 'album' : 'albums'} saved', last: DateTime.now());
       ref.read(downloadsProvider.notifier).refreshPins();
     } catch (e) {
       state = SyncState(message: 'Sync failed: $e', last: state.last);

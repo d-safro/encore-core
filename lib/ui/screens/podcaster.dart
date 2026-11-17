@@ -214,7 +214,7 @@ class _PodcasterScreenState extends ConsumerState<PodcasterScreen> {
                         title: Text(p.title, style: t.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                         subtitle: Text(
                           [
-                            if (p.episodeCount > 0) '${p.episodeCount} episodes',
+                            if (p.episodeCount > 0) plural(p.episodeCount, 'episode'),
                             if (p.unplayed > 0) '${p.unplayed} new',
                           ].join(' · '),
                         ),
@@ -274,7 +274,7 @@ class _PodcasterScreenState extends ConsumerState<PodcasterScreen> {
       ),
       title: Text(s.title, style: t.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(
-        [if (s.genre.isNotEmpty) s.genre, if (s.episodes != null) '${s.episodes} episodes'].join(' · '),
+        [if (s.genre.isNotEmpty) s.genre, if (s.episodes != null) plural(s.episodes!, 'episode')].join(' · '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),

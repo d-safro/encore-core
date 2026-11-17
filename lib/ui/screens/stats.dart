@@ -189,7 +189,7 @@ class _Body extends StatelessWidget {
                         Cover(a.coverArt, size: 104, circle: true, icon: Icons.person, artist: a.name, artistImage: true),
                         const SizedBox(height: 8),
                         Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
-                        Text('$plays plays', style: t.bodySmall),
+                        Text(plural(plays, 'play'), style: t.bodySmall),
                       ],
                     ),
                   ),

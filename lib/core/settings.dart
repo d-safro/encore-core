@@ -270,7 +270,7 @@ const downloadLevels = [
 }
 
 /// Shown in Settings. Keep in step with `version:` in pubspec.yaml.
-const appVersion = '1.7.6';
+const appVersion = '1.7.7';
 
 class SettingsNotifier extends Notifier<Settings> {
   static const _key = 'settings';

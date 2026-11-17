@@ -815,7 +815,10 @@ class DownloadToggle extends ConsumerWidget {
 }
 
 /// "1 song" / "12 songs".
-String nSongs(int n) => n == 1 ? '1 song' : '$n songs';
+String nSongs(int n) => plural(n, 'song');
+
+/// "1 album" / "3 albums" (or [many] when it isn't just an s).
+String plural(int n, String one, [String? many]) => n == 1 ? '1 $one' : '$n ${many ?? '${one}s'}';
 
 /// Encore's logo: a record whose label is a lowercase "e". Drawn in code, so it's sharp at any size
 /// (the same geometry as the launcher icon: record r 29.5, grooves every 3, label r 17.5, e r 9.5).

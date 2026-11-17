@@ -763,7 +763,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${list.length} songs on this phone', style: t.headlineSmall),
+                    Text('${nSongs(list.length)} on this phone', style: t.headlineSmall),
                     Text(
                       '${_gb(bytes)} used${dl.progress.isNotEmpty ? ' · ${dl.progress.length} downloading' : ''}'
                       '${ref.watch(settingsProvider).downloadWifiOnly ? ' · Wi-Fi only' : ''}',

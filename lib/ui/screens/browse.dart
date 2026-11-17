@@ -167,7 +167,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                     child: ListTile(
                       leading: const Icon(Icons.cloud_download_outlined),
                       title: Text(
-                        a.isLookup ? 'This album isn\'t in your library' : '$missing songs aren\'t in your library',
+                        a.isLookup ? 'This album isn\'t in your library' : (missing == 1 ? '1 song isn\'t in your library' : '$missing songs aren\'t in your library'),
                       ),
                       subtitle: const Text('Download them from Soulseek through your server'),
                       trailing: FilledButton.tonal(
@@ -660,7 +660,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                 lines: [
                   if (p.comment.isNotEmpty) Text(p.comment, style: Theme.of(context).textTheme.bodyMedium),
                   Text(
-                    '${p.songs.length} songs · ${formatDuration(p.duration ?? p.songs.fold<int>(0, (n, s) => n + (s.duration ?? 0)))}'
+                    '${nSongs(p.songs.length)} · ${formatDuration(p.duration ?? p.songs.fold<int>(0, (n, s) => n + (s.duration ?? 0)))}'
                     '${pending > 0 ? ' · $pending waiting to download' : ''}',
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),

@@ -272,7 +272,7 @@ class _ArtistsTab extends ConsumerWidget {
             return ListTile(
               leading: Cover(a.coverArt, size: 48, circle: true, icon: Icons.person),
               title: Text(a.name),
-              subtitle: a.albumCount != null ? Text('${a.albumCount} albums') : null,
+              subtitle: a.albumCount != null ? Text(plural(a.albumCount!, 'album')) : null,
               trailing: a.starred ? const Icon(Icons.favorite, size: 18) : null,
               onTap: () => context.push('/artist/${a.id}'),
             );
@@ -431,7 +431,7 @@ class _GenresTab extends ConsumerWidget {
               leading: const Icon(Icons.label_outline),
               title: Text(g.name),
               subtitle: Text(
-                [if (g.albumCount > 0) '${g.albumCount} albums', if (g.songCount > 0) nSongs(g.songCount)].join(' · '),
+                [if (g.albumCount > 0) plural(g.albumCount, 'album'), if (g.songCount > 0) nSongs(g.songCount)].join(' · '),
               ),
               onTap: () => context.push('/genre/${Uri.encodeComponent(g.name)}'),
             ),
