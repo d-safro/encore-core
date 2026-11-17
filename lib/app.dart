@@ -7,6 +7,7 @@ import 'core/settings.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
 import 'data/library.dart';
+import 'data/local_link.dart';
 import 'data/usb_link.dart';
 import 'playback/handler.dart';
 import 'ui/screens/browse.dart';
@@ -283,6 +284,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       _checkEpisodes();
       _syncIfStale();
       ref.read(usbLinkProvider.notifier).check(); // plugged into the server's computer meanwhile?
+      ref.read(localLinkProvider.notifier).check(); // or home, on the server's network?
       ref.read(downloadsProvider.notifier).resume(); // carry on from where they stopped
     }
   }

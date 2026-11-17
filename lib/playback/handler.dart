@@ -154,6 +154,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     container.listen(downloadsProvider.select((d) => d.files.length), (prev, next) {
       if (next > (prev ?? 0)) useDownloadedFiles();
     });
+    // a USB cable to the server's computer plugged in or out: queued songs stream the new way
+    container.listen(clientProvider.select((c) => c?.base), (prev, next) {
+      if (prev != null && next != null && prev != next) refreshStreams();
+    });
     await _restoreQueue();
   }
 
@@ -718,6 +722,29 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }
     } catch (_) {
       // the queue changed underneath; the next failure tries again
+    } finally {
+      _rearranging = false;
+    }
+  }
+
+  /// The way to the server changed (a USB cable plugged in or out): songs queued to stream are set up again
+  /// with the new address. The playing one carries on from where it is (unplugged, its old address is gone).
+  Future<void> refreshStreams() async {
+    final cur = player.currentIndex;
+    final pos = player.position;
+    _rearranging = true;
+    try {
+      for (var i = 0; i < _songs.length; i++) {
+        final s = _songs[i];
+        if (_onPhone.contains(s.id)) continue; // plays from the phone either way
+        final wasPlaying = i == cur && player.playing;
+        await player.removeAudioSourceAt(i);
+        await player.insertAudioSource(i, _source(s));
+        if (i == cur) await player.seek(pos, index: i);
+        if (wasPlaying) player.play();
+      }
+    } catch (_) {
+      // the queue changed underneath; a song that then fails is skipped as usual
     } finally {
       _rearranging = false;
     }

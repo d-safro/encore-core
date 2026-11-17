@@ -24,10 +24,15 @@ class Credentials {
 
 /// Subsonic / OpenSubsonic API client. Token auth (md5(password + salt)), JSON responses.
 class SubsonicClient {
-  SubsonicClient(this.creds, {this.clientName = 'Encore', http.Client? httpClient})
-    : _http = httpClient ?? IOClient(HttpClient()..idleTimeout = const Duration(minutes: 2));
+  SubsonicClient(this.creds, {this.clientName = 'Encore', http.Client? httpClient, String? via})
+    : base = via ?? creds.base,
+      _http = httpClient ?? IOClient(HttpClient()..idleTimeout = const Duration(minutes: 2));
 
   final Credentials creds;
+
+  /// Where requests go: the server's address, or another way to the same server ([via]), e.g. through a USB
+  /// cable. Cache keys and saved accounts keep using [Credentials.base], so nothing is downloaded twice.
+  final String base;
   final String clientName;
   final http.Client _http;
   static const apiVersion = '1.16.1';
@@ -45,7 +50,7 @@ class SubsonicClient {
       if (v == null) return;
       q[k] = v is List ? v.map((e) => e.toString()).toList() : v.toString();
     });
-    return Uri.parse('${creds.base}/rest/$method').replace(queryParameters: q);
+    return Uri.parse('$base/rest/$method').replace(queryParameters: q);
   }
 
   Future<Map<String, dynamic>> call(
@@ -426,7 +431,7 @@ class SubsonicClient {
 
   Future<dynamic> _native(String method, String path, [Object? body]) async {
     Future<http.Response> send() {
-      final u = Uri.parse('${creds.base}$path');
+      final u = Uri.parse('$base$path');
       final h = {'Content-Type': 'application/json', if (_ndToken != null) 'x-nd-authorization': 'Bearer $_ndToken'};
       final b = body == null ? null : jsonEncode(body);
       return switch (method) {
@@ -450,7 +455,7 @@ class SubsonicClient {
   Future<void> _nativeLogin() async {
     final r = await _http
         .post(
-          Uri.parse('${creds.base}/auth/login'),
+          Uri.parse('$base/auth/login'),
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'username': creds.username, 'password': creds.password}),
         )
@@ -571,7 +576,7 @@ class SubsonicClient {
   Uri stableCoverUrl(String coverArt, {int size = 512}) {
     final salt = md5.convert(utf8.encode('${creds.username}|$coverArt')).toString().substring(0, 12);
     final token = md5.convert(utf8.encode(creds.password + salt)).toString();
-    return Uri.parse('${creds.base}/rest/getCoverArt').replace(
+    return Uri.parse('$base/rest/getCoverArt').replace(
       queryParameters: {
         'u': creds.username,
         't': token,

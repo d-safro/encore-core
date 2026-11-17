@@ -22,6 +22,8 @@ import '../actions.dart';
 import '../update.dart';
 import '../download_quality.dart';
 import '../usb_card.dart';
+import '../../data/local_link.dart';
+import '../../data/usb_link.dart';
 import '../widgets.dart';
 import 'login.dart';
 
@@ -59,6 +61,7 @@ class SettingsScreen extends ConsumerWidget {
               child: const Text('Sign out'),
             ),
           ),
+          const _HomeAddress(),
           const _OtherServers(),
           SwitchListTile(
             secondary: const Icon(Icons.cloud_off_outlined),
@@ -1035,5 +1038,75 @@ class _LyricsSourcesDialogState extends ConsumerState<_LyricsSourcesDialog> {
         ),
       ],
     );
+  }
+}
+
+/// The server's address on your home network: on the same Wi-Fi, Encore goes there directly (no VPN).
+class _HomeAddress extends ConsumerWidget {
+  const _HomeAddress();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final address = ref.watch(localAddressProvider);
+    final home = ref.watch(localLinkProvider);
+    final cable = ref.watch(usbLinkProvider);
+    final via = cable ? 'Connected by USB cable' : (home ? 'Connected on your home network' : null);
+    return ListTile(
+      leading: Icon(cable ? Icons.usb_rounded : Icons.home_outlined),
+      title: const Text('Address on your home network'),
+      subtitle: Text(
+        address.isEmpty
+            ? 'Optional. On the same Wi-Fi as your server, music goes straight there, no VPN needed'
+            : [address, ?via].join(' · '),
+      ),
+      onTap: () => _edit(context, ref, address),
+    );
+  }
+
+  Future<void> _edit(BuildContext context, WidgetRef ref, String current) async {
+    final text = TextEditingController(text: current);
+    final result = await showDialog<String>(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Address on your home network'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'The address your server answers on at home, e.g. https://lan-music.example.com:4541 or '
+              'http://192.168.1.20:4533. Encore uses it whenever it answers, and the main address otherwise.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: text,
+              autofocus: true,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: const InputDecoration(hintText: 'https://…', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          if (current.isNotEmpty) TextButton(onPressed: () => Navigator.pop(ctx, ''), child: const Text('Remove')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, text.text), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (result == null) return;
+    final creds = ref.read(accountProvider).value;
+    await ref.read(localAddressProvider.notifier).set(result);
+    if (result.trim().isEmpty || creds == null || !context.mounted) return;
+    final ok = await LocalLinkNotifier.answers(creds, result);
+    if (!context.mounted) return;
+    toast(
+      context,
+      ok
+          ? 'Your server answers there: Encore uses it on this network'
+          : "Saved. Your server doesn't answer there right now; Encore tries again on Wi-Fi",
+    );
+    ref.read(localLinkProvider.notifier).check();
   }
 }

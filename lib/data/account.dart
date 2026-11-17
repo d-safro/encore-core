@@ -10,6 +10,8 @@ import 'jam.dart';
 import 'library_pins.dart';
 import 'library.dart';
 import 'subsonic.dart';
+import 'local_link.dart';
+import 'usb_link.dart';
 
 const _storage = FlutterSecureStorage();
 
@@ -53,7 +55,7 @@ Future<String> currentDbFile() async {
 /// Settings that belong to one server (its queue, pins, searches, podcasts seen…): put aside when you switch
 /// to another server, and brought back when you switch back.
 const _perServerKeys = {
-  'queue', 'downloadPins', 'downloadQueue', 'libraryPins', 'manualDownloads', 'pendingScrobbles', 'podcastSeen', 'recentSearch',
+  'queue', 'downloadPins', 'downloadQueue', 'localAddress', 'libraryPins', 'manualDownloads', 'pendingScrobbles', 'podcastSeen', 'recentSearch',
   'searchHistory', 'smartShuffle', 'smartShuffleHidden', 'lyricsPicks', 'radioArt', 'jamUrl', 'jamToken', 'podcastDone',
 };
 bool _perServer(String k) =>
@@ -186,7 +188,14 @@ final accountProvider = AsyncNotifierProvider<AccountNotifier, Credentials?>(Acc
 final clientProvider = Provider<SubsonicClient?>((ref) {
   final creds = ref.watch(accountProvider).value;
   if (creds == null) return null;
-  final c = SubsonicClient(creds);
+  // the quickest way there: a USB cable to the server's computer, else its address on the home network,
+  // else the main address (neither of the first two needs Wi-Fi internet or a VPN)
+  final wired = ref.watch(usbLinkProvider);
+  final home = !wired && ref.watch(localLinkProvider);
+  final c = SubsonicClient(
+    creds,
+    via: wired ? UsbLinkNotifier.cableBase(creds) : (home ? ref.watch(localAddressProvider) : null),
+  );
   ref.onDispose(c.close);
   return c;
 });

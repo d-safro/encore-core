@@ -16,6 +16,7 @@ import 'account.dart';
 import 'db.dart';
 import 'models.dart';
 import 'song_download.dart';
+import 'local_link.dart';
 import 'usb_link.dart';
 import 'subsonic.dart';
 
@@ -109,6 +110,8 @@ final serverReachableProvider = NotifierProvider<ServerReachNotifier, bool>(Serv
 /// Offline = switched to offline mode in settings, no network at all, or the server can't be reached.
 final offlineProvider = Provider<bool>((ref) {
   if (ref.watch(settingsProvider.select((s) => s.offlineMode))) return true;
+  if (ref.watch(usbLinkProvider)) return false; // the server answers through the USB cable
+  if (ref.watch(localLinkProvider)) return false; // or on the home network
   if (ref.watch(noNetworkProvider)) return true;
   return !ref.watch(serverReachableProvider);
 });
