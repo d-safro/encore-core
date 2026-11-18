@@ -48,7 +48,7 @@ class Settings {
   final int crossfade; // seconds the end of a song overlaps the next (0 = off)
   final bool crossfadeAlbums; // also between songs of an album played in order (else those stay gapless)
   final double speed;
-  final bool endlessRadio; // keep the music going with sound-alikes when the queue ends
+  final bool autoplay; // when what you play runs out, keep going with songs like it (see playback/autoplay.dart)
   final bool scrobble;
   final bool syncPlayQueue; // save the queue on the server (continue on another device)
   final bool onlineLyrics; // look online when the server has no lyrics
@@ -96,7 +96,7 @@ class Settings {
     this.crossfade = 0,
     this.crossfadeAlbums = false,
     this.speed = 1.0,
-    this.endlessRadio = false,
+    this.autoplay = true,
     this.scrobble = true,
     this.syncPlayQueue = true,
     this.onlineLyrics = true,
@@ -148,7 +148,7 @@ class Settings {
     'crossfade': crossfade,
     'crossfadeAlbums': crossfadeAlbums,
     'speed': speed,
-    'endlessRadio': endlessRadio,
+    'autoplay': autoplay,
     'scrobble': scrobble,
     'syncPlayQueue': syncPlayQueue,
     'onlineLyrics': onlineLyrics,
@@ -201,7 +201,7 @@ class Settings {
       crossfade: (j['crossfade'] as num?)?.toInt() ?? d.crossfade,
       crossfadeAlbums: j['crossfadeAlbums'] ?? d.crossfadeAlbums,
       speed: (j['speed'] as num?)?.toDouble() ?? d.speed,
-      endlessRadio: j['endlessRadio'] ?? d.endlessRadio,
+      autoplay: j['autoplay'] ?? d.autoplay,
       scrobble: j['scrobble'] ?? d.scrobble,
       syncPlayQueue: j['syncPlayQueue'] ?? d.syncPlayQueue,
       onlineLyrics: j['onlineLyrics'] ?? d.onlineLyrics,

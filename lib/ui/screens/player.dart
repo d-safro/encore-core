@@ -181,6 +181,8 @@ class _TopBar extends ConsumerWidget {
         ? 'Internet radio · ${station.name}'
         : radio != null
         ? 'Song radio · ${radio.title}'
+        : s != null && audioHandler.isAutoplay(s.id)
+        ? autoplayLabel()
         : (s?.album ?? '');
     final quality = s == null
         ? ''
@@ -1136,7 +1138,8 @@ class QueueScreen extends ConsumerWidget {
             IconButton(
               tooltip: 'Save as playlist',
               icon: const Icon(Icons.playlist_add),
-              onPressed: () => addToPlaylist(context, ref, songs),
+              // autoplay's songs aren't yours: they're left out
+              onPressed: () => addToPlaylist(context, ref, songs.where((s) => !audioHandler.isAutoplay(s.id)).toList()),
             ),
           IconButton(
             tooltip: 'Clear',
@@ -1160,12 +1163,13 @@ class QueueScreen extends ConsumerWidget {
                 const Spacer(),
                 Consumer(
                   builder: (ctx, ref, _) {
-                    final on = ref.watch(settingsProvider.select((s) => s.endlessRadio));
+                    final on = ref.watch(settingsProvider.select((s) => s.autoplay));
                     return FilterChip(
                       avatar: const Icon(Icons.all_inclusive, size: 16),
-                      label: const Text('Endless'),
+                      label: const Text('Autoplay'),
+                      tooltip: 'When what you play runs out, keep going with songs like it',
                       selected: on,
-                      onSelected: (v) => ref.read(settingsProvider.notifier).update({'endlessRadio': v}),
+                      onSelected: (v) => ref.read(settingsProvider.notifier).update({'autoplay': v}),
                     );
                   },
                 ),
@@ -1182,7 +1186,10 @@ class QueueScreen extends ConsumerWidget {
               },
               itemBuilder: (_, i) {
                 final s = songs[i];
-                return Dismissible(
+                // autoplay's songs come under their own heading, apart from what you chose
+                final auto = audioHandler.isAutoplay(s.id);
+                final heading = auto && (i == 0 || !audioHandler.isAutoplay(songs[i - 1].id));
+                final tile = Dismissible(
                   key: ValueKey('q-$i-${s.id}'),
                   direction: DismissDirection.endToStart,
                   background: Container(
@@ -1204,10 +1211,60 @@ class QueueScreen extends ConsumerWidget {
                     ),
                   ),
                 );
+                if (!heading) return tile;
+                return Column(
+                  key: ValueKey('qh-$i-${s.id}'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [_AutoplayHeading(dim: i < current), tile],
+                );
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// "Autoplay · Songs like …" (the player's top line while autoplay plays).
+String autoplayLabel() {
+  final seed = audioHandler.autoplaySeed;
+  return seed == null ? 'Autoplay' : 'Autoplay · Songs like ${seed.title}';
+}
+
+/// The heading over autoplay's songs in the queue.
+class _AutoplayHeading extends StatelessWidget {
+  const _AutoplayHeading({this.dim = false});
+  final bool dim;
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final seed = audioHandler.autoplaySeed;
+    return Opacity(
+      opacity: dim ? 0.5 : 1,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+        child: Row(
+          children: [
+            Icon(Icons.all_inclusive, size: 18, color: cs.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Autoplay', style: t.titleSmall),
+                  Text(
+                    seed == null ? 'Songs like what you just played' : 'Songs like ${seed.title} and what you just played',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

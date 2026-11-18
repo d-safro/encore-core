@@ -16,6 +16,8 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import '../../data/playlist_covers.dart';
+import 'playlist_edit.dart';
 import 'smart_playlist.dart';
 import 'radio.dart';
 
@@ -48,11 +50,13 @@ class _Header extends StatelessWidget {
     this.icon = Icons.album_outlined,
     this.artist = '',
     this.album = '',
+    this.onCoverTap,
   });
   final String cover, title, artist, album;
   final List<Widget> lines;
   final bool circle;
   final IconData icon;
+  final VoidCallback? onCoverTap; // e.g. change a playlist's picture
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
@@ -70,21 +74,28 @@ class _Header extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Center(
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: circle ? BoxShape.circle : BoxShape.rectangle,
-                    borderRadius: circle ? null : BorderRadius.circular(18),
-                    boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 40, offset: Offset(0, 16))],
-                  ),
-                  child: Cover(
-                    cover,
-                    size: size,
-                    radius: 18,
-                    circle: circle,
-                    icon: icon,
-                    artist: artist,
-                    album: album,
-                    artistImage: circle,
+                child: GestureDetector(
+                  onTap: onCoverTap,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: circle ? BoxShape.circle : BoxShape.rectangle,
+                      borderRadius: circle ? null : BorderRadius.circular(18),
+                      boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 40, offset: Offset(0, 16))],
+                    ),
+                    child: Semantics(
+                      button: onCoverTap != null,
+                      label: onCoverTap != null ? 'Change picture' : null,
+                      child: Cover(
+                        cover,
+                        size: size,
+                        radius: 18,
+                        circle: circle,
+                        icon: icon,
+                        artist: artist,
+                        album: album,
+                        artistImage: circle,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -577,13 +588,10 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                         _editing = true;
                         _edit = [...p.songs];
                       });
-                    case 'rename':
-                      final n = await askText(context, 'Rename playlist', 'Name', initial: p.name);
-                      if (n != null && n.isNotEmpty) {
-                        await c.updatePlaylist(p.id, name: n);
-                        ref.invalidate(playlistProvider(widget.id));
-                        ref.invalidate(playlistsProvider);
-                      }
+                    case 'details':
+                      await showPlaylistDetails(context, ref, p);
+                    case 'picture':
+                      await showPlaylistPicture(context, ref, p);
                     case 'menu':
                       showCollectionMenu(
                         context,
@@ -595,6 +603,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                     case 'delete':
                       if (await confirm(context, 'Delete "${p.name}"?', 'This deletes the playlist on your server.')) {
                         await c.deletePlaylist(p.id);
+                        await ref.read(playlistCoversProvider.notifier).forget(p.id);
                         ref.invalidate(playlistsProvider);
                         if (context.mounted) context.pop();
                       }
@@ -605,12 +614,12 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'menu', child: Text('Pin, queue, download…')),
+                const PopupMenuItem(value: 'details', child: Text('Edit name and description')),
+                const PopupMenuItem(value: 'picture', child: Text('Change picture')),
                 if (ref.read(playlistRulesProvider(widget.id)).value != null)
                   const PopupMenuItem(value: 'rules', child: Text('Edit rules'))
-                else ...const [
-                  PopupMenuItem(value: 'edit', child: Text('Reorder / remove songs')),
-                  PopupMenuItem(value: 'rename', child: Text('Rename')),
-                ],
+                else
+                  const PopupMenuItem(value: 'edit', child: Text('Reorder / remove songs')),
                 const PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
             ),
@@ -648,19 +657,28 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
         }
         final songs = p.songs.where((s) => !s.isLookup).toList();
         final pending = p.songs.length - songs.length;
+        final mine = ref.watch(playlistCoversProvider)[p.id];
+        if (coverIsStale(mine, p.coverArt)) {
+          // the server has the new picture now: the phone's copy can go
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => ref.read(playlistCoversProvider.notifier).tidy(p.id, p.coverArt),
+          );
+        }
         pollIf(pending > 0, () => ref.invalidate(playlistProvider(widget.id)));
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(playlistProvider(widget.id)),
           child: LazyListView(
             header: [
               _Header(
-                cover: p.coverArt,
+                cover: shownPlaylistCover(mine, p.coverArt),
                 title: p.name,
                 icon: Icons.queue_music_rounded,
+                onCoverTap: online ? () => showPlaylistPicture(context, ref, p) : null,
                 lines: [
                   if (p.comment.isNotEmpty) Text(p.comment, style: Theme.of(context).textTheme.bodyMedium),
                   Text(
                     '${nSongs(p.songs.length)} · ${formatDuration(p.duration ?? p.songs.fold<int>(0, (n, s) => n + (s.duration ?? 0)))}'
+                    '${online ? (p.public ? ' · Public' : ' · Private') : ''}'
                     '${pending > 0 ? ' · $pending waiting to download' : ''}',
                     style: Theme.of(context).textTheme.bodySmall
                         ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),

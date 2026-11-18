@@ -7,6 +7,7 @@ import '../../core/settings.dart';
 import '../../data/library.dart';
 import '../../data/library_pins.dart';
 import '../../data/models.dart';
+import '../../data/playlist_covers.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
@@ -380,6 +381,7 @@ class _PlaylistsTab extends ConsumerWidget {
             )
           : null,
       body: AsyncView(ref.watch(playlistsProvider), (List<Playlist> lists) {
+        final covers = ref.watch(playlistCoversProvider);
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(playlistsProvider),
           child: ListView(
@@ -396,7 +398,11 @@ class _PlaylistsTab extends ConsumerWidget {
                     pin: LibraryPin('playlist', p.id, p.name, cover: p.coverArt, subtitle: 'Playlist'),
                   ), child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  leading: Cover(p.coverArt, size: 54, icon: Icons.queue_music_rounded),
+                  leading: Cover(
+                    shownPlaylistCover(covers[p.id], p.coverArt),
+                    size: 54,
+                    icon: Icons.queue_music_rounded,
+                  ),
                   title: Text(p.name, style: Theme.of(context).textTheme.titleSmall),
                   subtitle: Row(
                     children: [
@@ -496,6 +502,14 @@ class _LikedTile extends ConsumerWidget {
   }
 }
 
+/// A pinned playlist's cover as the server has it now (the pin keeps the one it had when pinned).
+String _serverCover(WidgetRef ref, LibraryPin pin) {
+  for (final p in ref.watch(playlistsProvider).value ?? const <Playlist>[]) {
+    if (p.id == pin.id) return p.coverArt;
+  }
+  return pin.cover;
+}
+
 class _PinnedTile extends ConsumerWidget {
   const _PinnedTile(this.pin);
   final LibraryPin pin;
@@ -513,7 +527,13 @@ class _PinnedTile extends ConsumerWidget {
         pin: pin,
       ), child: ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      leading: Cover(pin.cover, size: 54, icon: album ? Icons.album_outlined : Icons.queue_music_rounded),
+      leading: Cover(
+        pin.kind == 'playlist'
+            ? shownPlaylistCover(ref.watch(playlistCoversProvider)[pin.id], _serverCover(ref, pin))
+            : pin.cover,
+        size: 54,
+        icon: album ? Icons.album_outlined : Icons.queue_music_rounded,
+      ),
       title: Text(
         pin.name,
         maxLines: 1,

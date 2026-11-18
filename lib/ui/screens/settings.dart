@@ -221,10 +221,10 @@ class SettingsScreen extends ConsumerWidget {
           ),
           SwitchListTile(
             secondary: const Icon(Icons.all_inclusive),
-            title: const Text('Endless playback'),
-            subtitle: const Text('When the queue ends, keep going with songs that sound similar'),
-            value: s.endlessRadio,
-            onChanged: (v) => set('endlessRadio', v),
+            title: const Text('Autoplay'),
+            subtitle: const Text('When what you play runs out, keep going with songs like it'),
+            value: s.autoplay,
+            onChanged: (v) => set('autoplay', v),
           ),
 
           const SectionTitle('Streaming quality'),
