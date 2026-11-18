@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import 'autoplay.dart';
 import 'cast.dart';
 import '../core/settings.dart';
 import '../data/account.dart';
@@ -67,8 +68,26 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   String? _scrobbledNow, _submitted;
   Duration _listened = Duration.zero;
   DateTime? _lastTick;
-  bool _fetchingRadio = false;
   Song? radioSeed; // set while a song radio is playing: the queue keeps growing with songs like it
+
+  // ── Autoplay (see autoplay.dart): when what you chose runs out, songs like it keep coming ──
+  final Set<String> _autoplay = {}; // queue songs autoplay added (not what you chose)
+  bool isAutoplay(String id) => _autoplay.contains(id);
+  Song? autoplaySeed; // the song the latest autoplay songs are like, for "Songs like …"
+  bool _autoFilling = false;
+  int _queueGen = 0; // goes up when a new queue replaces the old one (a slow fetch for the old one is dropped)
+  final Set<String> _autoUsed = {}; // suggested already this session
+  final List<Song> _history = []; // the last songs played, oldest first
+  final List<Song> _queueHistory = []; // the songs played since this queue started (autoplay follows these)
+  Song? _nowSong; // the song playing (for skip counting when it changes)
+  DateTime? _userMoveAt; // when you last skipped (next, previous, a queue tap)
+  bool _movedForward = false;
+  int _nowGen = 0;
+  String? _playCounted;
+  SkipStats? _skipStats;
+  SkipStats get _skips =>
+      _skipStats ??= SkipStats.fromJson(_tryJson(prefs.getString('skipStats')));
+  (DateTime, List<Song>)? _favCache, _freqCache;
 
   // ── Shuffle (done by reordering the queue, so the queue always shows the real play order) ──
   ShuffleKind _shuffleKind = ShuffleKind.off;
@@ -88,6 +107,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   bool _reportsWork = true; // the server understands playback reports
   String? _reportedId, _reportedState;
   bool isSuggested(String id) => _suggested.contains(id);
+
+  static Object? _tryJson(String? raw) {
+    try {
+      return raw == null ? null : jsonDecode(raw);
+    } catch (_) {
+      return null;
+    }
+  }
 
   Settings get _settings => container.read(settingsProvider);
 
@@ -144,6 +171,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     });
     player.processingStateStream.listen((s) {
       if (s == ProcessingState.completed && _extras.sleepAfterTrack) _sleepNow();
+      if (s == ProcessingState.completed && !_extras.sleepAfterTrack) _continueAfterEnd();
       if (s == ProcessingState.completed || s == ProcessingState.idle) _reportSoon();
     });
     container.listen(settingsProvider, (prev, next) => _applySettings(prev, next), fireImmediately: true);
@@ -176,6 +204,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       } catch (_) {}
     }
     if (prev?.replayGain != s.replayGain || prev?.replayGainPreamp != s.replayGainPreamp) _applyReplayGain();
+    if (prev != null && prev.autoplay != s.autoplay) s.autoplay ? _keepGoing() : await _dropAutoplay();
   }
 
   Future<void> _quiet(Future<void> Function() f) async {
@@ -526,6 +555,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }) async {
     radioSeed = radio;
     radioStation = null;
+    _newQueue();
     playContext = context;
     playSource = source ?? context?.key;
     var list = songs.where((s) => (allowLookup || !s.isLookup) && canPlay(s)).toList();
@@ -566,6 +596,15 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (ok) player.play();
     _scheduleSave();
     if (_shuffleKind == ShuffleKind.smart) _smartFill();
+    _keepGoing(); // a single song: autoplay lines up what comes after it
+  }
+
+  /// A new queue replaces the old one: autoplay songs go with it.
+  void _newQueue() {
+    _queueGen++;
+    _queueHistory.clear(); // what you played before isn't what this is about
+    _autoplay.clear();
+    autoplaySeed = null;
   }
 
   /// Load a new queue. If the first song can't be loaded (server down, file gone, unreadable file), start
@@ -617,6 +656,22 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (add.isEmpty) return;
     if (_songs.isEmpty || radioStation != null) return playSongs(add);
     at = at.clamp((player.currentIndex ?? -1) + 1, _songs.length);
+    // you chose it now: autoplay's own copy of it (still to come) goes, so it isn't there twice
+    final ids = add.map((s) => s.id).toSet();
+    final cur = player.currentIndex ?? -1;
+    _rearranging = true;
+    try {
+      for (var k = _songs.length - 1; k > cur; k--) {
+        if (ids.contains(_songs[k].id) && _autoplay.contains(_songs[k].id)) {
+          _songs.removeAt(k);
+          await player.removeAudioSourceAt(k);
+          if (k < at) at--;
+        }
+      }
+    } finally {
+      _rearranging = false;
+    }
+    _autoplay.removeAll(ids);
     _original?.addAll(add);
     _songs.insertAll(at, add);
     await player.insertAudioSources(at, add.map(_source).toList());
@@ -628,6 +683,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final add = songs.where((s) => !s.isLookup && canPlay(s)).toList();
     if (add.isEmpty) return;
     if (_songs.isEmpty) return playSongs(add);
+    // what you add goes before autoplay's songs, like Spotify's queue
+    final firstAuto = _songs.indexWhere((s) => _autoplay.contains(s.id), (player.currentIndex ?? -1) + 1);
+    if (firstAuto >= 0) return insertSongs(firstAuto, add);
     _original?.addAll(add);
     _songs.addAll(add);
     await player.addAudioSources(add.map(_source).toList());
@@ -640,11 +698,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (index < 0 || index >= _songs.length) return;
     final gone = _songs.removeAt(index);
     _suggested.remove(gone.id);
+    if (_autoplay.remove(gone.id) && index > (player.currentIndex ?? -1)) _countSkip(gone.id); // not for you
     final o = _original?.indexWhere((s) => s.id == gone.id) ?? -1;
     if (o >= 0) _original!.removeAt(o);
     await player.removeAudioSourceAt(index);
     _broadcastQueue();
     _scheduleSave();
+    _keepGoing();
   }
 
   Future<void> moveQueueItem(int from, int to) async {
@@ -657,6 +717,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   Future<void> clearQueue() async {
+    _newQueue();
     _songs.clear();
     radioStation = null;
     _resetShuffle();
@@ -841,26 +902,289 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     return true;
   }
 
-  Future<void> _maybeExtendRadio() async {
+  // ── Keeping the music going: song radio and autoplay ──
+  /// Runs whenever the song or the queue changes. A song radio keeps growing with songs like its song;
+  /// otherwise, when what you chose is about to run out, autoplay lines up a few songs like the last ones.
+  Future<void> _keepGoing() async {
     final i = player.currentIndex;
-    if (!(_settings.endlessRadio || radioSeed != null) || _fetchingRadio || i == null || i < _songs.length - 3) return;
-    final c = container.read(clientProvider);
-    if (c == null || container.read(offlineProvider)) return;
-    _fetchingRadio = true;
-    try {
-      final have = _songs.map((s) => s.id).toSet();
-      // a song radio stays close to its first song; endless playback follows where the music went
-      final from = radioSeed != null && Random().nextBool()
-          ? radioSeed!
-          : _songs[Random().nextInt(max(1, _songs.length - i)) + min(i, _songs.length - 1)];
-      final more = (await c.similarSongs(
-        from.id,
-        count: 30,
-      )).where((s) => !s.isLookup && !have.contains(s.id)).take(15).toList();
-      if (more.isNotEmpty) await addLast(more);
-    } finally {
-      _fetchingRadio = false;
+    if (_autoFilling || i == null || i >= _songs.length || radioStation != null) return;
+    if (player.loopMode != LoopMode.off) return; // repeating: the queue never runs out
+    if (isPodcastId(_songs[i].id)) return;
+    final radio = radioSeed;
+    final ahead = _songs.length - 1 - i;
+    if (radio != null) {
+      if (ahead > 2) return;
+    } else {
+      if (!_settings.autoplay) return;
+      final chosenAhead = _songs.skip(i + 1).where((s) => !_autoplay.contains(s.id)).length;
+      if (chosenAhead > 1 || ahead - chosenAhead >= 3) return; // still yours to play, or enough lined up
     }
+    final gen = _queueGen;
+    _autoFilling = true;
+    try {
+      final picks = await _nextPicks(radio != null ? 15 : 5, radio: radio);
+      // something else started playing meanwhile: these were for the old queue
+      if (picks.isEmpty || gen != _queueGen || radioSeed != radio || _songs.isEmpty) return;
+      if (radio == null && !_settings.autoplay) return;
+      final have = _songs.map((s) => s.id).toSet();
+      final add = picks.where((s) => have.add(s.id)).toList();
+      if (add.isEmpty) return;
+      _autoUsed.addAll(add.map((s) => s.id));
+      if (radio == null) {
+        _autoplay.addAll(add.map((s) => s.id));
+      } else {
+        _original?.addAll(add); // a radio's songs are the radio itself
+      }
+      final ended = player.processingState == ProcessingState.completed && player.currentIndex == _songs.length - 1;
+      final next = _songs.length;
+      _songs.addAll(add);
+      await player.addAudioSources(add.map(_source).toList());
+      _broadcastQueue();
+      _scheduleSave();
+      if (ended && !_extras.sleepAfterTrack) {
+        // the last song finished before these were ready: carry on with them
+        await player.seek(Duration.zero, index: next);
+        player.play();
+      }
+    } catch (_) {
+      // a failed fetch: tried again when the song changes, or when the queue ends
+    } finally {
+      _autoFilling = false;
+      if (gen != _queueGen) _keepGoing(); // a new queue came while fetching for the old one
+    }
+  }
+
+  /// The queue ran out anyway (the songs weren't ready in time): fetch them now; they start when they come.
+  void _continueAfterEnd() {
+    if (player.currentIndex == _songs.length - 1) _keepGoing();
+  }
+
+  /// Take autoplay's songs that haven't played yet out of the queue (switched off, or shuffle changed).
+  Future<void> _dropAutoplay() async {
+    final cur = player.currentIndex ?? -1;
+    if (!_songs.skip(cur + 1).any((s) => _autoplay.contains(s.id))) return;
+    _rearranging = true;
+    try {
+      for (var k = _songs.length - 1; k > cur; k--) {
+        if (_autoplay.remove(_songs[k].id)) {
+          _songs.removeAt(k);
+          await player.removeAudioSourceAt(k);
+        }
+      }
+    } finally {
+      _rearranging = false;
+    }
+    _onIndex(player.currentIndex);
+    _broadcastQueue();
+    _scheduleSave();
+  }
+
+  /// The next songs for autoplay (or a song radio): seeded from the last few songs played, mixed from
+  /// sound-alikes, similar artists, the genre, your favourites and frequent plays, and a little discovery.
+  /// Offline (or when the server isn't answering), only downloaded songs.
+  Future<List<Song>> _nextPicks(int n, {Song? radio}) async {
+    final c = container.read(clientProvider);
+    final i = min(player.currentIndex ?? 0, _songs.length - 1);
+    final played = [..._history];
+    if (played.isEmpty || played.last.id != _songs[i].id) played.add(_songs[i]);
+    // seeds from this queue only (a song from search follows that song, not what played before it); a queue
+    // restored at start-up has no history yet, so the songs up to the playing one stand in
+    final mine = _queueHistory.isNotEmpty ? [..._queueHistory] : _songs.take(i + 1).toList();
+    if (mine.isEmpty || mine.last.id != _songs[i].id) mine.add(_songs[i]);
+    var seeds = chooseSeeds(mine);
+    if (radio != null) seeds = [radio, ...seeds.where((s) => s.id != radio.id).take(1)];
+    final recent = [...played, ..._songs.skip(i + 1)];
+    final exclude = {..._songs.map((s) => s.id), ..._recentIds, ..._autoUsed};
+    final genres = {for (final s in seeds) if (s.genre.isNotEmpty) s.genre};
+    final weights = radio != null ? radioWeights : autoplayWeights;
+
+    // [loose]: a small library (or few downloads) may have nothing left that wasn't played lately; then only
+    // the queue and the last few songs are off limits
+    List<Song> pick((List<AutoCandidate>, Set<String>) from, {bool loose = false}) => pickAutoplay(
+      candidates: from.$1.where((x) => canPlay(x.song)).toList(),
+      n: n,
+      recent: recent,
+      exclude: loose ? {..._songs.map((s) => s.id), ..._history.map((s) => s.id)} : exclude,
+      excludeKeys: loose ? const {} : {..._recentKeys},
+      skips: _skips,
+      seedGenres: genres,
+      relatedArtists: from.$2,
+      weights: weights,
+    ).map((x) => x.song).toList();
+
+    // most fitting first; loosening "not played lately" only when nothing new is left anywhere
+    final sets = <(List<AutoCandidate>, Set<String>)>[];
+    var picks = const <Song>[];
+    if (c != null && !container.read(offlineProvider)) {
+      // includes some of anything from your library: when nothing like it is new any more, those come
+      sets.add(await _onlineCandidates(c, seeds));
+      picks = pick(sets.last);
+    }
+    if (picks.isEmpty) {
+      sets.add(await _offlineCandidates(seeds));
+      picks = pick(sets.last);
+    }
+    for (final set in sets) {
+      if (picks.isNotEmpty) break;
+      picks = pick(set, loose: true);
+    }
+    if (picks.isNotEmpty && radio == null && seeds.isNotEmpty) autoplaySeed = seeds.first;
+    return picks;
+  }
+
+  static Future<T> _safe<T>(Future<T> f, T empty) async {
+    try {
+      return await f.timeout(const Duration(seconds: 20));
+    } catch (_) {
+      return empty;
+    }
+  }
+
+  Future<(List<AutoCandidate>, Set<String>)> _onlineCandidates(SubsonicClient c, List<Song> seeds) async {
+    final main = seeds.firstOrNull;
+    final related = {for (final s in seeds) artistKey(s)};
+    final similar = Future.wait([for (final s in seeds) _safe(c.similarSongs(s.id, count: 25), const <Song>[])]);
+    final info = main == null || main.artistId.isEmpty
+        ? Future.value(const ArtistInfo())
+        : _safe(c.artistInfo(main.artistId), const ArtistInfo());
+    final genre = main == null || main.genre.isEmpty
+        ? Future.value(const <Song>[])
+        : _safe(c.randomSongs(size: 40, genre: main.genre), const <Song>[]);
+    final favs = _favourites(), freq = _frequent(c);
+    final any = _safe(c.randomSongs(size: 40), const <Song>[]);
+
+    final out = <AutoCandidate>[];
+    for (final l in await similar) {
+      for (final (k, s) in l.indexed) {
+        out.add(AutoCandidate(s, AutoSource.soundAlike, k));
+      }
+    }
+    // similar artists (Last.fm through the server; AudioMuse when that has nothing), a few of their songs
+    var artists = (await info).similar.where((a) => a.name.isNotEmpty).toList();
+    if (artists.isEmpty && main != null) {
+      artists = await _safe(container.read(aiProvider)?.similarArtists(main.artist) ?? Future.value(const <Artist>[]),
+          const <Artist>[]);
+    }
+    related.addAll(artists.map((a) => artistKey(Song(id: '', title: '', artist: a.name))));
+    final some = (artists.take(8).toList()..shuffle()).take(3).toList();
+    final theirs = await Future.wait([for (final a in some) _artistSongs(c, a)]);
+    for (final l in theirs) {
+      for (final (k, s) in l.indexed) {
+        out.add(AutoCandidate(s, AutoSource.similarArtist, k));
+      }
+    }
+    for (final (k, s) in (await genre).indexed) {
+      // songs you've played before fit; never-played ones are the discovery part
+      out.add(AutoCandidate(s, (s.playCount ?? 0) > 0 ? AutoSource.genre : AutoSource.discovery, k));
+    }
+    for (final (k, s) in (await favs).indexed) {
+      out.add(AutoCandidate(s, AutoSource.favourite, k));
+    }
+    for (final (k, s) in (await freq).indexed) {
+      out.add(AutoCandidate(s, AutoSource.frequent, k));
+    }
+    for (final (k, s) in (await any).indexed) {
+      out.add(AutoCandidate(s, AutoSource.anything, k));
+    }
+    return (out, related);
+  }
+
+  /// A few songs by an artist: their top songs, else one of their albums.
+  Future<List<Song>> _artistSongs(SubsonicClient c, Artist a) async {
+    final top = await _safe(c.topSongs(a.name, count: 10), const <Song>[]);
+    if (top.isNotEmpty || a.id.isEmpty) return top;
+    final repo = container.read(repoProvider);
+    final full = await _safe(repo.artist(a.id), null as Artist?);
+    final albums = [...?full?.albums.where((x) => !x.isLookup)]..shuffle();
+    if (albums.isEmpty) return const [];
+    final album = await _safe(repo.album(albums.first.id), null as Album?);
+    return [...?album?.songs]..shuffle();
+  }
+
+  Future<List<Song>> _favourites() async {
+    final c = _favCache;
+    if (c != null && DateTime.now().difference(c.$1) < const Duration(minutes: 15)) return c.$2;
+    final songs = (await _safe(container.read(repoProvider).starred(), null as SearchResult?))?.songs ?? const <Song>[];
+    final mixed = [...songs]..shuffle();
+    _favCache = (DateTime.now(), mixed);
+    return mixed;
+  }
+
+  /// What you've played most this month (this year when the month is quiet), from your listening stats.
+  Future<List<Song>> _frequent(SubsonicClient c) async {
+    final cached = _freqCache;
+    if (cached != null && DateTime.now().difference(cached.$1) < const Duration(hours: 1)) return cached.$2;
+    var songs = <Song>[];
+    for (final period in ['month', 'year']) {
+      final st = await _safe(c.listeningStats(period), null as ListeningStats?);
+      songs = [for (final (s, _) in st?.songs ?? const <(Song, int)>[]) if (!s.isLookup) s];
+      if (songs.length >= 10) break;
+    }
+    _freqCache = (DateTime.now(), songs);
+    return songs;
+  }
+
+  /// From downloaded songs only: same artists and genre first, then favourites, most played and the rest.
+  Future<(List<AutoCandidate>, Set<String>)> _offlineCandidates(List<Song> seeds) async {
+    final files = container.read(downloadsProvider).files;
+    final all = [
+      for (final (s, _, _) in await _safe(container.read(dbProvider).downloads(), const <(Song, String, int)>[]))
+        if (files.containsKey(s.id) && !isPodcastId(s.id)) s,
+    ]..shuffle();
+    final artists = {for (final s in seeds) artistKey(s)};
+    final genres = {for (final s in seeds) if (s.genre.isNotEmpty) s.genre.toLowerCase()};
+    final frequent = [...all.where((s) => (s.playCount ?? 0) > 0)]
+      ..sort((a, b) => (b.playCount ?? 0).compareTo(a.playCount ?? 0));
+    final out = <AutoCandidate>[];
+    for (final (k, s) in all.indexed) {
+      final source = artists.contains(artistKey(s))
+          ? AutoSource.similarArtist
+          : genres.contains(s.genre.toLowerCase())
+          ? AutoSource.genre
+          : s.starred
+          ? AutoSource.favourite
+          : AutoSource.anything;
+      out.add(AutoCandidate(s, source, k));
+    }
+    for (final (k, s) in frequent.take(50).indexed) {
+      out.add(AutoCandidate(s, AutoSource.frequent, k));
+    }
+    return (out, artists);
+  }
+
+  // ── Listening history and skips (for autoplay's choices) ──
+  List<String>? _recentIdsCache;
+  List<String> get _recentIds => _recentIdsCache ??= prefs.getStringList('recentPlayed') ?? [];
+  List<String>? _recentKeysCache;
+  List<String> get _recentKeys => _recentKeysCache ??= prefs.getStringList('recentPlayedKeys') ?? [];
+
+  void _played(Song s) {
+    _history.add(s);
+    if (_history.length > 30) _history.removeAt(0);
+    _queueHistory.add(s);
+    if (_queueHistory.length > 30) _queueHistory.removeAt(0);
+    if (isPodcastId(s.id)) return;
+    final ids = _recentIds
+      ..remove(s.id)
+      ..add(s.id);
+    if (ids.length > 300) ids.removeRange(0, ids.length - 300);
+    prefs.setStringList('recentPlayed', ids);
+    final key = songKey(s);
+    final keys = _recentKeys
+      ..remove(key)
+      ..add(key);
+    if (keys.length > 300) keys.removeRange(0, keys.length - 300);
+    prefs.setStringList('recentPlayedKeys', keys);
+  }
+
+  void _countSkip(String id) {
+    _skips.skipped(id);
+    prefs.setString('skipStats', jsonEncode(_skips.toJson()));
+  }
+
+  void _countPlay(String id) {
+    _skips.played(id);
+    prefs.setString('skipStats', jsonEncode(_skips.toJson()));
   }
 
   // ── Shuffle and smart shuffle ──
@@ -888,6 +1212,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _rebroadcast();
       return;
     }
+    await _dropAutoplay(); // autoplay's songs follow the new order; they're lined up again after it
+    if (i >= _songs.length) return;
     final cur = _songs[i];
     if (k == ShuffleKind.off) {
       // back to the original order, continuing from the song that's playing; picks leave the queue
@@ -916,6 +1242,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _smartNoticeShown = false;
       _smartFill();
     }
+    _keepGoing();
   }
 
   /// Replace everything around the playing song (index [i]) with [before] and [after]; it keeps playing.
@@ -991,7 +1318,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
 
     var (i, last) = where();
-    final plainAfter = _songs.skip(last + 1).where((s) => !_suggested.contains(s.id)).length;
+    bool plain(Song s) => !_suggested.contains(s.id) && !_autoplay.contains(s.id);
+    final plainAfter = _songs.skip(last + 1).where(plain).length;
     if (plainAfter < 3 || last - i > 12) return;
     _filling = true;
     try {
@@ -1001,12 +1329,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       var pos = last + 1;
       {
         for (final p in picks) {
-          var plain = 0;
-          while (pos < _songs.length && plain < 3) {
-            if (!_suggested.contains(_songs[pos].id)) plain++;
+          var plainCount = 0;
+          while (pos < _songs.length && plainCount < 3) {
+            if (plain(_songs[pos])) plainCount++;
             pos++;
           }
-          if (plain < 3) {
+          if (plainCount < 3) {
             _pickPool.insert(0, p); // no room yet; use it later
             continue;
           }
@@ -1029,7 +1357,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// Songs that sound like the list: sound-alikes of a few random songs from it, mixed, one per artist.
   Future<List<Song>> _smartPicks(int n) async {
     final c = container.read(clientProvider);
-    final base = (_original ?? _songs).where((s) => !_suggested.contains(s.id) && !s.isLookup).toList();
+    final base = (_original ?? _songs)
+        .where((s) => !_suggested.contains(s.id) && !_autoplay.contains(s.id) && !s.isLookup)
+        .toList();
     if (c == null || base.isEmpty) return const [];
     final inQueue = _songs.map((s) => s.id).toSet();
     final hidden = _hiddenPicks(playContext?.key ?? '');
@@ -1119,6 +1449,25 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final s = _songs[i];
     if (s.id == _lastSongId) return; // same song, maybe moved by a queue edit: not a new track
     _lastSongId = s.id;
+    final was = _nowSong, sameQueue = _nowGen == _queueGen;
+    _nowSong = s;
+    _nowGen = _queueGen;
+    final moved = _userMoveAt != null && DateTime.now().difference(_userMoveAt!) < const Duration(seconds: 3);
+    final forward = moved && _movedForward;
+    _userMoveAt = null;
+    final early = was != null && _listened < Duration(seconds: min(30, (was.duration ?? 240) * 2 ~/ 5));
+    if (was != null && sameQueue && forward && early && !isPodcastId(was.id)) {
+      _countSkip(was.id); // skipped early: autoplay brings it less often
+    }
+    _played(s);
+    // the song before ended by itself (not a skip, not a new queue)
+    final ended = was != null && sameQueue && !moved && i > 0 && _songs[i - 1].id == was.id;
+    if (ended && _extras.sleepAfterTrack) {
+      // "sleep after this song": the queue goes on (autoplay), so stop at the start of the next one
+      player.pause();
+      player.seek(Duration.zero);
+      _setExtras(PlayerExtras(speed: _extras.speed));
+    }
     if (_fadeFrom != null) {
       _fadeFrom == i - 1 && _fadeTimer != null ? _handOff() : _cancelFade();
     }
@@ -1132,7 +1481,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _scrobbledNow = s.id;
       container.read(clientProvider)?.scrobble(s.id, submission: false).catchError((_) {});
     }
-    _maybeExtendRadio();
+    _keepGoing();
     _smartFill();
     _scheduleSave();
     _reportSoon();
@@ -1190,9 +1539,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }
       return;
     }
-    if (s == null || _submitted == s.id || !_settings.scrobble) return;
+    if (s == null) return;
     final len = Duration(seconds: s.duration ?? 240);
     final need = Duration(milliseconds: min(len.inMilliseconds ~/ 2, 240000));
+    if (_playCounted != s.id && _listened >= need) {
+      _playCounted = s.id;
+      _countPlay(s.id); // played through: not a song you skip
+    }
+    if (_submitted == s.id || !_settings.scrobble) return;
     if (_listened >= need) {
       _submitted = s.id;
       final c = container.read(clientProvider);
@@ -1247,6 +1601,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         'shuffle': _shuffleKind.name,
         if (_original != null) 'original': _original!.map((s) => s.id).toList(),
         'suggested': _suggested.toList(),
+        'autoplay': _autoplay.toList(),
         if (playContext != null) 'context': playContext!.toJson(),
         if (playSource != null) 'source': playSource,
       }),
@@ -1268,6 +1623,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _saveTimer?.cancel();
     _cancelFade();
     await _saveQueue();
+    _newQueue();
     _songs.clear();
     radioStation = null;
     _resetShuffle();
@@ -1299,6 +1655,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         _original = [for (final id in orig) ?byId['$id']];
       }
       _suggested.addAll(((j['suggested'] as List?) ?? const []).map((e) => '$e').where(byId.containsKey));
+      _autoplay.addAll(((j['autoplay'] as List?) ?? const []).map((e) => '$e').where(byId.containsKey));
       playContext = PlayContext.fromJson(j['context']);
       playSource = j['source'] as String? ?? playContext?.key;
       await _load(songs, index, position: Duration(milliseconds: (j['position'] as num?)?.toInt() ?? 0), quiet: true);
@@ -1317,6 +1674,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (songs.isEmpty) return false;
     final idx = max(0, songs.indexWhere((s) => s.id == current));
     radioSeed = null;
+    _newQueue();
     _resetShuffle();
     _songs
       ..clear()
@@ -1377,16 +1735,26 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   @override
-  Future<void> skipToNext() => player.seekToNext();
+  Future<void> skipToNext() {
+    _userMoved(true);
+    return player.seekToNext();
+  }
+
+  void _userMoved(bool forward) {
+    _userMoveAt = DateTime.now();
+    _movedForward = forward;
+  }
   @override
   Future<void> skipToPrevious() async {
     if (player.position > const Duration(seconds: 4)) return player.seek(Duration.zero);
+    _userMoved(false);
     return player.seekToPrevious();
   }
 
   @override
   Future<void> skipToQueueItem(int index) async {
     if (index < 0 || index >= _songs.length) return;
+    _userMoved(index > (player.currentIndex ?? 0));
     await player.seek(Duration.zero, index: index);
     player.play();
   }
@@ -1405,11 +1773,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   });
 
   @override
-  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) => player.setLoopMode(switch (repeatMode) {
-    AudioServiceRepeatMode.one => LoopMode.one,
-    AudioServiceRepeatMode.all || AudioServiceRepeatMode.group => LoopMode.all,
-    _ => LoopMode.off,
-  });
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    await player.setLoopMode(switch (repeatMode) {
+      AudioServiceRepeatMode.one => LoopMode.one,
+      AudioServiceRepeatMode.all || AudioServiceRepeatMode.group => LoopMode.all,
+      _ => LoopMode.off,
+    });
+    _keepGoing(); // repeat off: the queue can run out again
+  }
 
   @override
   Future<void> setRating(Rating rating, [Map<String, dynamic>? extras]) async {
