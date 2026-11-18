@@ -51,6 +51,30 @@ class SquareCrop {
   int get outputSide => source.width.round().clamp(300, 1000);
 }
 
+/// The square [src] of the picture file [bytes] as a JPEG [out] pixels across, all in plain Dart (runs in the
+/// background). [src] is in the pixels of the copy shown on screen, which is [shownWidth] wide (big photos are
+/// shown smaller). Null when Dart can't read the file (HEIC, say).
+///
+/// This doesn't go through the graphics chip: reading a drawn picture back from it gave scrambled tiles on a
+/// Pixel 10a (fine on the emulator, which draws in software).
+Uint8List? cropToJpeg((Uint8List, Rect, int, int) p) {
+  final (bytes, src, shownWidth, out) = p;
+  var picture = img.decodeImage(bytes);
+  if (picture == null) return null;
+  picture = img.bakeOrientation(picture); // turned the way the phone shows it (EXIF), like the screen copy
+  final k = picture.width / shownWidth;
+  final side = (src.width * k).round().clamp(1, picture.width < picture.height ? picture.width : picture.height);
+  final x = (src.left * k).round().clamp(0, picture.width - side);
+  final y = (src.top * k).round().clamp(0, picture.height - side);
+  final square = img.copyResize(
+    img.copyCrop(picture, x: x, y: y, width: side, height: side),
+    width: out,
+    height: out,
+    interpolation: img.Interpolation.average,
+  );
+  return img.encodeJpg(square, quality: 88);
+}
+
 /// Raw RGBA pixels → a JPEG (runs in the background: plain Dart, so it can go to another isolate).
 Uint8List rgbaToJpeg((int, int, Uint8List) p) {
   final (w, h, rgba) = p;

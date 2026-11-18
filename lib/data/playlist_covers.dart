@@ -36,16 +36,17 @@ class CustomCover {
 
 /// What [Cover] should draw for a playlist: the phone's copy ("file:" + its path) while the server doesn't
 /// have the picture yet, or for good when it can't keep one; otherwise the server's own cover id.
-String shownPlaylistCover(CustomCover? mine, String serverCover) {
-  if (mine == null) return serverCover;
-  // offline the playlist comes from the phone's library, without the server's cover id
-  if (mine.phoneOnly || serverCover.isEmpty || serverCover == mine.serverWas) return 'file:${mine.path}';
-  return serverCover;
-}
+String shownPlaylistCover(CustomCover? mine, String serverCover) =>
+    mine == null || coverIsStale(mine, serverCover) ? serverCover : 'file:${mine.path}';
 
 /// The phone's copy isn't needed any more: the server answers with a newer cover than when it was set.
+///
+/// Navidrome's cover id is `pl-<id>_<hash>`. Right after an upload it answers `pl-<id>` with no hash for a
+/// few seconds, until the new picture is ready; a picture fetched then is cached under that id as if it were
+/// the final one. So only an id with a hash, and another one than before, means the server has caught up.
+/// (Offline the playlist comes from the phone's library, without the server's cover id.)
 bool coverIsStale(CustomCover? mine, String serverCover) =>
-    mine != null && !mine.phoneOnly && serverCover.isNotEmpty && serverCover != mine.serverWas;
+    mine != null && !mine.phoneOnly && serverCover.contains('_') && serverCover != mine.serverWas;
 
 /// The playlist's albums, once each, in playlist order: (cover id, album name). Navidrome gives every song
 /// its own cover id, so songs are grouped by album, not by cover id.

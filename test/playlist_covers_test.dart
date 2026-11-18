@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:crypto/crypto.dart';
+import 'package:encore/data/cover_cache.dart';
 import 'package:encore/data/cover_crop.dart';
 import 'package:encore/data/models.dart';
 import 'package:encore/data/playlist_covers.dart';
@@ -9,6 +11,7 @@ import 'package:encore/data/subsonic.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:image/image.dart' as img;
 
 void main() {
   group('which playlist picture shows', () {
@@ -25,6 +28,13 @@ void main() {
       expect(coverIsStale(sent, 'pl-1_old'), isFalse);
       expect(shownPlaylistCover(sent, 'pl-1_new'), 'pl-1_new');
       expect(coverIsStale(sent, 'pl-1_new'), isTrue);
+      // right after an upload Navidrome answers without a hash until the new picture is ready: keep the copy
+      expect(shownPlaylistCover(sent, 'pl-1'), 'file:/p/a.jpg');
+      expect(coverIsStale(sent, 'pl-1'), isFalse);
+      // a playlist that had no hash before the upload: caught up once it has one
+      const fresh = CustomCover(path: '/p/c.jpg', serverWas: 'pl-1', phoneOnly: false);
+      expect(shownPlaylistCover(fresh, 'pl-1'), 'file:/p/c.jpg');
+      expect(shownPlaylistCover(fresh, 'pl-1_abc'), 'pl-1_abc');
     });
 
     test('offline (no server cover id): the phone\'s copy, and it isn\'t thrown away', () {
@@ -58,6 +68,44 @@ void main() {
     expect(albumCovers(songs), [('mf-1', 'Red'), ('mf-3', 'Blue')]);
   });
 
+  group('picking an album cover', () {
+    final real = List<int>.generate(5000, (i) => (i * 7) % 251)..[0] = 0xFF;
+
+    test('Navidrome\'s "no cover" record, an error message or next to nothing is not a picture', () {
+      expect(isNoCover(real), isFalse);
+      expect(isNoCover(utf8.encode('{"error":"not found"}' * 10)), isTrue);
+      expect(isNoCover([0xFF, 0xD8]), isTrue);
+      // same length as the record but other bytes: a real picture
+      expect(isNoCover(List<int>.filled(noCoverLength, 1)), isFalse);
+      expect(md5.convert(List<int>.filled(noCoverLength, 1)).toString() == noCoverMd5, isFalse);
+    });
+
+    test('the first real picture wins; failures and stand-ins are skipped', () async {
+      final tried = <String>[];
+      final got = await firstRealPicture([
+        () async {
+          tried.add('big');
+          return utf8.encode('{"error":"busy"}' * 10); // what came back at 1000 px
+        },
+        () async {
+          tried.add('cached');
+          throw Exception('nothing on the phone');
+        },
+        () async {
+          tried.add('original');
+          return real;
+        },
+        () async {
+          tried.add('never');
+          return real;
+        },
+      ]);
+      expect(got, real);
+      expect(tried, ['big', 'cached', 'original']);
+      expect(await firstRealPicture([() async => null, () async => [1, 2]]), isNull);
+    });
+  });
+
   group('square crop', () {
     test('starts centred, the short side filling the square', () {
       final c = SquareCrop.centred(const Size(2000, 1000), 300);
@@ -88,6 +136,33 @@ void main() {
     test('a small picture is saved at its own size, but at least 300 pixels', () {
       expect(SquareCrop.centred(const Size(600, 600), 300).outputSide, 600);
       expect(SquareCrop.centred(const Size(100, 100), 300).outputSide, 300);
+    });
+
+    test('the square is cut from the file itself, also when the screen shows a smaller copy', () {
+      // 200 × 100: red on the left half, blue on the right
+      final picture = img.Image(width: 200, height: 100);
+      for (var y = 0; y < 100; y++) {
+        for (var x = 0; x < 200; x++) {
+          picture.setPixelRgb(x, y, x < 100 ? 255 : 0, 0, x < 100 ? 0 : 255);
+        }
+      }
+      final png = img.encodePng(picture);
+      img.Pixel middle(Uint8List jpeg) {
+        final j = img.decodeJpg(jpeg)!;
+        return j.getPixel(j.width ~/ 2, j.height ~/ 2);
+      }
+
+      // the right half, as the screen shows it at full size
+      final right = cropToJpeg((png, const Rect.fromLTWH(100, 0, 100, 100), 200, 300))!;
+      expect(img.decodeJpg(right)!.width, 300);
+      expect(middle(right).b, greaterThan(200));
+      expect(middle(right).r, lessThan(60));
+      // the left half, from a copy shown half size (100 wide)
+      final left = cropToJpeg((png, const Rect.fromLTWH(0, 0, 50, 50), 100, 300))!;
+      expect(middle(left).r, greaterThan(200));
+      expect(middle(left).b, lessThan(60));
+      // a file Dart can't read: null, and the screen copy is used instead
+      expect(cropToJpeg((Uint8List.fromList([1, 2, 3, 4]), const Rect.fromLTWH(0, 0, 1, 1), 1, 300)), isNull);
     });
 
     test('pixels become a JPEG', () {
