@@ -8,6 +8,7 @@ import '../../data/ai.dart';
 import '../../data/jam.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
+import '../../data/playlist_covers.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
@@ -273,7 +274,12 @@ class _PlaylistShelf extends ConsumerWidget {
                   children: [
                     AspectRatio(
                       aspectRatio: 1,
-                      child: Cover(p.coverArt, size: double.infinity, radius: 14, icon: Icons.queue_music_rounded),
+                      child: Cover(
+                        shownPlaylistCover(ref.watch(playlistCoversProvider)[p.id], p.coverArt),
+                        size: double.infinity,
+                        radius: 14,
+                        icon: Icons.queue_music_rounded,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),

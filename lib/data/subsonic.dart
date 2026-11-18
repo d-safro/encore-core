@@ -16,6 +16,14 @@ class SubsonicException implements Exception {
   String toString() => message;
 }
 
+/// The server can't keep a playlist picture (not Navidrome, an older one, or uploads are turned off).
+class CoverRefused implements Exception {
+  final String message;
+  CoverRefused(this.message);
+  @override
+  String toString() => message;
+}
+
 class Credentials {
   final String server, username, password;
   const Credentials(this.server, this.username, this.password);
@@ -475,6 +483,51 @@ class SubsonicClient {
   Future<void> updateSmartPlaylist(String id, String name, Map<String, dynamic> rules) async {
     final cur = (await _native('GET', '/api/playlist/$id')) as Map<String, dynamic>;
     await _native('PUT', '/api/playlist/$id', {...cur, 'name': name, 'rules': rules});
+  }
+
+  /// Puts your own picture on a playlist, kept by the server (Navidrome 0.62 and later), so every app shows it.
+  /// Throws [CoverRefused] when the server won't keep pictures: not Navidrome, too old, or uploads are off.
+  Future<void> setPlaylistImage(String id, List<int> jpeg) => _imageCall(
+    () => _http
+        .send(
+          http.MultipartRequest('POST', Uri.parse('$base/api/playlist/$id/image'))
+            ..headers['x-nd-authorization'] = 'Bearer $_ndToken'
+            ..files.add(http.MultipartFile.fromBytes('image', jpeg, filename: 'cover.jpg')),
+        )
+        .timeout(const Duration(seconds: 60)),
+  );
+
+  /// Takes your own picture off a playlist: the server goes back to its own (a mix of the album covers).
+  Future<void> removePlaylistImage(String id) => _imageCall(
+    () => _http
+        .send(
+          http.Request('DELETE', Uri.parse('$base/api/playlist/$id/image'))
+            ..headers['x-nd-authorization'] = 'Bearer $_ndToken',
+        )
+        .timeout(const Duration(seconds: 30)),
+  );
+
+  Future<void> _imageCall(Future<http.StreamedResponse> Function() send) async {
+    try {
+      if (_ndToken == null) await _nativeLogin();
+    } on SubsonicException {
+      throw CoverRefused("This server doesn't keep playlist pictures");
+    }
+    var r = await send();
+    if (r.statusCode == 401) {
+      await r.stream.drain<void>();
+      await _nativeLogin(); // the token expired
+      r = await send();
+    }
+    final body = await r.stream.bytesToString();
+    if (r.statusCode < 300) return;
+    if (r.statusCode == 403 && body.contains('disabled')) {
+      throw CoverRefused('Picture uploads are turned off on this server');
+    }
+    if (r.statusCode == 403) throw SubsonicException(403, 'Only the owner can change this playlist');
+    // 404 / 405: an older Navidrome without picture uploads (or not Navidrome's own API at all)
+    if (r.statusCode == 404 || r.statusCode == 405) throw CoverRefused("This server doesn't keep playlist pictures");
+    throw SubsonicException(0, 'Navidrome answered ${r.statusCode}');
   }
 
   /// The rules of a smart playlist, or null for an ordinary one.
