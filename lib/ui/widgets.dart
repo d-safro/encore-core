@@ -511,6 +511,20 @@ class AlbumCard extends ConsumerWidget {
                     album: album.name,
                   ),
                 ),
+                // desktop: a play button on hover, like a desktop music app
+                if (isDesktop && !album.isLookup)
+                  Positioned.fill(
+                    child: HoverPlay(
+                      onPlay: () async {
+                        final songs = (await ref.read(repoProvider).album(album.id)).songs;
+                        await audioHandler.playSongs(
+                          songs,
+                          context: PlayContext.album(album.id, album.name),
+                          source: 'album:${album.id}',
+                        );
+                      },
+                    ),
+                  ),
                 if (album.isLookup)
                   Positioned(
                     right: 6,
@@ -926,4 +940,58 @@ class LazyListView extends StatelessWidget {
       return footer[i - count];
     },
   );
+}
+
+/// Desktop: a round play button that shows in the corner while the mouse is over [child]'s area.
+class HoverPlay extends StatefulWidget {
+  const HoverPlay({super.key, required this.onPlay});
+  final Future<void> Function() onPlay;
+  @override
+  State<HoverPlay> createState() => _HoverPlayState();
+}
+
+class _HoverPlayState extends State<HoverPlay> {
+  bool _hover = false, _busy = false;
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Align(
+        alignment: Alignment.bottomRight,
+        child: AnimatedOpacity(
+          opacity: _hover || _busy ? 1 : 0,
+          duration: const Duration(milliseconds: 150),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: IgnorePointer(
+              ignoring: !_hover && !_busy,
+              child: FloatingActionButton.small(
+                heroTag: null,
+                elevation: 2,
+                tooltip: 'Play',
+                backgroundColor: cs.primary,
+                foregroundColor: cs.onPrimary,
+                shape: const CircleBorder(),
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        setState(() => _busy = true);
+                        try {
+                          await widget.onPlay();
+                        } finally {
+                          if (mounted) setState(() => _busy = false);
+                        }
+                      },
+                child: _busy
+                    ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onPrimary))
+                    : const Icon(Icons.play_arrow_rounded),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

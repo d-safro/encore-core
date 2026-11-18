@@ -99,7 +99,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/search',
-            pageBuilder: (_, _) => const NoTransitionPage(child: SearchScreen()),
+            pageBuilder: (_, s) {
+              final q = s.uri.queryParameters['q'] ?? '';
+              return NoTransitionPage(key: ValueKey('search-$q'), child: SearchScreen(key: ValueKey('search-$q'), initialQuery: q));
+            },
           ),
           GoRoute(
             path: '/album/:id',
