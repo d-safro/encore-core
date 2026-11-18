@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:encore/data/cover_crop.dart';
+import 'package:encore/data/models.dart';
 import 'package:encore/data/playlist_covers.dart';
 import 'package:encore/data/subsonic.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -45,6 +46,16 @@ void main() {
       expect(decodeCovers('not json'), isEmpty);
       expect(decodeCovers(null), isEmpty);
     });
+  });
+
+  test('album covers to pick from: one per album, in playlist order', () {
+    const songs = [
+      Song(id: '1', title: 'a', album: 'Red', albumId: 'r', coverArt: 'mf-1'),
+      Song(id: '2', title: 'b', album: 'Red', albumId: 'r', coverArt: 'mf-2'),
+      Song(id: '3', title: 'c', album: 'Blue', albumId: 'b', coverArt: 'mf-3'),
+      Song(id: '4', title: 'd', album: 'None', albumId: 'n'),
+    ];
+    expect(albumCovers(songs), [('mf-1', 'Red'), ('mf-3', 'Blue')]);
   });
 
   group('square crop', () {

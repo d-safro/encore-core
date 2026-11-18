@@ -186,7 +186,7 @@ void _refreshSoon(ProviderContainer container, String id) {
 }
 
 Future<Uint8List?> _pickAlbumCover(BuildContext context, WidgetRef ref, Playlist p) async {
-  final covers = <String>{for (final s in p.songs) s.coverArt}..remove('');
+  final covers = albumCovers(p.songs);
   final picked = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
@@ -195,18 +195,42 @@ Future<Uint8List?> _pickAlbumCover(BuildContext context, WidgetRef ref, Playlist
     builder: (ctx) => SafeArea(
       child: SizedBox(
         height: MediaQuery.sizeOf(ctx).height * 0.7,
-        child: GridView.count(
-          crossAxisCount: 3,
-          padding: const EdgeInsets.all(12),
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final c in covers.take(120))
-              InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => Navigator.pop(ctx, c),
-                child: Cover(c, size: double.infinity),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('Pick an album cover', style: Theme.of(ctx).textTheme.titleLarge),
+            ),
+            Expanded(
+              child: GridView.count(
+                crossAxisCount: 3,
+                padding: const EdgeInsets.all(12),
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.78,
+                children: [
+                  for (final (cover, album) in covers.take(120))
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => Navigator.pop(ctx, cover),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          AspectRatio(aspectRatio: 1, child: Cover(cover, size: double.infinity)),
+                          const SizedBox(height: 4),
+                          Text(
+                            album,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(ctx).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
+            ),
           ],
         ),
       ),

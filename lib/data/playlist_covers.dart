@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../core/settings.dart';
 import 'account.dart';
+import 'models.dart';
 import 'subsonic.dart';
 
 /// Your own playlist pictures, as this phone knows them.
@@ -45,6 +46,16 @@ String shownPlaylistCover(CustomCover? mine, String serverCover) {
 /// The phone's copy isn't needed any more: the server answers with a newer cover than when it was set.
 bool coverIsStale(CustomCover? mine, String serverCover) =>
     mine != null && !mine.phoneOnly && serverCover.isNotEmpty && serverCover != mine.serverWas;
+
+/// The playlist's albums, once each, in playlist order: (cover id, album name). Navidrome gives every song
+/// its own cover id, so songs are grouped by album, not by cover id.
+List<(String, String)> albumCovers(List<Song> songs) {
+  final seen = <String>{};
+  return [
+    for (final s in songs)
+      if (s.coverArt.isNotEmpty && seen.add(s.albumId.isNotEmpty ? s.albumId : s.coverArt)) (s.coverArt, s.album),
+  ];
+}
 
 /// Kept per server (`playlistCovers` is one of the per-server settings).
 const _key = 'playlistCovers';
