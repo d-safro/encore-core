@@ -7,9 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:home_widget/home_widget.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../../core/appearance.dart';
+import '../../core/platform.dart';
 import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/cover_cache.dart';
@@ -18,6 +18,7 @@ import '../../data/updates.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../data/online_lyrics.dart';
+import '../../playback/desktop_audio.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../update.dart';
@@ -27,6 +28,10 @@ import '../../data/local_link.dart';
 import '../../data/usb_link.dart';
 import '../widgets.dart';
 import 'login.dart';
+import '../../data/devices.dart';
+import '../../data/pairing.dart';
+import '../../data/subsonic.dart';
+import '../../desktop/desktop_settings.dart';
 
 const _formats = {'raw': 'Original', 'opus': 'Opus', 'mp3': 'MP3', 'aac': 'AAC'};
 const _bitrates = [64, 96, 128, 160, 192, 256, 320];
@@ -145,6 +150,13 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) => set('syncPlayQueue', v),
           ),
 
+          const SectionTitle('Your devices'),
+          const _DevicesSettings(),
+          if (isDesktop) ...[
+            const SectionTitle('Desktop'),
+            const DesktopSettings(),
+          ],
+
           const SectionTitle('Look'),
           ListTile(
             leading: const Icon(Icons.palette_outlined),
@@ -154,7 +166,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
             onTap: () => context.push('/appearance'),
           ),
-          ListTile(
+          if (!isDesktop) ListTile(
             leading: const Icon(Icons.widgets_outlined),
             title: const Text('Add the widget to your home screen'),
             subtitle: const Text('What\'s playing, with play, pause and skip'),
@@ -260,7 +272,7 @@ class SettingsScreen extends ConsumerWidget {
             title: Text('Encore $appVersion'),
             subtitle: Text('A music player for Navidrome and other Subsonic servers'),
           ),
-          const _AppIconPicker(),
+          if (!isDesktop) const _AppIconPicker(),
           const _CoverCacheTile(),
           SwitchListTile(
             secondary: const Icon(Icons.system_update_rounded),
@@ -579,7 +591,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
     if (mounted) setState(f);
   }
 
-  AndroidEqualizerParameters? _params;
+  EqParams? _params;
   String? _error;
 
   static const _presets = {
@@ -594,9 +606,13 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
   @override
   void initState() {
     super.initState();
+    if (isDesktop) {
+      _params = EqParams.desktop(ref.read(settingsProvider).eqGains);
+      return;
+    }
     audioHandler.equalizer.parameters
         .timeout(const Duration(seconds: 4))
-        .then((p) => _safeSetState(() => _params = p))
+        .then((p) => _safeSetState(() => _params = EqParams.android(p)))
         .catchError((Object e) {
           _safeSetState(() => _error = 'Start playing a song first, then open the equalizer.');
         });
@@ -780,7 +796,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   ],
                 ),
               ),
-              const UsbCard(),
+              if (!isDesktop) const UsbCard(),
               const ShrinkCard(),
               FutureBuilder<(int, int)>(
                 future: _library,
@@ -981,9 +997,11 @@ class _HomeAddress extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'The address your server answers on at home, e.g. https://lan-music.example.com:4541 or '
-              'http://192.168.1.20:4533. Encore uses it whenever it answers, and the main address otherwise.',
+              'http://192.168.1.20:4533. Encore uses it whenever it answers, and the main address otherwise.'
+              '${isDesktop ? '\n\nThis computer runs the server? Use its own address, e.g. http://127.0.0.1:4540 '
+                  '(with the server extras) or http://127.0.0.1:4533 (Navidrome alone).' : ''}',
             ),
             const SizedBox(height: 12),
             TextField(
@@ -1015,5 +1033,69 @@ class _HomeAddress extends ConsumerWidget {
           : "Saved. Your server doesn't answer there right now; Encore tries again on Wi-Fi",
     );
     ref.read(localLinkProvider.notifier).check();
+  }
+}
+
+/// This device's name on your others, phone sign-in for another device, and the switch for it all.
+class _DevicesSettings extends ConsumerWidget {
+  const _DevicesSettings();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final st = ref.watch(devicesProvider);
+    final on = prefs.getBool('connectDevices') ?? true;
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.devices_rounded),
+          title: const Text('Connect to your other devices'),
+          subtitle: Text(switch (st.supported) {
+            false => 'Your server doesn\'t have the extras for this (music-lookup)',
+            _ when !on => 'Off: your devices don\'t see this one',
+            _ => st.online.isEmpty
+                ? 'See what they play, control them, move playback (none open right now)'
+                : 'Open now: ${st.online.map((d) => d.name).join(', ')}',
+          }),
+          value: on,
+          onChanged: (v) async {
+            if (!v) await ref.read(devicesProvider.notifier).bye();
+            await prefs.setBool('connectDevices', v);
+            ref.invalidate(devicesProvider);
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.badge_outlined),
+          title: const Text('This device\'s name'),
+          subtitle: Text(deviceName()),
+          onTap: () async {
+            final name = await askText(context, 'This device\'s name', 'Name', initial: deviceName());
+            if (name == null) return;
+            await prefs.setString('deviceName', name.trim());
+            ref.invalidate(devicesProvider); // says hello again with the new name
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.phonelink_lock_rounded),
+          title: const Text('Sign in another device'),
+          subtitle: const Text('Type the code it shows (Sign in with your phone)'),
+          onTap: () => _approve(context, ref),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _approve(BuildContext context, WidgetRef ref) async {
+    final c = ref.read(clientProvider);
+    if (c == null) return;
+    final code = await askText(context, 'Sign in another device', 'The 6-digit code it shows');
+    if (code == null || code.trim().isEmpty || !context.mounted) return;
+    try {
+      final name = await approvePairing(c, code, localAddress: ref.read(localAddressProvider));
+      if (context.mounted) toast(context, 'Signed in on $name');
+    } on SubsonicException catch (e) {
+      if (context.mounted) toast(context, e.message);
+    } catch (e) {
+      if (context.mounted) toast(context, "Couldn't reach the server: $e");
+    }
   }
 }

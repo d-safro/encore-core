@@ -11,7 +11,9 @@ import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../data/jam.dart';
 import '../../data/online_lyrics.dart';
+import '../../core/platform.dart';
 import '../../playback/audio_device.dart';
+import '../../playback/desktop_audio.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
@@ -20,6 +22,7 @@ import 'podcasts.dart';
 import 'radio.dart';
 import '../../data/cover_cache.dart';
 import '../cast_sheet.dart';
+import '../devices_sheet.dart';
 import 'jam.dart';
 
 /// Colours taken from the current album art (Material You from the cover).
@@ -208,12 +211,13 @@ class _TopBar extends ConsumerWidget {
           ValueListenableBuilder<CastInfo?>(
             valueListenable: castInfo,
             builder: (ctx, info, _) => IconButton(
-              tooltip: info == null ? 'Play on a speaker or TV' : 'Playing on ${info.name}',
+              tooltip: info == null ? 'Your devices, speakers and TVs' : 'Playing on ${info.name}',
               icon: Icon(
-                info == null ? Icons.cast_rounded : Icons.cast_connected_rounded,
+                info == null ? Icons.devices_rounded : Icons.cast_connected_rounded,
                 color: info == null ? null : Theme.of(ctx).colorScheme.primary,
               ),
-              onPressed: () => showCastSheet(ctx),
+              // casting: straight to the speaker's controls; else your devices (Cast is one tap further)
+              onPressed: () => info == null ? showDevicesSheet(ctx) : showCastSheet(ctx),
             ),
           ),
           IconButton(
@@ -603,7 +607,7 @@ class _BottomRow extends ConsumerWidget {
             }, size: 20),
             label: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 110),
-              child: Text(output?.$1 ?? 'This phone', maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Text(output?.$1 ?? (isDesktop ? 'This computer' : 'This phone'), maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           ),
           Row(
@@ -738,6 +742,13 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
                           subtitle: const Text('Playing on'),
                           trailing: FilledButton.tonal(
                             onPressed: () async {
+                              if (isDesktop) {
+                                final id = await pickOutputDevice(ctx);
+                                if (id != null) await setDesktopDevice(id);
+                                output = await AudioDevice.output();
+                                set(() {});
+                                return;
+                              }
                               await AudioDevice.showOutputSwitcher();
                               await Future.delayed(const Duration(seconds: 2));
                               output = await AudioDevice.output();
@@ -812,10 +823,12 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
                     ),
                     ListTile(
                       leading: const Icon(Icons.surround_sound_rounded),
-                      title: const Text('Mono audio and left/right balance'),
-                      subtitle: const Text('Android\'s audio settings (they apply to every app)'),
+                      title: Text(isDesktop ? 'Sound settings' : 'Mono audio and left/right balance'),
+                      subtitle: Text(isDesktop
+                          ? 'KDE\'s volume, devices and balance (they apply to every app)'
+                          : 'Android\'s audio settings (they apply to every app)'),
                       trailing: const Icon(Icons.open_in_new_rounded, size: 18),
-                      onTap: () => AudioDevice.openSettings('accessibility'),
+                      onTap: () => AudioDevice.openSettings(isDesktop ? 'sound' : 'accessibility'),
                     ),
                     ListTile(
                       leading: const Icon(Icons.bluetooth_rounded),
@@ -831,6 +844,38 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
           },
         );
       },
+    ),
+  );
+}
+
+/// Desktop: choose where the sound plays (the sound server's devices). The chosen id, or null.
+Future<String?> pickOutputDevice(BuildContext context) {
+  final devices = currentOutputDevices();
+  final now = desktopDevice;
+  return showDialog<String>(
+    context: context,
+    useRootNavigator: true,
+    builder: (ctx) => SimpleDialog(
+      title: const Text('Play on'),
+      children: [
+        for (final d in devices)
+          ListTile(
+            leading: Icon(switch (d.kind) {
+              'bluetooth' => Icons.bluetooth_audio_rounded,
+              'headphones' => Icons.headphones_rounded,
+              'tv' => Icons.tv_rounded,
+              _ => Icons.speaker_rounded,
+            }),
+            title: Text(d.name),
+            trailing: d.id == now ? const Icon(Icons.check_rounded) : null,
+            onTap: () => Navigator.pop(ctx, d.id),
+          ),
+        if (devices.length <= 1)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 8, 24, 8),
+            child: Text('Other devices show up here once a song has started.'),
+          ),
+      ],
     ),
   );
 }

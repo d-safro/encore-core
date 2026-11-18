@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/widgets.dart';
@@ -6,11 +7,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
+import '../core/platform.dart';
 import 'models.dart';
 import 'subsonic.dart';
 
 /// "New episode" notifications for the podcasts you follow. Checked about every hour in the background
-/// (Android WorkManager, only with a network) and whenever the app comes to the front.
+/// (Android WorkManager, only with a network; on the desktop while the app runs, usually in the tray) and
+/// whenever the app comes to the front.
 final notifications = FlutterLocalNotificationsPlugin();
 const _channel = AndroidNotificationDetails(
   'podcast_episodes',
@@ -19,10 +22,14 @@ const _channel = AndroidNotificationDetails(
   importance: Importance.defaultImportance,
   icon: 'drawable/ic_stat_encore',
 );
+const _linux = LinuxNotificationDetails();
 
 Future<void> initNotifications({void Function(String payload)? onTap}) async {
   await notifications.initialize(
-    settings: const InitializationSettings(android: AndroidInitializationSettings('drawable/ic_stat_encore')),
+    settings: InitializationSettings(
+      android: const AndroidInitializationSettings('drawable/ic_stat_encore'),
+      linux: LinuxInitializationSettings(defaultActionName: 'Open', defaultIcon: ThemeLinuxIcon('dev.safro.encore')),
+    ),
     onDidReceiveNotificationResponse: (r) {
       if (r.payload != null) onTap?.call(r.payload!);
     },
@@ -31,6 +38,7 @@ Future<void> initNotifications({void Function(String payload)? onTap}) async {
 
 /// Ask Android 13+ for permission to show notifications (once).
 Future<void> askNotificationPermission(SharedPreferences p) async {
+  if (isDesktop) return; // the desktop doesn't ask
   if (p.getBool('askedNotifications') == true) return;
   await p.setBool('askedNotifications', true);
   await notifications
@@ -85,7 +93,7 @@ Future<void> _show(int id, String title, String body, String payload) => notific
   id: id,
   title: title,
   body: body,
-  notificationDetails: const NotificationDetails(android: _channel),
+  notificationDetails: const NotificationDetails(android: _channel, linux: _linux),
   payload: payload,
 );
 
@@ -103,7 +111,14 @@ void episodeCheckDispatcher() {
   });
 }
 
+Timer? _desktopChecks;
+
 Future<void> startEpisodeChecks() async {
+  if (isDesktop) {
+    // no background jobs on the desktop: check hourly while Encore runs (it stays in the tray when closed)
+    _desktopChecks ??= Timer.periodic(const Duration(hours: 1), (_) => checkNewEpisodes());
+    return;
+  }
   try {
     await Workmanager().initialize(episodeCheckDispatcher);
     await Workmanager().registerPeriodicTask(

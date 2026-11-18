@@ -4,9 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/appearance.dart';
+import 'core/platform.dart';
 import 'core/settings.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
+import 'data/devices.dart';
+import 'data/sync.dart';
 import 'data/library.dart';
 import 'data/local_link.dart';
 import 'data/usb_link.dart';
@@ -256,6 +259,9 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _startEpisodeAlerts();
+    // your other devices (remote control, moving playback) and small things kept in step with them
+    ref.listenManual(devicesProvider, (_, _) {});
+    ref.listenManual(syncServiceProvider, (_, _) {});
     // when the network comes back: send plays made offline
     ref.listenManual(offlineProvider, (prev, next) {
       if (prev == true && next == false) {
@@ -290,6 +296,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(serverReachableProvider.notifier).check();
+      ref.read(syncServiceProvider.notifier).syncNow();
       _checkEpisodes();
       _syncIfStale();
       ref.read(usbLinkProvider.notifier).check(); // plugged into the server's computer meanwhile?
@@ -309,7 +316,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
   // ── New podcast episode notifications ──
   Future<void> _startEpisodeAlerts() async {
     await initNotifications(onTap: _openFromNotification);
-    final launch = await notifications.getNotificationAppLaunchDetails();
+    final launch = isDesktop ? null : await notifications.getNotificationAppLaunchDetails(); // Android only
     final payload = launch?.notificationResponse?.payload;
     if (launch?.didNotificationLaunchApp == true && payload != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openFromNotification(payload));

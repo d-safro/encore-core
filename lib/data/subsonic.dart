@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
+import '../core/platform.dart';
 import 'models.dart';
 
 class SubsonicException implements Exception {
@@ -22,10 +23,14 @@ class Credentials {
   String get base => server.trim().replaceAll(RegExp(r'/+$'), '');
 }
 
+/// The name Encore gives the server: other apps' "now playing" and "continue from" show it.
+final String defaultClientName = isDesktop ? 'Encore Desktop' : 'Encore';
+
 /// Subsonic / OpenSubsonic API client. Token auth (md5(password + salt)), JSON responses.
 class SubsonicClient {
-  SubsonicClient(this.creds, {this.clientName = 'Encore', http.Client? httpClient, String? via})
-    : base = via ?? creds.base,
+  SubsonicClient(this.creds, {String? clientName, http.Client? httpClient, String? via})
+    : clientName = clientName ?? defaultClientName,
+      base = via ?? creds.base,
       _http = httpClient ?? IOClient(HttpClient()..idleTimeout = const Duration(minutes: 2));
 
   final Credentials creds;
