@@ -241,7 +241,7 @@ class _PairDialogState extends State<_PairDialog> {
     final cs = Theme.of(context).colorScheme;
     final code = _code;
     return AlertDialog(
-      title: const Text('Sign in with your phone'),
+      title: Text(isDesktop ? 'Sign in with your phone' : 'Sign in with another device'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: Column(
@@ -252,7 +252,10 @@ class _PairDialogState extends State<_PairDialog> {
             else if (code == null)
               const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator())
             else ...[
-              const Text('On your phone, open Encore › Settings › Sign in another device, and type:'),
+              Text(
+                'On your ${isDesktop ? 'phone' : 'other device'}, open Encore › Settings › Sign in another device, '
+                'and type:',
+              ),
               const SizedBox(height: 16),
               SelectableText(code.pretty, style: t.displaySmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 4)),
               const SizedBox(height: 16),
@@ -261,7 +264,7 @@ class _PairDialogState extends State<_PairDialog> {
                 children: [
                   const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
                   const SizedBox(width: 10),
-                  Text('Waiting for your phone…', style: t.bodySmall),
+                  Text(isDesktop ? 'Waiting for your phone…' : 'Waiting…', style: t.bodySmall),
                 ],
               ),
             ],
