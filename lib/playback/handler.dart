@@ -654,7 +654,22 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (add.isEmpty) return;
     if (_songs.isEmpty || radioStation != null) return playSongs(add);
     at = at.clamp((player.currentIndex ?? -1) + 1, _songs.length);
-    _autoplay.removeAll(add.map((s) => s.id)); // you chose it now
+    // you chose it now: autoplay's own copy of it (still to come) goes, so it isn't there twice
+    final ids = add.map((s) => s.id).toSet();
+    final cur = player.currentIndex ?? -1;
+    _rearranging = true;
+    try {
+      for (var k = _songs.length - 1; k > cur; k--) {
+        if (ids.contains(_songs[k].id) && _autoplay.contains(_songs[k].id)) {
+          _songs.removeAt(k);
+          await player.removeAudioSourceAt(k);
+          if (k < at) at--;
+        }
+      }
+    } finally {
+      _rearranging = false;
+    }
+    _autoplay.removeAll(ids);
     _original?.addAll(add);
     _songs.insertAll(at, add);
     await player.insertAudioSources(at, add.map(_source).toList());
@@ -972,42 +987,40 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (played.isEmpty || played.last.id != _songs[i].id) played.add(_songs[i]);
     var seeds = chooseSeeds(played);
     if (radio != null) seeds = [radio, ...seeds.where((s) => s.id != radio.id).take(1)];
-    final recent = [...played.skip(max(0, played.length - 10)), ..._songs.skip(i + 1)];
+    final recent = [...played, ..._songs.skip(i + 1)];
     final exclude = {..._songs.map((s) => s.id), ..._recentIds, ..._autoUsed};
     final genres = {for (final s in seeds) if (s.genre.isNotEmpty) s.genre};
     final weights = radio != null ? radioWeights : autoplayWeights;
 
-    List<Song> pick(List<AutoCandidate> cands, Set<String> related) {
-      final playable = cands.where((x) => canPlay(x.song)).toList();
-      List<Song> run(Set<String> ex) => pickAutoplay(
-        candidates: playable,
-        n: n,
-        recent: recent,
-        exclude: ex,
-        skips: _skips,
-        seedGenres: genres,
-        relatedArtists: related,
-        weights: weights,
-      ).map((x) => x.song).toList();
-      final out = run(exclude);
-      // a small library (or few downloads) may have nothing left that wasn't played lately: then only the
-      // queue and the last few songs are off limits
-      return out.isNotEmpty ? out : run({..._songs.map((s) => s.id), ..._history.map((s) => s.id)});
-    }
+    // [loose]: a small library (or few downloads) may have nothing left that wasn't played lately; then only
+    // the queue and the last few songs are off limits
+    List<Song> pick((List<AutoCandidate>, Set<String>) from, {bool loose = false}) => pickAutoplay(
+      candidates: from.$1.where((x) => canPlay(x.song)).toList(),
+      n: n,
+      recent: recent,
+      exclude: loose ? {..._songs.map((s) => s.id), ..._history.map((s) => s.id)} : exclude,
+      excludeKeys: loose ? const {} : {..._recentKeys},
+      skips: _skips,
+      seedGenres: genres,
+      relatedArtists: from.$2,
+      weights: weights,
+    ).map((x) => x.song).toList();
 
+    // most fitting first; loosening "not played lately" only when nothing new is left anywhere
+    final sets = <(List<AutoCandidate>, Set<String>)>[];
     var picks = const <Song>[];
     if (c != null && !container.read(offlineProvider)) {
-      final (cands, related) = await _onlineCandidates(c, seeds);
-      picks = pick(cands, related);
-      if (picks.isEmpty) {
-        // nothing like it (no sound-alikes, nothing in the genre): something from your library
-        final any = await _safe(c.randomSongs(size: 40), const <Song>[]);
-        picks = pick([for (final (k, s) in any.indexed) AutoCandidate(s, AutoSource.discovery, k)], const {});
-      }
+      // includes some of anything from your library: when nothing like it is new any more, those come
+      sets.add(await _onlineCandidates(c, seeds));
+      picks = pick(sets.last);
     }
     if (picks.isEmpty) {
-      final (cands, related) = await _offlineCandidates(seeds);
-      picks = pick(cands, related);
+      sets.add(await _offlineCandidates(seeds));
+      picks = pick(sets.last);
+    }
+    for (final set in sets) {
+      if (picks.isNotEmpty) break;
+      picks = pick(set, loose: true);
     }
     if (picks.isNotEmpty && radio == null && seeds.isNotEmpty) autoplaySeed = seeds.first;
     return picks;
@@ -1032,6 +1045,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         ? Future.value(const <Song>[])
         : _safe(c.randomSongs(size: 40, genre: main.genre), const <Song>[]);
     final favs = _favourites(), freq = _frequent(c);
+    final any = _safe(c.randomSongs(size: 40), const <Song>[]);
 
     final out = <AutoCandidate>[];
     for (final l in await similar) {
@@ -1062,6 +1076,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     for (final (k, s) in (await freq).indexed) {
       out.add(AutoCandidate(s, AutoSource.frequent, k));
+    }
+    for (final (k, s) in (await any).indexed) {
+      out.add(AutoCandidate(s, AutoSource.anything, k));
     }
     return (out, related);
   }
@@ -1120,7 +1137,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
           ? AutoSource.genre
           : s.starred
           ? AutoSource.favourite
-          : AutoSource.discovery;
+          : AutoSource.anything;
       out.add(AutoCandidate(s, source, k));
     }
     for (final (k, s) in frequent.take(50).indexed) {
@@ -1132,6 +1149,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   // ── Listening history and skips (for autoplay's choices) ──
   List<String>? _recentIdsCache;
   List<String> get _recentIds => _recentIdsCache ??= prefs.getStringList('recentPlayed') ?? [];
+  List<String>? _recentKeysCache;
+  List<String> get _recentKeys => _recentKeysCache ??= prefs.getStringList('recentPlayedKeys') ?? [];
 
   void _played(Song s) {
     _history.add(s);
@@ -1142,6 +1161,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       ..add(s.id);
     if (ids.length > 300) ids.removeRange(0, ids.length - 300);
     prefs.setStringList('recentPlayed', ids);
+    final key = songKey(s);
+    final keys = _recentKeys
+      ..remove(key)
+      ..add(key);
+    if (keys.length > 300) keys.removeRange(0, keys.length - 300);
+    prefs.setStringList('recentPlayedKeys', keys);
   }
 
   void _countSkip(String id) {

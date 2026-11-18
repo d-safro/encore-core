@@ -15,6 +15,7 @@ enum AutoSource {
   favourite, // your hearted songs
   frequent, // what you play most
   discovery, // same genre, songs you've never played
+  anything, // anything from your library: rarely, and to fill in rather than repeat an artist
 }
 
 /// How often each kind is picked, relative to the others. Kinds with nothing left are skipped and the
@@ -26,6 +27,7 @@ const autoplayWeights = {
   AutoSource.favourite: 1.5,
   AutoSource.frequent: 1.0,
   AutoSource.discovery: 1.0,
+  AutoSource.anything: 0.3,
 };
 
 /// Song radio stays close to its song: almost all sound-alikes.
@@ -36,6 +38,7 @@ const radioWeights = {
   AutoSource.favourite: 0.5,
   AutoSource.frequent: 0.5,
   AutoSource.discovery: 0.5,
+  AutoSource.anything: 0.2,
 };
 
 class AutoCandidate {
@@ -134,6 +137,7 @@ List<AutoCandidate> pickAutoplay({
   required int n,
   List<Song> recent = const [],
   Set<String> exclude = const {},
+  Set<String> excludeKeys = const {}, // [songKey]s of songs played lately (the same recording on another album)
   SkipStats? skips,
   Set<String> seedGenres = const {},
   Set<String> relatedArtists = const {},
@@ -144,7 +148,7 @@ List<AutoCandidate> pickAutoplay({
 }) {
   final r = rng ?? Random();
   final st = skips ?? SkipStats();
-  final recentKeys = {for (final s in recent) songKey(s)};
+  final recentKeys = {...excludeKeys, for (final s in recent) songKey(s)};
   final genres = {for (final g in seedGenres) g.toLowerCase()};
 
   // One entry per song; a song several places agree on fits better.

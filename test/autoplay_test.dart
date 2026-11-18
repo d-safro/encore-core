@@ -46,6 +46,15 @@ void main() {
       expect(picks.map((p) => p.song.id), ['b']);
     });
 
+    test('the same recording played earlier (before a restart) is a repeat too', () {
+      final cands = from(AutoSource.soundAlike, [
+        song('c1', artist: 'Blue Harbor', title: 'Blue Song 1 (Remastered)'),
+        song('b', artist: 'Other', title: 'Fresh'),
+      ]);
+      final picks = pickAutoplay(candidates: cands, n: 5, excludeKeys: {'blue harbor|blue song 1'}, rng: Random(7));
+      expect(picks.map((p) => p.song.id), ['b']);
+    });
+
     test('spreads artists out: never the same artist within four songs, at most two in ten', () {
       final cands = <AutoCandidate>[];
       for (var a = 0; a < 6; a++) {
@@ -74,6 +83,21 @@ void main() {
       ]);
       final picks = pickAutoplay(candidates: cands, n: 1, recent: recent, rng: Random(3));
       expect(picks.single.song.artist, 'Band B');
+    });
+
+    test('when only one artist is left in what fits, something else fills in rather than that artist again', () {
+      for (var seed = 0; seed < 20; seed++) {
+        final cands = [
+          ...from(AutoSource.genre, [for (var k = 0; k < 6; k++) song('v$k', artist: 'Vector')]),
+          ...from(AutoSource.anything, [for (var k = 0; k < 6; k++) song('a$k', artist: 'Other $k')]),
+        ];
+        final picks = pickAutoplay(candidates: cands, n: 5, recent: [song('r', artist: 'Pulse')], rng: Random(seed));
+        final artists = picks.map((p) => p.song.artist).toList();
+        for (var i = 1; i < artists.length; i++) {
+          expect(artists[i], isNot(artists[i - 1]), reason: 'seed $seed: $artists');
+        }
+        expect(artists.where((a) => a == 'Vector').length, lessThanOrEqualTo(2), reason: 'seed $seed: $artists');
+      }
     });
 
     test('with only one artist left it still keeps going rather than stopping', () {
@@ -112,10 +136,11 @@ void main() {
       double share(AutoSource s) => (counts[s] ?? 0) / total;
       expect(share(AutoSource.soundAlike), greaterThan(0.3));
       expect(share(AutoSource.soundAlike), lessThan(0.55));
-      for (final s in AutoSource.values) {
+      for (final s in AutoSource.values.where((s) => s != AutoSource.anything)) {
         expect(share(s), greaterThan(0.03), reason: '$s is part of the mix');
       }
       expect(share(AutoSource.discovery), lessThan(share(AutoSource.soundAlike) / 3));
+      expect(share(AutoSource.anything), lessThan(0.05), reason: 'only now and then');
     });
 
     test('leaves out songs you skip a lot and one-star songs', () {
