@@ -175,20 +175,33 @@ void main() {
       }
     });
 
+    test('favourites that do not fit what is playing are only a rare pick', () {
+      final counts = <String, int>{};
+      for (var seed = 0; seed < 200; seed++) {
+        final cands = [
+          ...from(AutoSource.similarArtist, [for (var k = 0; k < 10; k++) song('sa$k', genre: 'Rock')]),
+          ...from(AutoSource.favourite, [for (var k = 0; k < 10; k++) song('fav$k', genre: 'Bard', starred: true)]),
+        ];
+        for (final p in pickAutoplay(candidates: cands, n: 5, seedGenres: {'Rock'}, rng: Random(seed))) {
+          final k = p.song.id.startsWith('fav') ? 'unrelated favourite' : 'fits';
+          counts[k] = (counts[k] ?? 0) + 1;
+        }
+      }
+      expect((counts['unrelated favourite'] ?? 0) / 1000, lessThan(0.15), reason: '$counts');
+      expect(counts['fits'], greaterThan(800), reason: '$counts');
+    });
+
     test('favourites that fit what is playing come before ones that do not', () {
-      for (var seed = 0; seed < 30; seed++) {
+      var jazz = 0;
+      for (var seed = 0; seed < 100; seed++) {
         final cands = from(AutoSource.favourite, [
           song('metal', genre: 'Metal'),
           song('jazz', genre: 'Jazz'),
         ]);
-        final picks = pickAutoplay(
-          candidates: cands,
-          n: 1,
-          seedGenres: {'jazz'},
-          rng: Random(seed),
-        );
-        expect(picks.single.song.id, 'jazz');
+        final picks = pickAutoplay(candidates: cands, n: 1, seedGenres: {'jazz'}, rng: Random(seed));
+        if (picks.single.song.id == 'jazz') jazz++;
       }
+      expect(jazz, greaterThan(75));
     });
 
     test('skips podcast episodes and songs you do not have', () {

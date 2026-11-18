@@ -78,6 +78,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   int _queueGen = 0; // goes up when a new queue replaces the old one (a slow fetch for the old one is dropped)
   final Set<String> _autoUsed = {}; // suggested already this session
   final List<Song> _history = []; // the last songs played, oldest first
+  final List<Song> _queueHistory = []; // the songs played since this queue started (autoplay follows these)
   Song? _nowSong; // the song playing (for skip counting when it changes)
   DateTime? _userMoveAt; // when you last skipped (next, previous, a queue tap)
   bool _movedForward = false;
@@ -601,6 +602,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// A new queue replaces the old one: autoplay songs go with it.
   void _newQueue() {
     _queueGen++;
+    _queueHistory.clear(); // what you played before isn't what this is about
     _autoplay.clear();
     autoplaySeed = null;
   }
@@ -985,7 +987,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final i = min(player.currentIndex ?? 0, _songs.length - 1);
     final played = [..._history];
     if (played.isEmpty || played.last.id != _songs[i].id) played.add(_songs[i]);
-    var seeds = chooseSeeds(played);
+    // seeds from this queue only (a song from search follows that song, not what played before it); a queue
+    // restored at start-up has no history yet, so the songs up to the playing one stand in
+    final mine = _queueHistory.isNotEmpty ? [..._queueHistory] : _songs.take(i + 1).toList();
+    if (mine.isEmpty || mine.last.id != _songs[i].id) mine.add(_songs[i]);
+    var seeds = chooseSeeds(mine);
     if (radio != null) seeds = [radio, ...seeds.where((s) => s.id != radio.id).take(1)];
     final recent = [...played, ..._songs.skip(i + 1)];
     final exclude = {..._songs.map((s) => s.id), ..._recentIds, ..._autoUsed};
@@ -1155,6 +1161,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   void _played(Song s) {
     _history.add(s);
     if (_history.length > 30) _history.removeAt(0);
+    _queueHistory.add(s);
+    if (_queueHistory.length > 30) _queueHistory.removeAt(0);
     if (isPodcastId(s.id)) return;
     final ids = _recentIds
       ..remove(s.id)

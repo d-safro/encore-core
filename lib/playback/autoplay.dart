@@ -154,7 +154,14 @@ List<AutoCandidate> pickAutoplay({
   // One entry per song; a song several places agree on fits better.
   final byId = <String, AutoCandidate>{};
   final hits = <String, int>{};
-  for (final c in candidates) {
+  // your favourites and most played only count as such when they fit what's playing; the others are just
+  // "anything" (rare), so a quiet sound-alike source doesn't fill the queue with unrelated hearts
+  final picky = genres.isNotEmpty || relatedArtists.isNotEmpty;
+  bool fitsSeeds(Song s) => genres.contains(s.genre.toLowerCase()) || relatedArtists.contains(artistKey(s));
+  for (var c in candidates) {
+    if (picky && (c.source == AutoSource.favourite || c.source == AutoSource.frequent) && !fitsSeeds(c.song)) {
+      c = AutoCandidate(c.song, AutoSource.anything, c.rank);
+    }
     final s = c.song;
     if (s.id.isEmpty || s.isLookup || isPodcastId(s.id) || exclude.contains(s.id)) continue;
     if (recentKeys.contains(songKey(s)) || st.skipsALot(s.id) || s.userRating == 1) continue;
@@ -170,11 +177,7 @@ List<AutoCandidate> pickAutoplay({
     if (s.starred) x += 0.4;
     x += switch (s.userRating) { 5 => 0.5, 4 => 0.3, 2 => -0.4, _ => 0.0 };
     x -= 0.6 * st.skipShare(s.id);
-    if (c.source == AutoSource.favourite || c.source == AutoSource.frequent) {
-      // your own songs only when they fit what's playing
-      final fits = genres.contains(s.genre.toLowerCase()) || relatedArtists.contains(artistKey(s));
-      x += fits ? 0.6 : -0.4;
-    }
+    if ((c.source == AutoSource.favourite || c.source == AutoSource.frequent) && fitsSeeds(s)) x += 0.6;
     return x + r.nextDouble() * 0.35; // a little chance, so the same seed doesn't always give the same songs
   }
 
