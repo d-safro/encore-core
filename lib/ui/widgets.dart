@@ -106,9 +106,8 @@ class Cover extends ConsumerWidget {
   }
 }
 
-/// Navidrome answers "no cover" with this exact image (same bytes at every size); treat it as missing.
-const _placeholderLength = 69228;
-const _placeholderMd5 = '83d193cefca2810f217cffd533241508';
+const _placeholderLength = noCoverLength; // Navidrome's "no cover" image (cover_cache.dart)
+const _placeholderMd5 = noCoverMd5;
 
 /// Covers already resolved this session (file, or null for "the server has none"), newest last.
 final _coverMemo = <String, File?>{};

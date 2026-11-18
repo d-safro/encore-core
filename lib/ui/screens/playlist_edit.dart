@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../data/account.dart';
+import '../../data/cover_cache.dart';
 import '../../data/cover_crop.dart';
 import '../../data/models.dart';
 import '../../data/playlist_covers.dart';
@@ -238,11 +239,27 @@ Future<Uint8List?> _pickAlbumCover(BuildContext context, WidgetRef ref, Playlist
   );
   final c = ref.read(clientProvider);
   if (picked == null || c == null) return null;
-  final r = await http.get(c.coverUrl(picked, size: 1000)).timeout(const Duration(seconds: 30));
-  if (r.statusCode != 200 || r.bodyBytes.isEmpty || r.bodyBytes.first == 0x7B) {
-    throw Exception("the server didn't send that cover");
+  Future<List<int>?> fetch(int? size) async {
+    final r = await http
+        .get(size == null ? c.url('getCoverArt', {'id': picked}) : c.coverUrl(picked, size: size))
+        .timeout(const Duration(seconds: 30));
+    return r.statusCode == 200 ? r.bodyBytes : null;
   }
-  return r.bodyBytes;
+
+  Future<List<int>?> cached(int bucket) async =>
+      (await coverCache.getFileFromCache('${c.creds.base}|$picked|$bucket'))?.file.readAsBytes();
+
+  // Navidrome sometimes answers a big size with its "no cover" record while the picture is still being
+  // made; the copy this phone already shows, or the full-size original, is the same picture.
+  final bytes = await firstRealPicture([
+    () => fetch(1000),
+    () => cached(1000),
+    () => fetch(null),
+    () => cached(500),
+    () => fetch(600),
+  ]);
+  if (bytes == null) throw Exception("the server has no picture for that album");
+  return Uint8List.fromList(bytes);
 }
 
 /// Pinch and drag a picture inside a square; answers the square as a JPEG.
@@ -294,6 +311,12 @@ class _CropScreenState extends State<CropScreen> {
     setState(() => _saving = true);
     try {
       final out = crop.outputSide;
+      // from the file itself, in plain Dart (see cropToJpeg); drawing it is only for files Dart can't read
+      final fromFile = await compute(cropToJpeg, (widget.bytes, crop.source, image.width, out));
+      if (fromFile != null) {
+        if (mounted) Navigator.pop(context, fromFile);
+        return;
+      }
       final rec = ui.PictureRecorder();
       Canvas(rec).drawImageRect(
         image,
