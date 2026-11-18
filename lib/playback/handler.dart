@@ -138,6 +138,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         await _skipToPlayable();
       },
     );
+    if (isDesktop) {
+      // mpv reports a song that won't play here (just_audio's errorStream), not as an error on the events
+      player.errorStream.listen((_) async {
+        if (_loading) return; // _load tries the next song itself
+        container.read(serverReachableProvider.notifier).suspect();
+        await _skipToPlayable();
+      });
+    }
     // the downloader asks before deleting a file the queue may be playing from
     DownloadsNotifier.fileInUse = (id) => _onPhone.contains(id) && _songs.any((s) => s.id == id);
     player.currentIndexStream.listen(_onIndex);
@@ -638,7 +646,18 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   /// Load a new queue. If the first song can't be loaded (server down, file gone, unreadable file), start
   /// from the next one that loads. False when none would (nothing should then claim to be playing).
+  bool _loading = false; // a queue is being loaded (its errors are handled there)
+
   Future<bool> _load(List<Song> list, int index, {Duration? position, bool quiet = false}) async {
+    _loading = true;
+    try {
+      return await _loadNow(list, index, position: position, quiet: quiet);
+    } finally {
+      _loading = false;
+    }
+  }
+
+  Future<bool> _loadNow(List<Song> list, int index, {Duration? position, bool quiet = false}) async {
     final offline = container.read(offlineProvider);
     final files = container.read(downloadsProvider).files;
     for (var i = index, tries = 0; i < list.length && tries < 6; i++) {
