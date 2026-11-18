@@ -58,7 +58,7 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text('Signed in as ${creds?.username ?? ''}'),
             trailing: TextButton(
               onPressed: () async {
-                if (await confirm(context, 'Sign out?', 'Downloads stay on the phone.', ok: 'Sign out')) {
+                if (await confirm(context, 'Sign out?', 'Downloads stay on the $deviceWord.', ok: 'Sign out')) {
                   await ref.read(accountProvider.notifier).signOut(beforeSwitch: audioHandler.leaveServer);
                   await audioHandler.enterServer();
                 }
@@ -77,7 +77,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(Icons.sync),
-            title: const Text('Save library on the phone'),
+            title: Text('Save library on the $deviceWord'),
             subtitle: Text(
               sync.running
                   ? sync.message
@@ -564,7 +564,7 @@ class _CoverCacheTileState extends State<_CoverCacheTile> {
     leading: const Icon(Icons.image_outlined),
     title: const Text('Saved pictures'),
     subtitle: Text(
-      _bytes == null ? 'Covers and artist photos kept on the phone' : '${(_bytes! / 1048576).toStringAsFixed(0)} MB of covers and artist photos',
+      _bytes == null ? 'Covers and artist photos kept on the $deviceWord' : '${(_bytes! / 1048576).toStringAsFixed(0)} MB of covers and artist photos',
     ),
     trailing: TextButton(
       onPressed: () async {
@@ -743,7 +743,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       await n.pin(key, list);
       if (mounted) toast(context, 'Downloading $what');
     } else if (mounted &&
-        await confirm(context, 'Remove $what from the phone?', 'Everything stays on your server.', ok: 'Remove')) {
+        await confirm(context, 'Remove $what from the $deviceWord?', 'Everything stays on your server.', ok: 'Remove')) {
       await n.unpin(key, list);
     }
   }
@@ -779,7 +779,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${nSongs(list.length)} on this phone', style: t.headlineSmall),
+                    Text('${nSongs(list.length)} on this $deviceWord', style: t.headlineSmall),
                     Text(
                       '${_gb(bytes)} used${dl.progress.isNotEmpty ? ' · ${dl.progress.length} downloading' : ''}'
                       '${ref.watch(settingsProvider).downloadWifiOnly ? ' · Wi-Fi only' : ''}',
@@ -836,7 +836,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                       if (await confirm(
                         context,
                         'Remove all downloads?',
-                        'Frees the space on the phone. Your server keeps everything.',
+                        'Frees the space on the $deviceWord. Your server keeps everything.',
                         ok: 'Remove all',
                       )) {
                         for (final k in [...dl.pins]) {
@@ -1077,7 +1077,7 @@ class _DevicesSettings extends ConsumerWidget {
         ListTile(
           leading: const Icon(Icons.phonelink_lock_rounded),
           title: const Text('Sign in another device'),
-          subtitle: const Text('Type the code it shows (Sign in with your phone)'),
+          subtitle: const Text('Type the code it shows (Sign in with another device)'),
           onTap: () => _approve(context, ref),
         ),
       ],

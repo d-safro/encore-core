@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../core/platform.dart';
 import 'dart:ui';
 
 import 'package:crypto/crypto.dart';
@@ -821,7 +822,7 @@ class DownloadToggle extends ConsumerWidget {
               await confirm(
                 context,
                 'Remove download?',
-                'These songs stay on your server; they just leave the phone.',
+                'These songs stay on your server; they just leave the $deviceWord.',
                 ok: 'Remove',
               )) {
             await n.unpin(pinKey, list);

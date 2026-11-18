@@ -7,3 +7,6 @@ final bool isDesktop = !kIsWeb && (Platform.isLinux || Platform.isWindows || Pla
 
 /// What this device is called in "Devices" and on the server ("Encore on" plus the computer's name).
 String deviceKind() => isDesktop ? 'computer' : 'phone';
+
+/// "phone" or "computer", for text about where things are kept ("Downloads stay on the phone").
+final String deviceWord = isDesktop ? 'computer' : 'phone';

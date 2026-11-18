@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../core/platform.dart';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -612,12 +613,12 @@ Future<void> showEpisodeMenu(BuildContext context, WidgetRef ref, PodcastEpisode
                 ),
               ListTile(
                 leading: Icon(onPhone ? Icons.delete_outline : Icons.download_rounded),
-                title: Text(onPhone ? 'Remove from phone' : 'Download to phone'),
+                title: Text(onPhone ? 'Remove from $deviceWord' : 'Download to $deviceWord'),
                 onTap: () => act(
                   () => onPhone
                       ? ref.read(downloadsProvider.notifier).remove([e.id])
                       : ref.read(downloadsProvider.notifier).download([e.toSong()], manual: true),
-                  onPhone ? 'Removed from the phone' : 'Downloading',
+                  onPhone ? 'Removed from the $deviceWord' : 'Downloading',
                 ),
               ),
               if (e.description.isNotEmpty)

@@ -426,7 +426,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     castInfo.value = CastInfo(d.name, connecting: true);
     try {
       _relay ??= await CastRelay.start();
-      if (_relay == null) throw Exception('connect the phone to the same Wi-Fi as the speaker');
+      if (_relay == null) throw Exception('connect the $deviceWord to the same network as the speaker');
       final s = await CastSession.connect(d);
       _cast = s;
       _cancelFade();

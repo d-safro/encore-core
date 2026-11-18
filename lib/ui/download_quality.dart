@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../core/platform.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/settings.dart';
@@ -64,7 +65,7 @@ Future<void> offerShrink(BuildContext context, WidgetRef ref) async {
     context,
     'Make your downloads smaller?',
     '${nSongs(big.length)} take ${_mb(now)}. At $level they\'d take about ${_mb(after)}, '
-        'freeing ${_mb(now - after)}.\n\nEach song keeps playing from the phone until its smaller copy has '
+        'freeing ${_mb(now - after)}.\n\nEach song keeps playing from the $deviceWord until its smaller copy has '
         'arrived${s.downloadWifiOnly ? ' (on Wi-Fi)' : ''}.',
     ok: 'Make smaller',
   );
