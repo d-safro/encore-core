@@ -896,7 +896,7 @@ class RadioScreen extends ConsumerWidget {
             padding: const EdgeInsets.only(bottom: 96),
             children: [
               for (final r in list)
-                ListTile(
+                GestureDetector(onSecondaryTap: () => _menu(context, ref, r), child: ListTile(
                   leading: art(r.streamUrl),
                   title: Text(
                     r.name,
@@ -915,7 +915,7 @@ class RadioScreen extends ConsumerWidget {
                     final pic = stationArt(r.streamUrl);
                     audioHandler.playRadio(r, art: pic == null ? null : Uri.tryParse(pic));
                   },
-                ),
+                )),
             ],
           ),
         );

@@ -1118,7 +1118,8 @@ class _ChooseLyricsState extends ConsumerState<_ChooseLyrics> {
 }
 
 class QueueScreen extends ConsumerWidget {
-  const QueueScreen({super.key});
+  const QueueScreen({super.key, this.embedded = false});
+  final bool embedded; // in the desktop's side panel: no back button, nothing to close
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(queueProvider);
@@ -1128,6 +1129,7 @@ class QueueScreen extends ConsumerWidget {
     final remaining = songs.skip(current).fold<int>(0, (n, s) => n + (s.duration ?? 0));
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: !embedded,
         title: Text('Queue · ${nSongs(songs.length)}'),
         actions: [
           if (online && songs.isNotEmpty)
@@ -1142,7 +1144,7 @@ class QueueScreen extends ConsumerWidget {
             onPressed: () async {
               if (await confirm(context, 'Clear the queue?', 'This stops playback.', ok: 'Clear')) {
                 await audioHandler.clearQueue();
-                if (context.mounted) context.pop();
+                if (context.mounted && !embedded) context.pop();
               }
             },
           ),

@@ -9,6 +9,7 @@ import 'core/settings.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
 import 'data/devices.dart';
+import 'desktop/shell.dart';
 import 'data/sync.dart';
 import 'data/library.dart';
 import 'data/local_link.dart';
@@ -73,7 +74,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/queue', parentNavigatorKey: _rootKey, builder: (_, _) => const QueueScreen()),
       ShellRoute(
-        builder: (ctx, state, child) => _Shell(location: state.uri.path, child: child),
+        builder: (ctx, state, child) => isDesktop
+            ? DesktopShell(location: state.uri.toString(), banner: const _ServerTrouble(), child: child)
+            : _Shell(location: state.uri.path, child: child),
         routes: [
           GoRoute(
             path: '/home',
@@ -85,9 +88,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/library',
-            pageBuilder: (_, s) => NoTransitionPage(
-              child: LibraryScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0),
-            ),
+            pageBuilder: (_, s) {
+              final tab = int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0;
+              // the desktop's sidebar opens a tab directly: a new tab, a fresh screen
+              return NoTransitionPage(
+                key: isDesktop ? ValueKey('library-$tab') : null,
+                child: LibraryScreen(key: isDesktop ? ValueKey('library-$tab') : null, initialTab: tab),
+              );
+            },
           ),
           GoRoute(
             path: '/search',

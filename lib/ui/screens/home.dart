@@ -201,6 +201,12 @@ class _JumpBackIn extends ConsumerWidget {
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: () => context.push('/album/${a.id}'),
+                onSecondaryTap: () => showCollectionMenu(
+                  context,
+                  ref,
+                  a.name,
+                  () async => (await ref.read(repoProvider).album(a.id)).songs,
+                ),
                 onLongPress: () => showCollectionMenu(
                   context,
                   ref,

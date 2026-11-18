@@ -344,6 +344,7 @@ class SongTile extends ConsumerWidget {
                 audioHandler.playSongs(l, index: index ?? l.indexOf(song), context: playContext);
               }
             },
+      onSecondaryTap: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
       onLongPress: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
       child: Padding(
         padding: EdgeInsets.fromLTRB(16, compact ? 2 : 6, 4, compact ? 2 : 6),
@@ -466,6 +467,15 @@ class AlbumCard extends ConsumerWidget {
       width: width ?? AppLook.of(context).cardWidth,
       child: GestureDetector(
         onTap: () => context.push('/album/${album.id}'),
+        onSecondaryTap: () => showCollectionMenu(
+          context,
+          ref,
+          album.name,
+          () async => (await ref.read(repoProvider).album(album.id)).songs,
+          pin: album.isLookup
+              ? null
+              : LibraryPin('album', album.id, album.name, cover: album.coverArt, subtitle: 'Album · ${album.artist}'),
+        ),
         onLongPress: () => showCollectionMenu(
           context,
           ref,

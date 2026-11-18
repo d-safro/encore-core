@@ -419,6 +419,7 @@ class EpisodeTile extends ConsumerWidget {
       onTap: () => offline && !onPhone
           ? toast(context, "This episode isn't downloaded, and your server can't be reached")
           : audioHandler.playEpisode(e),
+      onSecondaryTap: () => showEpisodeMenu(context, ref, e),
       onLongPress: () => showEpisodeMenu(context, ref, e),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 4, 10),
