@@ -57,6 +57,7 @@ Future<String> currentDbFile() async {
 const _perServerKeys = {
   'queue', 'downloadPins', 'downloadQueue', 'localAddress', 'libraryPins', 'manualDownloads', 'pendingScrobbles', 'podcastSeen', 'recentSearch',
   'searchHistory', 'smartShuffle', 'smartShuffleHidden', 'lyricsPicks', 'radioArt', 'jamUrl', 'jamToken', 'podcastDone',
+  'playlistCovers',
 };
 bool _perServer(String k) =>
     !k.contains('@') && (_perServerKeys.contains(k) || k.startsWith('shown:') || k.startsWith('podcastCache'));
