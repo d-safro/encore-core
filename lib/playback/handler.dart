@@ -1898,6 +1898,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   @override
   Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) async {
+    // desktop: Plasma's media controls (MPRIS) set the volume
+    if (name == 'dbusVolume' && isDesktop) {
+      final v = extras?['value'];
+      if (v is num) await setDesktopVolume(v.toDouble().clamp(0.0, 1.0));
+      return null;
+    }
     if (name == 'toggleStar') {
       final s = currentSong;
       if (s != null) await setRating(Rating.newHeartRating(!s.starred));
