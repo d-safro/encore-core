@@ -49,7 +49,9 @@ class SettingsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+      // a wide window: settings in a readable column
+      body: _Readable(
+        child: ListView(
         children: [
           const SectionTitle('Server'),
           ListTile(
@@ -291,6 +293,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 32),
         ],
+      ),
       ),
     );
   }
@@ -1098,4 +1101,14 @@ class _DevicesSettings extends ConsumerWidget {
       if (context.mounted) toast(context, "Couldn't reach the server: $e");
     }
   }
+}
+
+/// At most ~860 px wide, centred (desktop and tablets); phones are narrower anyway.
+class _Readable extends StatelessWidget {
+  const _Readable({required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 860), child: child),
+  );
 }

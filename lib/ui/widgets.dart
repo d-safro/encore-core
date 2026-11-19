@@ -554,7 +554,7 @@ class AlbumCard extends ConsumerWidget {
 }
 
 /// A titled horizontal row (home, artist pages, discover).
-class Shelf extends StatelessWidget {
+class Shelf extends StatefulWidget {
   const Shelf({
     super.key,
     required this.title,
@@ -572,22 +572,78 @@ class Shelf extends StatelessWidget {
   final double textHeight;
 
   @override
+  State<Shelf> createState() => _ShelfState();
+}
+
+class _ShelfState extends State<Shelf> {
+  final _ctl = ScrollController();
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  /// Desktop: ‹ › page the row (a mouse wheel scrolls the page, not the row).
+  void _page(int dir) {
+    if (!_ctl.hasClients) return;
+    final p = _ctl.position;
+    _ctl.animateTo(
+      (p.pixels + dir * p.viewportDimension * 0.8).clamp(0.0, p.maxScrollExtent),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (children.isEmpty) return const SizedBox.shrink();
+    if (widget.children.isEmpty) return const SizedBox.shrink();
+    Widget list = ListView.separated(
+      controller: _ctl,
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: widget.children.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 14),
+      itemBuilder: (_, i) => widget.children[i],
+    );
+    if (isDesktop) {
+      // the row can also be dragged with the mouse
+      list = ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {PointerDeviceKind.mouse, PointerDeviceKind.touch, PointerDeviceKind.trackpad},
+          scrollbars: false,
+        ),
+        child: list,
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionTitle(title, subtitle: subtitle, onMore: onMore),
-        SizedBox(
-          height: height ?? AppLook.of(context).cardWidth + textHeight,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: children.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 14),
-            itemBuilder: (_, i) => children[i],
-          ),
+        SectionTitle(
+          widget.title,
+          subtitle: widget.subtitle,
+          onMore: widget.onMore,
+          trailing: isDesktop
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Back',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.chevron_left_rounded),
+                      onPressed: () => _page(-1),
+                    ),
+                    IconButton(
+                      tooltip: 'More',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.chevron_right_rounded),
+                      onPressed: () => _page(1),
+                    ),
+                  ],
+                )
+              : null,
         ),
+        SizedBox(height: widget.height ?? AppLook.of(context).cardWidth + widget.textHeight, child: list),
       ],
     );
   }

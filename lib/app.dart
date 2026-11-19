@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,7 +49,8 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
   return GoRouter(
     navigatorKey: _rootKey,
-    initialLocation: '/home',
+    // debug builds can start on another page (visual checks: ENCORE_START=/settings)
+    initialLocation: kDebugMode && isDesktop ? (Platform.environment['ENCORE_START'] ?? '/home') : '/home',
     refreshListenable: signedIn,
     redirect: (ctx, state) {
       final s = signedIn.value;
