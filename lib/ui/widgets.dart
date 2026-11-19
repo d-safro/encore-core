@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../desktop/drag.dart';
 import '../core/platform.dart';
 import 'dart:ui';
 
@@ -342,7 +343,7 @@ class SongTile extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final dim = song.isLookup || !available;
     final compact = AppLook.of(context).compact;
-    return InkWell(
+    Widget tile = InkWell(
       onTap: !(available || song.isLookup)
           ? null
           : () {
@@ -357,7 +358,12 @@ class SongTile extends ConsumerWidget {
             },
       onSecondaryTap: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
       onLongPress: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
-      child: Padding(
+      // desktop, a wide list: a table row (title and artist, album, length); else the phone's row
+      child: LayoutBuilder(
+        builder: (context, box) => isDesktop && queueIndex == null && trailing == null && box.maxWidth >= 760
+            ? _WideSongRow(song: song, current: current, dim: dim, showTrack: showTrack, showCover: showCover,
+                hearted: hearted, progress: progress, onPhone: onPhone, queueIndex: queueIndex)
+            : Padding(
         padding: EdgeInsets.fromLTRB(16, compact ? 2 : 6, 4, compact ? 2 : 6),
         child: Row(
           children: [
@@ -460,7 +466,11 @@ class SongTile extends ConsumerWidget {
           ],
         ),
       ),
+      ),
     );
+    // desktop: drag songs onto the queue, Liked songs or a playlist in the sidebar
+    if (isDesktop && queueIndex == null && !song.isLookup) tile = songDragSource(songs: [song], child: tile);
+    return tile;
   }
 }
 
@@ -1046,6 +1056,140 @@ class _HoverPlayState extends State<HoverPlay> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A song as a table row on a wide desktop list: number or cover, title and artist, album, heart, length, menu.
+class _WideSongRow extends ConsumerStatefulWidget {
+  const _WideSongRow({
+    required this.song,
+    required this.current,
+    required this.dim,
+    required this.showTrack,
+    required this.showCover,
+    required this.hearted,
+    required this.progress,
+    required this.onPhone,
+    required this.queueIndex,
+  });
+  final Song song;
+  final bool current, dim, showTrack, showCover, hearted, onPhone;
+  final double? progress;
+  final int? queueIndex;
+
+  @override
+  ConsumerState<_WideSongRow> createState() => _WideSongRowState();
+}
+
+class _WideSongRowState extends ConsumerState<_WideSongRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.song;
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    final sub = t.bodySmall?.copyWith(color: cs.onSurfaceVariant);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+        child: Row(
+          children: [
+            if (widget.showTrack)
+              SizedBox(
+                width: 32,
+                child: widget.current
+                    ? Icon(Icons.graphic_eq_rounded, size: 18, color: cs.primary)
+                    : Text('${s.track ?? ''}', style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+              )
+            else if (widget.showCover)
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Opacity(
+                  opacity: widget.dim ? 0.55 : 1,
+                  child: Cover(s.coverArt, size: 40, radius: 6, icon: Icons.music_note_outlined, artist: s.artist, album: s.album),
+                ),
+              ),
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    s.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: widget.current ? cs.primary : (widget.dim ? cs.onSurfaceVariant : cs.onSurface),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      if (widget.onPhone)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
+                        ),
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: s.artistId.isEmpty ? null : () => context.push('/artist/${s.artistId}'),
+                          child: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (!widget.showTrack)
+              Expanded(
+                flex: 4,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: GestureDetector(
+                    onTap: s.albumId.isEmpty ? null : () => context.push('/album/${s.albumId}'),
+                    child: Text(s.album, maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
+                  ),
+                ),
+              ),
+            // the heart: always when liked, else only under the mouse
+            SizedBox(
+              width: 40,
+              child: widget.hearted || _hover
+                  ? IconButton(
+                      tooltip: widget.hearted ? 'Unlike' : 'Like',
+                      iconSize: 18,
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        widget.hearted ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        color: widget.hearted ? cs.primary : cs.onSurfaceVariant,
+                      ),
+                      onPressed: s.isLookup ? null : () => toggleStarSong(context, ref, s),
+                    )
+                  : null,
+            ),
+            SizedBox(
+              width: 52,
+              child: Text(formatDuration(s.duration), textAlign: TextAlign.right, style: sub),
+            ),
+            SizedBox(
+              width: 44,
+              child: widget.progress != null
+                  ? const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                  : IconButton(
+                      tooltip: 'More',
+                      icon: Icon(Icons.more_horiz_rounded, color: cs.onSurfaceVariant),
+                      onPressed: () => showSongMenu(context, ref, s, queueIndex: widget.queueIndex),
+                    ),
+            ),
+          ],
         ),
       ),
     );
