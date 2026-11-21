@@ -298,8 +298,8 @@ class LookupBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final (icon, color, tip) = switch (state) {
-      LookupState.downloading => (Icons.hourglass_top_rounded, cs.tertiary, 'Downloading'),
-      LookupState.failed => (Icons.error_outline, cs.error, 'Couldn\'t download'),
+      LookupState.downloading => (Icons.hourglass_top_rounded, cs.tertiary, 'Your server is getting it'),
+      LookupState.failed => (Icons.error_outline, cs.error, 'No copy found'),
       _ => (Icons.cloud_download_outlined, cs.primary, 'Not in your library'),
     };
     return Tooltip(
@@ -349,11 +349,12 @@ class SongTile extends ConsumerWidget {
           : () {
               if (queueIndex != null) {
                 audioHandler.skipToQueueItem(queueIndex!);
-              } else if (song.isLookup) {
-                showSongMenu(context, ref, song);
+              } else if (song.isLookup && !audioHandler.autoGet) {
+                showSongMenu(context, ref, song); // ask first (the setting is off)
               } else {
-                final l = list ?? [song];
-                audioHandler.playSongs(l, index: index ?? l.indexOf(song), context: playContext);
+                // a song you don't have plays from its list when the list has it, else on its own
+                final l = list != null && list!.contains(song) ? list! : [song];
+                audioHandler.playSongs(l, index: index != null && l.length > 1 ? index! : l.indexOf(song), context: playContext);
               }
             },
       onSecondaryTap: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
@@ -1171,7 +1172,7 @@ class _WideSongRowState extends ConsumerState<_WideSongRow> {
                         widget.hearted ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                         color: widget.hearted ? cs.primary : cs.onSurfaceVariant,
                       ),
-                      onPressed: s.isLookup ? null : () => toggleStarSong(context, ref, s),
+                      onPressed: s.isLookup && !audioHandler.autoGet ? null : () => toggleStarSong(context, ref, s),
                     )
                   : null,
             ),

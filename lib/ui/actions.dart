@@ -49,7 +49,12 @@ Future<Song> toggleStarSong(BuildContext context, WidgetRef ref, Song s) async {
     audioHandler.updateSong(updated);
     ref.read(dbProvider).updateSong(updated);
     ref.invalidate(starredProvider);
-    if (s.isLookup && next) toast(context, 'Downloading "${s.title}" to your library');
+    if (s.isLookup && next) {
+      toast(context, 'Keeping "${s.title}": your server downloads it to your library');
+    } else if (next && audioHandler.isOnTrial(s.id)) {
+      audioHandler.kept(s.id);
+      toast(context, 'Kept "${s.title}" in your library for good');
+    }
     return updated;
   } catch (e) {
     toast(context, 'Couldn\'t update: $e');
@@ -235,7 +240,54 @@ Future<void> showSongMenu(
                 subtitle: Text('${song.artist} · ${song.album}', maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
               const Divider(height: 1),
-              if (song.isLookup) ...[
+              if (song.isLookup && audioHandler.autoGet) ...[
+                ListTile(
+                  leading: const Icon(Icons.play_arrow_rounded),
+                  title: const Text('Play'),
+                  subtitle: const Text('Your server gets it on trial; heart it to keep it'),
+                  onTap: () {
+                    close();
+                    audioHandler.playSongs([song]);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.playlist_play),
+                  title: const Text('Play next'),
+                  onTap: () {
+                    close();
+                    audioHandler.playNext([song]);
+                    toast(context, 'Playing next: ${song.title}');
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.queue_music),
+                  title: const Text('Add to queue'),
+                  onTap: () {
+                    close();
+                    audioHandler.addLast([song]);
+                    toast(context, 'Added to queue: ${song.title}');
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.favorite_border_rounded),
+                  title: const Text('Keep in my library'),
+                  subtitle: const Text('Downloads it for good (the same as a heart)'),
+                  onTap: () {
+                    close();
+                    if (!(ref.read(heartsProvider)[song.id] ?? song.starred)) toggleStarSong(context, ref, song);
+                  },
+                ),
+                if (online)
+                  ListTile(
+                    leading: const Icon(Icons.playlist_add),
+                    title: const Text('Add to playlist'),
+                    subtitle: const Text('Downloads it, then adds it to the playlist'),
+                    onTap: () {
+                      close();
+                      addToPlaylist(context, ref, [song]);
+                    },
+                  ),
+              ] else if (song.isLookup) ...[
                 ListTile(
                   leading: const Icon(Icons.download_rounded),
                   title: const Text('Download to my library'),

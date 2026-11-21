@@ -56,6 +56,8 @@ class Settings {
   final bool onlineCovers; // iTunes / Deezer art when the server has none
   final double pitch;
   final bool showLookup; // show songs you don't have (music-lookup) in search and album pages
+  // playing or queueing a song you don't have gets it on trial straight away (off: ask first)
+  final bool autoGetSongs;
   final bool offlineMode;
   final AlbumSort albumSort;
   final bool albumGrid;
@@ -104,6 +106,7 @@ class Settings {
     this.onlineCovers = true,
     this.pitch = 1.0,
     this.showLookup = true,
+    this.autoGetSongs = true,
     this.offlineMode = false,
     this.albumSort = AlbumSort.recent,
     this.albumGrid = true,
@@ -156,6 +159,7 @@ class Settings {
     'onlineCovers': onlineCovers,
     'pitch': pitch,
     'showLookup': showLookup,
+    'autoGetSongs': autoGetSongs,
     'offlineMode': offlineMode,
     'albumSort': albumSort.name,
     'albumGrid': albumGrid,
@@ -209,6 +213,7 @@ class Settings {
       onlineCovers: j['onlineCovers'] ?? d.onlineCovers,
       pitch: (j['pitch'] as num?)?.toDouble() ?? d.pitch,
       showLookup: j['showLookup'] ?? d.showLookup,
+      autoGetSongs: j['autoGetSongs'] ?? d.autoGetSongs,
       offlineMode: j['offlineMode'] ?? d.offlineMode,
       albumSort: pick(AlbumSort.values, j['albumSort'], d.albumSort),
       albumGrid: j['albumGrid'] ?? d.albumGrid,

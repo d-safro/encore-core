@@ -132,7 +132,7 @@ class Song {
     'replayGain': replayGain.toJson(),
   };
 
-  Song copyWith({bool? starred, int? userRating}) => Song(
+  Song copyWith({bool? starred, int? userRating, LookupState? lookup}) => Song(
     id: id,
     title: title,
     album: album,
@@ -155,7 +155,7 @@ class Song {
     playCount: playCount,
     starred: starred ?? this.starred,
     replayGain: replayGain,
-    lookup: lookup,
+    lookup: lookup ?? this.lookup,
     played: played,
   );
 }
@@ -592,4 +592,52 @@ class ListeningStats {
       hours: [for (final h in (j['hour'] as List? ?? const [])) n(h)],
     );
   }
+}
+
+/// How getting a song you don't have is going (music-lookup's lookupSongs): not asked for yet, being looked
+/// for, on its way, there ([FetchInfo.songId] is your copy), nobody has it, or today's limit is used up.
+enum FetchStatus { none, searching, downloading, ready, notFound, limit }
+
+class FetchInfo {
+  const FetchInfo(this.id, this.status, {this.songId, this.temporary = false});
+  final String id; // the song you don't have (dz-t-…)
+  final FetchStatus status;
+  final String? songId; // your copy, once it's there
+  final bool temporary; // on trial: deleted after a while unless you heart it
+
+  bool get pending => status == FetchStatus.searching || status == FetchStatus.downloading || status == FetchStatus.none;
+  bool get failed => status == FetchStatus.notFound || status == FetchStatus.limit;
+
+  factory FetchInfo.fromJson(Map<String, dynamic> j) => FetchInfo(
+    _str(j['id']),
+    switch (_str(j['status'])) {
+      'searching' => FetchStatus.searching,
+      'downloading' => FetchStatus.downloading,
+      'ready' => FetchStatus.ready,
+      'notfound' => FetchStatus.notFound,
+      'limit' => FetchStatus.limit,
+      _ => FetchStatus.none,
+    },
+    songId: j['songId'] == null || _str(j['songId']).isEmpty ? null : _str(j['songId']),
+    temporary: j['temporary'] == true,
+  );
+}
+
+/// music-lookup's answer about songs you don't have, with its rules for songs on trial.
+class LookupReport {
+  const LookupReport({this.songs = const [], this.trialHours = 24, this.perDay = 40, this.playlistId = ''});
+  final List<FetchInfo> songs;
+  final double trialHours; // songs on trial are deleted this long after they arrive, unless hearted
+  final int perDay; // at most this many new songs on trial a day
+  final String playlistId; // the "On trial" playlist
+
+  factory LookupReport.fromJson(Map<String, dynamic> j) => LookupReport(
+    songs: [
+      for (final s in (j['song'] is List ? j['song'] as List : const []))
+        if (s is Map) FetchInfo.fromJson(s.cast<String, dynamic>()),
+    ],
+    trialHours: (j['trialHours'] as num?)?.toDouble() ?? 24,
+    perDay: (j['perDay'] as num?)?.toInt() ?? 40,
+    playlistId: _str(j['playlistId']),
+  );
 }

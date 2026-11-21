@@ -279,6 +279,9 @@ class SubsonicClient {
       call('star', {'id': id, 'albumId': albumId, 'artistId': artistId});
   Future<void> unstar({String? id, String? albumId, String? artistId}) =>
       call('unstar', {'id': id, 'albumId': albumId, 'artistId': artistId});
+  /// How getting these songs you don't have is going (music-lookup); [fetch] first asks for each one on trial.
+  Future<LookupReport> lookupSongs(List<String> ids, {bool fetch = false}) async =>
+      LookupReport.fromJson(_m((await call('lookupSongs', {'id': ids, if (fetch) 'fetch': true}))['lookupSongs']));
   Future<void> setRating(String id, int rating) => call('setRating', {'id': id, 'rating': rating});
   Future<void> scrobble(String id, {required bool submission, DateTime? time}) =>
       call('scrobble', {'id': id, 'submission': submission, if (time != null) 'time': time.millisecondsSinceEpoch});
@@ -619,8 +622,10 @@ class SubsonicClient {
     }
   }
 
-  Uri streamUrl(String id, {String? format, int? maxBitRate}) => url('stream', {
+  /// [hold]: a song you don't have that's on its way: silence until it arrives (music-lookup), not the preview.
+  Uri streamUrl(String id, {String? format, int? maxBitRate, bool hold = false}) => url('stream', {
     'id': id,
+    if (hold) 'hold': true,
     if (format != null && format != 'raw') 'format': format,
     if (maxBitRate != null && maxBitRate > 0) 'maxBitRate': maxBitRate,
   });

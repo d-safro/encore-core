@@ -253,7 +253,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   case 'song':
                     final x = h.song;
                     if (x == null) return;
-                    if (x.isLookup) {
+                    if (x.isLookup && !audioHandler.autoGet) {
                       showSongMenu(context, ref, x);
                     } else {
                       audioHandler.playSongs([x]);
