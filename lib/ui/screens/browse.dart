@@ -617,7 +617,7 @@ class _FollowButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final on = ref.watch(followsProvider.select((l) => l.any((x) => x.id == a.id)));
     return Padding(
-      padding: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsets.only(left: 12, right: 4),
       child: OutlinedButton(
         style: OutlinedButton.styleFrom(
           visualDensity: VisualDensity.compact,
