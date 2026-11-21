@@ -587,6 +587,22 @@ class SubsonicClient {
     return ListeningReview.fromJson(_m(r['listeningReview']));
   }
 
+  /// "What's playing?": a short recording (any format) recognised among your songs (music-lookup's
+  /// identifySong). The answer as the server gives it ({found, song, offset} or {found: false, indexing}).
+  Future<Map<String, dynamic>> identifySong(List<int> audio) async {
+    final res = await _http
+        .post(url('identifySong'), headers: {'Content-Type': 'application/octet-stream'}, body: audio)
+        .timeout(const Duration(seconds: 60));
+    if (res.statusCode == 404) throw SubsonicException(70, 'Server answered 404');
+    if (res.statusCode != 200) throw SubsonicException(0, 'Server answered ${res.statusCode}');
+    final r = (jsonDecode(utf8.decode(res.bodyBytes)) as Map)['subsonic-response'] as Map? ?? const {};
+    if (r['status'] != 'ok') {
+      final e = (r['error'] as Map?) ?? const {};
+      throw SubsonicException((e['code'] as num?)?.toInt() ?? 0, '${e['message'] ?? 'failed'}');
+    }
+    return _m(r['songIdentification']);
+  }
+
   Future<List<Song>> songDiscoveries(String id, {int count = 30}) async {
     try {
       final r = await call('getSongDiscoveries', {'id': id, 'count': count}, null, const Duration(seconds: 60));
