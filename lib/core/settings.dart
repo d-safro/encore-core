@@ -47,6 +47,7 @@ class Settings {
   final bool skipSilence;
   final int crossfade; // seconds the end of a song overlaps the next (0 = off)
   final bool crossfadeAlbums; // also between songs of an album played in order (else those stay gapless)
+  final bool automix; // smart transitions from the server's analysis (see playback/automix.dart)
   final double speed;
   final bool autoplay; // when what you play runs out, keep going with songs like it (see playback/autoplay.dart)
   final bool scrobble;
@@ -99,6 +100,7 @@ class Settings {
     this.skipSilence = false,
     this.crossfade = 0,
     this.crossfadeAlbums = false,
+    this.automix = false,
     this.speed = 1.0,
     this.autoplay = true,
     this.scrobble = true,
@@ -154,6 +156,7 @@ class Settings {
     'skipSilence': skipSilence,
     'crossfade': crossfade,
     'crossfadeAlbums': crossfadeAlbums,
+    'automix': automix,
     'speed': speed,
     'autoplay': autoplay,
     'scrobble': scrobble,
@@ -211,6 +214,7 @@ class Settings {
       skipSilence: j['skipSilence'] ?? d.skipSilence,
       crossfade: (j['crossfade'] as num?)?.toInt() ?? d.crossfade,
       crossfadeAlbums: j['crossfadeAlbums'] ?? d.crossfadeAlbums,
+      automix: j['automix'] ?? d.automix,
       speed: (j['speed'] as num?)?.toDouble() ?? d.speed,
       autoplay: j['autoplay'] ?? d.autoplay,
       scrobble: j['scrobble'] ?? d.scrobble,

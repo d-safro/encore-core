@@ -9,6 +9,7 @@ import 'package:http/io_client.dart';
 import '../core/platform.dart';
 import 'lyrics_translation.dart' show LyricsTranslation;
 import 'mixes.dart' show Mixes;
+import '../playback/automix.dart' show MixInfo;
 import 'models.dart';
 import 'review.dart';
 
@@ -594,6 +595,16 @@ class SubsonicClient {
   Future<void> setMix(String kind, bool on) => call('setMix', {'kind': kind, 'enabled': on});
 
   Future<void> refreshMix(String kind) => call('refreshMix', {'kind': kind});
+
+  /// Automix: what the server measured of these songs (music-lookup's getMixInfo); songs not measured yet are
+  /// left out (and measured first).
+  Future<Map<String, MixInfo>> mixInfo(List<String> ids) async {
+    final r = await call('getMixInfo', {'id': ids}, null, const Duration(seconds: 10));
+    return {
+      for (final s in _l(_m(r['mixInfo'])['song']))
+        if (s['id'] != null) '${s['id']}': MixInfo.fromJson(s),
+    };
+  }
 
   Future<List<Song>> songDiscoveries(String id, {int count = 30}) async {
     try {

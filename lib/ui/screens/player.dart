@@ -1336,9 +1336,19 @@ class QueueScreen extends ConsumerWidget {
                     child: SongTile(
                       s,
                       queueIndex: i,
-                      trailing: ReorderableDragStartListener(
-                        index: i,
-                        child: const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.drag_handle)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Automix: each song's tempo, when the server has measured it
+                          if (ref.watch(settingsProvider.select((x) => x.automix)) && audioHandler.bpmOf(s.id) != null)
+                            Text('${audioHandler.bpmOf(s.id)!.round()} BPM',
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                          ReorderableDragStartListener(
+                            index: i,
+                            child: const Padding(padding: EdgeInsets.all(12), child: Icon(Icons.drag_handle)),
+                          ),
+                        ],
                       ),
                     ),
                   ),
