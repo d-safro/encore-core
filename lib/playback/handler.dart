@@ -376,6 +376,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     } catch (_) {}
   }
 
+  /// The tempo the server measured for a song (Automix), for the queue.
+  double? bpmOf(String id) => _mixInfo[id]?.bpm;
+
   Transition? _plan(int i, Duration dur) => i + 1 >= _songs.length
       ? null
       : planTransition(
@@ -401,16 +404,31 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (plan == null) return;
     final from = dur - plan.fadeAt; // how long before the end the blend starts
     if (_fadeFrom == null && left <= from + const Duration(seconds: 6) && left > from && _fadeAllowed(i)) {
-      _prepareFade(i, plan.nextStart); // load the next song a few seconds early so the fade starts on time
+      _prepareFade(i, plan.nextStart, plan.nextSpeed); // load the next song early so the fade starts on time
     }
-    if (_fadeFrom == i && _fadeReady && _fadeTimer == null && left <= from && left > const Duration(milliseconds: 500)) {
-      final length = plan.length < left ? plan.length : left;
+    void go() {
+      final now = player.duration == null ? left : player.duration! - player.position;
+      final length = plan.length < now ? plan.length : now;
       // the blend is over before this song ends (its outro, trailing silence): move on to the next one then
-      _runFade(i, length, moveOn: left - length > const Duration(seconds: 1));
+      _runFade(i, length, moveOn: now - length > const Duration(seconds: 1), speedFrom: plan.nextSpeed);
+    }
+    // to the millisecond (beats line up): a timer for the last stretch, not the next position update
+    if (_fadeFrom == i && _fadeReady && _fadeTimer == null && _fadeStart == null && left > from &&
+        left - from < const Duration(milliseconds: 1500)) {
+      _fadeStart = Timer(left - from, () {
+        _fadeStart = null;
+        if (_fadeFrom == i && _fadeTimer == null && player.playing && player.currentIndex == i) go();
+      });
+    }
+    if (_fadeFrom == i && _fadeReady && _fadeTimer == null && _fadeStart == null && left <= from &&
+        left > const Duration(milliseconds: 500)) {
+      go();
     }
   }
 
-  Future<void> _prepareFade(int i, [Duration nextStart = Duration.zero]) async {
+  Timer? _fadeStart; // starts the blend exactly on time
+
+  Future<void> _prepareFade(int i, [Duration nextStart = Duration.zero, double speed = 1]) async {
     _fadeFrom = i;
     _fadeReady = false;
     // shares the main player's audio focus: it must not pause the main player when it starts
@@ -418,20 +436,23 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     try {
       await fp.setVolume(0);
       await fp.setAudioSource(_source(_songs[i + 1]), preload: true, initialPosition: nextStart);
-      await fp.setSpeed(player.speed);
+      await fp.setSpeed(player.speed * speed); // beat-matched: at the playing song's tempo (pitch kept)
       if (_fadeFrom == i) _fadeReady = true;
     } catch (_) {
       if (_fadeFrom == i) _fadeFrom = null; // can't load it: no fade this time, plain gapless change
     }
   }
 
-  void _runFade(int i, Duration left, {bool moveOn = false}) {
+  void _runFade(int i, Duration left, {bool moveOn = false, double speedFrom = 1}) {
     final fp = _fadePlayer!;
     final start = DateTime.now();
     final target = _rgVolume(i + 1);
+    final base = player.speed;
     fp.play();
     _fadeTimer = Timer.periodic(const Duration(milliseconds: 50), (t) {
       final x = (DateTime.now().difference(start).inMilliseconds / left.inMilliseconds).clamp(0.0, 1.0);
+      // beat-matched: the next song eases from the playing one's tempo back to its own as it takes over
+      if (speedFrom != 1 && (t.tick % 4 == 0 || x >= 1)) _quiet(() => fp.setSpeed(base * (speedFrom + (1 - speedFrom) * x)));
       // equal-power curves: the overall loudness stays even through the blend
       _fadeShare = cos(x * pi / 2);
       _quiet(() => player.setVolume(_mainVolume * _fadeShare));
@@ -469,6 +490,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   void _cancelFade() {
+    _fadeStart?.cancel();
+    _fadeStart = null;
     _fadeTimer?.cancel();
     _fadeTimer = null;
     _fadeFrom = null;

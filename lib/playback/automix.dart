@@ -27,11 +27,36 @@ class MixInfo {
 /// A planned transition: at [fadeAt] in the playing song the next one starts (at [nextStart]) and the two
 /// blend over [length]; when that's done before the playing song ends, playback moves on to the next one.
 class Transition {
-  const Transition(this.fadeAt, this.length, {this.nextStart = Duration.zero});
+  const Transition(this.fadeAt, this.length, {this.nextStart = Duration.zero, this.nextSpeed = 1});
   final Duration fadeAt, length, nextStart;
+  /// Beat-matched: the next song starts at this speed (the playing song's tempo, pitch kept) and eases back to
+  /// its own over the blend; its start is set so its beats land on the playing song's.
+  final double nextSpeed;
 
   @override
-  String toString() => 'Transition(at $fadeAt, $length, next from $nextStart)';
+  String toString() => 'Transition(at $fadeAt, $length, next from $nextStart at ${nextSpeed}x)';
+}
+
+/// How close two tempos must be to match them (6%: more sounds like a different song).
+const beatMatchRange = 0.06;
+
+/// (speed for the next song, where it starts) so that its beats fall on the playing song's from [fadeAt],
+/// or null when the tempos are too far apart or not known. [nominal]: where it would start anyway.
+(double, Duration)? beatMatch(MixInfo a, MixInfo b, Duration fadeAt, Duration nominal) {
+  final ba = a.bpm, bb = b.bpm, beatA = a.beat, beatB = b.beat;
+  if (ba == null || bb == null || beatA == null || beatB == null || ba <= 0 || bb <= 0) return null;
+  final speed = ba / bb;
+  if ((speed - 1).abs() > beatMatchRange) return null;
+  final at = fadeAt.inMicroseconds / 1e6, from = nominal.inMicroseconds / 1e6;
+  final periodA = 60 / ba, periodB = 60 / bb;
+  // the playing song's next beat after the blend starts, and how long until it (real time)
+  final tA = beatA + ((at - beatA) / periodA).ceil() * periodA;
+  final wait = tA - at;
+  // the next song moves `speed` seconds of its own per second: its beat must be there after `wait`
+  final reach = from + wait * speed;
+  final beat = beatB + ((reach - beatB) / periodB).ceil() * periodB;
+  final start = beat - wait * speed;
+  return (speed, Duration(microseconds: (start * 1e6).round()));
 }
 
 Duration _s(double s) => Duration(milliseconds: (s * 1000).round());
@@ -73,5 +98,7 @@ Transition? planTransition({
     at = end - blend;
   }
   if (at < length ~/ 2) return plain(); // not a believable outro (half the song): plain crossfade
+  final m = b == null ? null : beatMatch(a, b, at, nextStart);
+  if (m != null) return Transition(at, blend, nextStart: m.$2, nextSpeed: m.$1);
   return Transition(at, blend, nextStart: nextStart);
 }
