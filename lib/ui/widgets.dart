@@ -70,7 +70,18 @@ class Cover extends ConsumerWidget {
     final px = (side * MediaQuery.devicePixelRatioOf(context)).round();
     final bucket = px <= 200 ? 200 : (px <= 500 ? 500 : 1000);
     final Widget img;
-    if (coverArt.startsWith('file:')) {
+    if (coverArt.startsWith('http')) {
+      // a picture from elsewhere (an audiobook's, from Audiobookshelf)
+      img = CachedNetworkImage(
+        imageUrl: coverArt,
+        fit: BoxFit.cover,
+        width: fill ? null : side,
+        height: fill ? null : side,
+        memCacheWidth: px,
+        errorWidget: (_, _, _) => placeholder,
+        placeholder: (_, _) => placeholder,
+      );
+    } else if (coverArt.startsWith('file:')) {
       // your own playlist picture, kept on the phone
       img = Image.file(
         File(coverArt.substring(5)),

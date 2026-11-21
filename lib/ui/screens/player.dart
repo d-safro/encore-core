@@ -263,6 +263,10 @@ class _TopBar extends ConsumerWidget {
             onPressed: s == null
                 ? null
                 : () async {
+                    if (isAudiobookId(s.id)) {
+                      context.push('/audiobook/${s.id.substring(3, s.id.lastIndexOf('-'))}'); // its chapters
+                      return;
+                    }
                     if (!isPodcastId(s.id)) return showSongMenu(context, ref, s);
                     final e = await ref.read(clientProvider)?.podcastEpisode(s.id).catchError((_) => null);
                     if (e != null && context.mounted) await showEpisodeMenu(context, ref, e);

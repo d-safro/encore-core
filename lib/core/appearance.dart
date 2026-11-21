@@ -215,4 +215,11 @@ const navDestinations = {
     selectedIcon: Icon(Icons.search_rounded),
     label: 'Search',
   ),
+  // added when you sign in to Audiobookshelf (data/audiobooks.dart)
+  'audiobooks': (
+    path: '/audiobooks',
+    icon: Icon(Icons.headphones_outlined),
+    selectedIcon: Icon(Icons.headphones_rounded),
+    label: 'Audiobooks',
+  ),
 };

@@ -18,6 +18,7 @@ import '../core/platform.dart';
 import '../core/settings.dart';
 import '../data/account.dart';
 import '../data/ai.dart';
+import '../data/audiobooks.dart';
 import '../data/library.dart';
 import '../data/models.dart';
 import '../data/saved_covers.dart';
@@ -727,8 +728,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   final Set<String> _onPhone = {}; // queue songs whose source is the downloaded file
 
   AudioSource _source(Song s) {
-    final local = container.read(downloadsProvider).files[s.id];
     final item = _mediaItem(s);
+    if (isAudiobookId(s.id)) {
+      // a file of an audiobook: from Audiobookshelf (data/audiobooks.dart)
+      return AudioSource.uri(Uri.parse(audiobookUrl(s.id) ?? 'file:///missing/${s.id}'), tag: item);
+    }
+    final local = container.read(downloadsProvider).files[s.id];
     if (local != null) {
       _onPhone.add(s.id);
       return AudioSource.file(local, tag: item);
@@ -751,6 +756,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// The lock screen's, notification's and widget's picture: the one kept on the phone when there is one
   /// (shows with no server too), else the server's.
   static Uri? _artUri(SubsonicClient? c, String coverArt) {
+    if (coverArt.startsWith('http')) return Uri.parse(coverArt); // an audiobook's cover
     if (c == null || coverArt.isEmpty) return null;
     final kept = savedCovers?.file(c.creds.base, coverArt, SavedCovers.large);
     return kept != null ? Uri.file(kept.path) : c.stableCoverUrl(coverArt);
@@ -758,6 +764,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   /// The same for the car's lists, which can't open Encore's own files: shared through CoverArtProvider.
   static Uri? _carArtUri(SubsonicClient? c, String coverArt) {
+    if (coverArt.startsWith('http')) return Uri.parse(coverArt);
     if (c == null || coverArt.isEmpty) return null;
     final kept = savedCovers?.best(c.creds.base, coverArt, 300);
     return kept != null ? sharedCoverUri(kept.$1) : c.coverUrl(coverArt, size: 300);
@@ -1111,6 +1118,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (s == null || !isPodcastId(s.id) || c == null || container.read(offlineProvider)) return;
     if (_podActive != s.id) return; // not played here yet: leave the server's position alone
     _podSavedAt = DateTime.now();
+    if (isAudiobookId(s.id)) return saveBookPlace(s.id, player.position); // kept on Audiobookshelf
     final pos = player.position.inMilliseconds;
     final len = (player.duration ?? Duration(seconds: s.duration ?? 0)).inMilliseconds;
     try {

@@ -536,7 +536,11 @@ class PodcastEpisode {
 }
 
 /// Podcast episode ids start with "pe-", shows with "pc-".
-bool isPodcastId(String id) => id.startsWith('pe-');
+/// A podcast episode, or a file of an audiobook (`ab-`, data/audiobooks.dart): spoken word, played with your
+/// place kept, never scrobbled, hearted or used by autoplay.
+bool isPodcastId(String id) => id.startsWith('pe-') || id.startsWith('ab-');
+
+bool isAudiobookId(String id) => id.startsWith('ab-');
 
 /// Plays, minutes and favourites for a period (from music-lookup's play log; "all" from play counts).
 class ListeningStats {
