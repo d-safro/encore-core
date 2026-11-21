@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
 import '../core/platform.dart';
+import 'lyrics_translation.dart' show LyricsTranslation;
 import 'models.dart';
 
 class SubsonicException implements Exception {
@@ -114,6 +115,17 @@ class SubsonicClient {
       v is List ? v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList() : const [];
 
   // ── System ──
+  /// Lyrics translated or romanized by the server's AI (music-lookup + Ollama). Can take a minute the first time.
+  Future<LyricsTranslation> translateLyrics(String id, List<String> lines, {required String lang, bool romanize = false}) async {
+    final r = await call('translateLyrics', {
+      'id': id,
+      'lang': lang,
+      if (romanize) 'mode': 'romanize',
+      'line': lines,
+    }, null, const Duration(minutes: 5));
+    return LyricsTranslation.fromJson((r['lyricsTranslation'] as Map?)?.cast<String, dynamic>() ?? const {});
+  }
+
   Future<Map<String, dynamic>> ping() => call('ping', const {}, null, const Duration(seconds: 15));
 
   Future<Set<String>> openSubsonicExtensions() async {

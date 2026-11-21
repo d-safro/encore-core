@@ -11,6 +11,7 @@ import 'package:home_widget/home_widget.dart';
 import '../../core/appearance.dart';
 import '../../core/platform.dart';
 import '../../core/settings.dart';
+import '../../data/lyrics_translation.dart';
 import '../../data/account.dart';
 import '../../data/cover_cache.dart';
 import '../../data/saved_covers.dart';
@@ -141,6 +142,31 @@ class SettingsScreen extends ConsumerWidget {
               ),
               onTap: () => showDialog(context: context, builder: (_) => const _LyricsSourcesDialog()),
             ),
+          ListTile(
+            leading: const Icon(Icons.translate_rounded),
+            title: const Text('Translate lyrics into'),
+            subtitle: Text(
+              '${s.lyricsLanguage.isEmpty ? 'Your phone\'s language (${lyricsLanguages[lyricsTargetLanguage('')]})' : lyricsLanguages[s.lyricsLanguage] ?? s.lyricsLanguage}'
+              ' · by your server\'s AI, nothing leaves home',
+            ),
+            onTap: () async {
+              final v = await showDialog<String>(
+                context: context,
+                builder: (ctx) => SimpleDialog(
+                  title: const Text('Translate lyrics into'),
+                  children: [
+                    for (final e in {'': 'Your phone\'s language', ...lyricsLanguages}.entries)
+                      ListTile(
+                        title: Text(e.value),
+                        trailing: e.key == s.lyricsLanguage ? const Icon(Icons.check_rounded) : null,
+                        onTap: () => Navigator.pop(ctx, e.key),
+                      ),
+                  ],
+                ),
+              );
+              if (v != null) set('lyricsLanguage', v);
+            },
+          ),
           SwitchListTile(
             secondary: const Icon(Icons.podcasts_rounded),
             title: const Text('New podcast episodes'),

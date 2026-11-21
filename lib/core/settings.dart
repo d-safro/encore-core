@@ -53,6 +53,7 @@ class Settings {
   final bool syncPlayQueue; // save the queue on the server (continue on another device)
   final bool onlineLyrics; // look online when the server has no lyrics
   final List<String> lyricsSources; // enabled online lyrics sources, in order (see online_lyrics.dart)
+  final String lyricsLanguage; // translate lyrics into this ('' = the phone's language; see lyrics_translation.dart)
   final bool onlineCovers; // iTunes / Deezer art when the server has none
   final double pitch;
   final bool showLookup; // show songs you don't have (music-lookup) in search and album pages
@@ -103,6 +104,7 @@ class Settings {
     this.syncPlayQueue = true,
     this.onlineLyrics = true,
     this.lyricsSources = const ['lrclib', 'netease', 'ovh'],
+    this.lyricsLanguage = '',
     this.onlineCovers = true,
     this.pitch = 1.0,
     this.showLookup = true,
@@ -156,6 +158,7 @@ class Settings {
     'syncPlayQueue': syncPlayQueue,
     'onlineLyrics': onlineLyrics,
     'lyricsSources': lyricsSources,
+    'lyricsLanguage': lyricsLanguage,
     'onlineCovers': onlineCovers,
     'pitch': pitch,
     'showLookup': showLookup,
@@ -210,6 +213,7 @@ class Settings {
       syncPlayQueue: j['syncPlayQueue'] ?? d.syncPlayQueue,
       onlineLyrics: j['onlineLyrics'] ?? d.onlineLyrics,
       lyricsSources: (j['lyricsSources'] as List?)?.map((e) => '$e').toList() ?? d.lyricsSources,
+      lyricsLanguage: j['lyricsLanguage'] ?? d.lyricsLanguage,
       onlineCovers: j['onlineCovers'] ?? d.onlineCovers,
       pitch: (j['pitch'] as num?)?.toDouble() ?? d.pitch,
       showLookup: j['showLookup'] ?? d.showLookup,
