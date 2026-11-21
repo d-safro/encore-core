@@ -14,9 +14,11 @@ import '../core/platform.dart';
 /// receiver. The audio comes from a small relay in the app (see [CastRelay]), because the speaker usually
 /// can't reach your server itself (e.g. when the server is only on Tailscale).
 class CastDevice {
-  const CastDevice(this.name, this.host, this.port, {this.model = ''});
+  const CastDevice(this.name, this.host, this.port, {this.model = '', this.location});
   final String name, host, model;
   final int port;
+  final String? location; // a UPnP / DLNA renderer's description address (upnp.dart); null: Google Cast
+  bool get isUpnp => location != null;
   @override
   bool operator ==(Object other) => other is CastDevice && other.host == host && other.port == port;
   @override
@@ -158,9 +160,33 @@ class CastMediaStatus {
   final String? idleReason; // FINISHED, ERROR, CANCELLED, INTERRUPTED
 }
 
+/// A speaker playing what Encore plays: Google Cast ([CastSession]) or UPnP / DLNA ([UpnpSession] in upnp.dart).
+abstract class RemoteSpeaker {
+  CastDevice get device;
+  StreamController<CastMediaStatus> get status;
+  Completer<void> get closed;
+  double get volume;
+  bool get isOpen;
+  Future<void> load(String url, {
+    required String contentType,
+    required String title,
+    String artist,
+    String album,
+    String? image,
+    Duration position,
+    bool play,
+  });
+  void play();
+  void pause();
+  void seek(Duration to);
+  void setVolume(double level);
+  Future<void> close({bool stopApp = true});
+}
+
 /// A connection to one speaker, with the media receiver running.
-class CastSession {
+class CastSession implements RemoteSpeaker {
   CastSession._(this.device, this._socket);
+  @override
   final CastDevice device;
   final SecureSocket _socket;
   final _buf = BytesBuilder();
@@ -169,8 +195,11 @@ class CastSession {
   int? _mediaSessionId;
   Timer? _ping;
   final _pending = <int, Completer<Map<String, dynamic>>>{};
+  @override
   final status = StreamController<CastMediaStatus>.broadcast();
+  @override
   final closed = Completer<void>();
+  @override
   double volume = 1;
 
   static Future<CastSession> connect(CastDevice d) async {
@@ -200,6 +229,7 @@ class CastSession {
     return s;
   }
 
+  @override
   bool get isOpen => !closed.isCompleted;
 
   void _readReceiver(Map<String, dynamic> j) {
@@ -297,6 +327,7 @@ class CastSession {
   }
 
   /// Play [url] on the speaker from [position].
+  @override
   Future<void> load(String url, {
     required String contentType,
     required String title,
@@ -336,16 +367,21 @@ class CastSession {
     _send(t, _nsMedia, {...p, 'mediaSessionId': id, 'requestId': _reqId++});
   }
 
+  @override
   void play() => _media({'type': 'PLAY'});
+  @override
   void pause() => _media({'type': 'PAUSE'});
+  @override
   void seek(Duration to) => _media({'type': 'SEEK', 'currentTime': to.inMilliseconds / 1000});
 
+  @override
   void setVolume(double level) {
     volume = level.clamp(0, 1).toDouble();
     _send('receiver-0', _nsReceiver, {'type': 'SET_VOLUME', 'volume': {'level': volume}, 'requestId': _reqId++});
   }
 
   /// Stops the player on the speaker and disconnects.
+  @override
   Future<void> close({bool stopApp = true}) async {
     if (!isOpen) return;
     if (stopApp && _sessionId != null) {
@@ -426,6 +462,9 @@ class CastRelay {
       }
       final id = Uri.decodeComponent(parts[2]);
       res.headers.set('Access-Control-Allow-Origin', '*'); // the receiver is a web page
+      // UPnP / DLNA renderers like to be told it's a stream they may seek in
+      res.headers.set('transferMode.dlna.org', parts[1] == 'art' ? 'Interactive' : 'Streaming');
+      res.headers.set('contentFeatures.dlna.org', 'DLNA.ORG_OP=01;DLNA.ORG_FLAGS=01700000000000000000000000000000');
       if (parts[1] == 'art') {
         final src = _art[id];
         if (src == null) {
