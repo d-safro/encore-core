@@ -21,6 +21,7 @@ import '../state.dart';
 import '../widgets.dart';
 import '../../data/playlist_covers.dart';
 import 'playlist_edit.dart';
+import '../collab_sheet.dart';
 import 'smart_playlist.dart';
 import 'radio.dart';
 import 'following.dart' show ShowTile;
@@ -709,6 +710,8 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                       });
                     case 'details':
                       await showPlaylistDetails(context, ref, p);
+                    case 'invite':
+                      await showInviteToEdit(context, p);
                     case 'picture':
                       await showPlaylistPicture(context, ref, p);
                     case 'menu':
@@ -735,6 +738,8 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                 const PopupMenuItem(value: 'menu', child: Text('Pin, queue, download…')),
                 const PopupMenuItem(value: 'details', child: Text('Edit name and description')),
                 const PopupMenuItem(value: 'picture', child: Text('Change picture')),
+                if (ref.read(playlistRulesProvider(widget.id)).value == null)
+                  const PopupMenuItem(value: 'invite', child: Text('Invite to edit')),
                 if (ref.read(playlistRulesProvider(widget.id)).value != null)
                   const PopupMenuItem(value: 'rules', child: Text('Edit rules'))
                 else
