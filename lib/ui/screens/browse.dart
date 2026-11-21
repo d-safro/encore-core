@@ -252,6 +252,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                   leading: [
                     DownloadToggle(pinKey: 'album:${a.id}', songs: () async => playable),
                     IconButton(
+                      tooltip: a.starred ? 'Unlike' : 'Like',
                       iconSize: 26,
                       icon: Icon(
                         a.starred ? Icons.favorite_rounded : Icons.favorite_border_rounded,
@@ -272,6 +273,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                         onPressed: () => shareLink(context, '${a.name} · ${a.artist}', () => albumLink(a)),
                       ),
                     IconButton(
+                      tooltip: 'More',
                       icon: const Icon(Icons.more_vert_rounded),
                       onPressed: () => showCollectionMenu(
                         context,
@@ -465,6 +467,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
               leading: [
                 if (!a.isLookup) _FollowButton(a, mbid: info.value?.mbid ?? ''),
                 IconButton(
+                  tooltip: a.starred ? 'Unlike' : 'Like',
                   iconSize: 26,
                   icon: Icon(
                     a.starred ? Icons.favorite_rounded : Icons.favorite_border_rounded,
@@ -1043,7 +1046,7 @@ class RadioScreen extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: IconButton(icon: const Icon(Icons.more_vert), onPressed: () => _menu(context, ref, r)),
+                  trailing: IconButton(tooltip: 'More', icon: const Icon(Icons.more_vert), onPressed: () => _menu(context, ref, r)),
                   onLongPress: () => _menu(context, ref, r),
                   onTap: () {
                     final pic = stationArt(r.streamUrl);

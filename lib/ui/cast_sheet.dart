@@ -44,13 +44,20 @@ class _CastSheetState extends State<_CastSheet> {
                   ListTile(
                     leading: Icon(info.connecting ? Icons.cast_rounded : Icons.cast_connected_rounded),
                     title: Text(info.connecting ? 'Connecting to ${info.name}…' : 'Playing on ${info.name}'),
-                    subtitle: Text('Your $deviceWord stays the remote: queue, media controls and buttons work as usual'),
+                    subtitle: Text(
+                      'Your $deviceWord stays the remote: queue, media controls and buttons work as usual',
+                    ),
                   ),
                   if (!info.connecting)
                     Row(
                       children: [
                         const Padding(padding: EdgeInsets.only(left: 16), child: Icon(Icons.volume_down_rounded)),
-                        Expanded(child: Slider(value: info.volume, onChanged: audioHandler.setCastVolume)),
+                        Expanded(
+                          child: Semantics(
+                            label: 'Speaker volume',
+                            child: Slider(value: info.volume, onChanged: audioHandler.setCastVolume),
+                          ),
+                        ),
                         const Padding(padding: EdgeInsets.only(right: 16), child: Icon(Icons.volume_up_rounded)),
                       ],
                     ),
@@ -99,7 +106,9 @@ class _CastSheetState extends State<_CastSheet> {
                           ),
                         for (final d in found)
                           ListTile(
-                            leading: Icon(d.model.toLowerCase().contains('tv') ? Icons.tv_rounded : Icons.speaker_rounded),
+                            leading: Icon(
+                              d.model.toLowerCase().contains('tv') ? Icons.tv_rounded : Icons.speaker_rounded,
+                            ),
                             title: Text(d.name),
                             subtitle: d.model.isEmpty ? null : Text(d.model),
                             onTap: () => audioHandler.startCasting(d),

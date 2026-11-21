@@ -186,6 +186,7 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
                 ),
                 const Spacer(),
                 IconButton(
+                  tooltip: grid ? 'Show as a list' : 'Show as a grid',
                   icon: Icon(grid ? Icons.view_list_outlined : Icons.grid_view_outlined),
                   onPressed: () => ref.read(settingsProvider.notifier).update({'albumGrid': !grid}),
                 ),

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -111,7 +112,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       builder: (context) {
                         final art = _Art(key: ValueKey('art-${item.id}'), song: song, small: minimal);
                         final main = AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 250),
+                          duration: motion(context, const Duration(milliseconds: 250)),
                           child: _lyrics && song != null
                               ? LyricsView(key: ValueKey('lyrics-${song.id}'), song: song)
                               : layout == PlayerLayout.coverLyrics && song != null
@@ -202,7 +203,7 @@ class _TopBar extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       child: Row(
         children: [
-          IconButton(icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30), onPressed: () => context.pop()),
+          IconButton(tooltip: 'Close player', icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30), onPressed: () => context.pop()),
           Expanded(
             child: Column(
               children: [
@@ -237,6 +238,7 @@ class _TopBar extends ConsumerWidget {
             onPressed: () => showJamSheet(context),
           ),
           IconButton(
+            tooltip: 'More',
             icon: const Icon(Icons.more_vert_rounded),
             onPressed: s == null
                 ? null
@@ -264,7 +266,19 @@ class _Art extends StatelessWidget {
         final size = small
             ? (box.biggest.shortestSide - 40).clamp(80.0, 168.0)
             : (box.biggest.shortestSide - 40).clamp(120.0, 520.0);
-        final cover = GestureDetector(
+        final starred = audioHandler.currentSong?.starred ?? false;
+        // the swipes and double-tap, as actions a screen reader offers
+        final cover = Semantics(
+          image: true,
+          label: song == null ? 'Cover' : 'Cover of ${song?.album}',
+          hint: 'Swipe for the next or previous song, double-tap to like',
+          customSemanticsActions: {
+            const CustomSemanticsAction(label: 'Next song'): audioHandler.skipToNext,
+            const CustomSemanticsAction(label: 'Previous song'): audioHandler.skipToPrevious,
+            CustomSemanticsAction(label: starred ? 'Unlike' : 'Like'): () =>
+                audioHandler.setRating(Rating.newHeartRating(!starred)),
+          },
+          child: GestureDetector(
           onHorizontalDragEnd: (d) {
             final v = d.primaryVelocity ?? 0;
             if (v < -300) audioHandler.skipToNext();
@@ -274,7 +288,7 @@ class _Art extends StatelessWidget {
             final s = audioHandler.currentSong;
             if (s != null) audioHandler.setRating(Rating.newHeartRating(!s.starred));
           },
-          child: Hero(
+          child: HeroMode(enabled: !MediaQuery.disableAnimationsOf(context), child: Hero(
             tag: 'cover',
             child: Container(
               decoration: BoxDecoration(
@@ -290,7 +304,8 @@ class _Art extends StatelessWidget {
                 album: song?.album ?? '',
               ),
             ),
-          ),
+          )),
+        ),
         );
         if (small) {
           return Align(
@@ -454,6 +469,7 @@ class _Titles extends ConsumerWidget {
           ),
           if (s != null && !isPodcastId(s.id))
             IconButton(
+              tooltip: s.starred ? 'Unlike' : 'Like',
               iconSize: 28,
               icon: Icon(
                 s.starred ? Icons.favorite_rounded : Icons.favorite_border_rounded,
@@ -496,6 +512,10 @@ class _SeekBarState extends ConsumerState<_SeekBar> {
             child: Slider(
               value: value,
               max: max > 0 ? max : 1,
+              label: 'Position',
+              // a screen reader says "1:12 of 3:40", not a percentage
+              semanticFormatterCallback: (v) =>
+                  '${_fmt(Duration(milliseconds: v.round()))} of ${_fmt(p.duration)}',
               secondaryTrackValue: p.buffered.inMilliseconds.toDouble().clamp(0.0, max > 0 ? max : 1.0),
               onChanged: max > 0 ? (v) => setState(() => _drag = v) : null,
               onChangeEnd: (v) {
@@ -504,7 +524,8 @@ class _SeekBarState extends ConsumerState<_SeekBar> {
               },
             ),
           ),
-          Padding(
+          ExcludeSemantics( // the slider says it already
+            child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Row(
               children: [
@@ -519,6 +540,7 @@ class _SeekBarState extends ConsumerState<_SeekBar> {
                 ),
               ],
             ),
+          ),
           ),
         ],
       ),
@@ -548,6 +570,7 @@ class _Controls extends ConsumerWidget {
         children: [
           ShuffleButton(kind: shuffle),
           IconButton(
+            tooltip: 'Previous',
             iconSize: 42,
             icon: const Icon(Icons.skip_previous_rounded),
             onPressed: audioHandler.skipToPrevious,
@@ -568,8 +591,9 @@ class _Controls extends ConsumerWidget {
                   : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 42),
             ),
           ),
-          IconButton(iconSize: 42, icon: const Icon(Icons.skip_next_rounded), onPressed: audioHandler.skipToNext),
+          IconButton(tooltip: 'Next', iconSize: 42, icon: const Icon(Icons.skip_next_rounded), onPressed: audioHandler.skipToNext),
           IconButton(
+            tooltip: 'Repeat',
             icon: Icon(
               repeat == AudioServiceRepeatMode.one ? Icons.repeat_one_rounded : Icons.repeat_rounded,
               color: repeat == AudioServiceRepeatMode.none ? cs.onSurfaceVariant : cs.primary,
@@ -774,7 +798,7 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
                         const SizedBox(width: 12),
                         const Icon(Icons.volume_down_rounded),
                         Expanded(
-                          child: Slider(
+                          child: Semantics(label: 'Volume', child: Slider(
                             value: vol.toDouble().clamp(0, maxVol.toDouble()),
                             max: maxVol.toDouble(),
                             divisions: maxVol,
@@ -782,7 +806,7 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
                               set(() => vol = v.round());
                               AudioDevice.setVolume(vol);
                             },
-                          ),
+                          )),
                         ),
                         const Icon(Icons.volume_up_rounded),
                         const SizedBox(width: 12),
@@ -946,7 +970,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               final ctx = _keys[cur]?.currentContext;
               if (ctx != null) {
-                Scrollable.ensureVisible(ctx, alignment: 0.4, duration: const Duration(milliseconds: 300));
+                Scrollable.ensureVisible(ctx, alignment: 0.4, duration: motion(context, const Duration(milliseconds: 300)));
               }
             });
           }
@@ -991,7 +1015,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 200),
+                    duration: motion(context, const Duration(milliseconds: 200)),
                     style: (l.synced ? (widget.compact ? t.titleMedium! : t.titleLarge!) : t.bodyLarge!).copyWith(
                       color: !l.synced || active ? cs.onSurface : cs.onSurface.withValues(alpha: 0.45),
                       fontWeight: active ? FontWeight.w700 : FontWeight.w500,
@@ -1085,7 +1109,7 @@ class _ChooseLyricsState extends ConsumerState<_ChooseLyrics> {
                     onSubmitted: (_) => _search(),
                   ),
                 ),
-                IconButton(icon: const Icon(Icons.search_rounded), onPressed: _search),
+                IconButton(tooltip: 'Search', icon: const Icon(Icons.search_rounded), onPressed: _search),
               ],
             ),
           ),

@@ -177,6 +177,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           trailing: [
             if (_ctl.text.isNotEmpty)
               IconButton(
+                tooltip: 'Clear',
                 icon: const Icon(Icons.close),
                 onPressed: () {
                   _ctl.clear();

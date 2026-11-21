@@ -230,7 +230,7 @@ class _RemoteState extends ConsumerState<_Remote> {
             const SizedBox(height: 16),
             Text(s.title, style: t.titleLarge, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
             Text(s.artist, style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant), textAlign: TextAlign.center),
-            Slider(
+            Semantics(label: 'Position', child: Slider(
               value: pos,
               max: dur > 0 ? dur : 1,
               onChanged: dur > 0 ? (v) => setState(() => _seek = v) : null,
@@ -238,7 +238,7 @@ class _RemoteState extends ConsumerState<_Remote> {
                 send(DeviceCommand.seek, {'position': v.round()});
                 setState(() => _seek = null);
               },
-            ),
+            )),
             Row(
               children: [
                 Text(formatDuration(pos ~/ 1000), style: t.labelSmall),
@@ -275,7 +275,7 @@ class _RemoteState extends ConsumerState<_Remote> {
               children: [
                 const Icon(Icons.volume_down_rounded),
                 Expanded(
-                  child: Slider(
+                  child: Semantics(label: 'Volume', child: Slider(
                     value: _volume ?? s.volume,
                     onChanged: (v) => setState(() => _volume = v),
                     onChangeEnd: (v) {
@@ -284,7 +284,7 @@ class _RemoteState extends ConsumerState<_Remote> {
                         if (mounted) setState(() => _volume = null);
                       });
                     },
-                  ),
+                  )),
                 ),
                 const Icon(Icons.volume_up_rounded),
               ],
