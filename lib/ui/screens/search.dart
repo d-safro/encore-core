@@ -10,6 +10,8 @@ import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
+import '../../data/song_id.dart' show canIdentify;
+import '../whats_playing.dart';
 import '../widgets.dart';
 
 /// One entry in "Recent searches": a song, album or artist you opened from search, or a search you typed.
@@ -175,6 +177,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           hintText: offline ? 'Search downloaded music' : 'Songs, albums, artists',
           leading: const Icon(Icons.search),
           trailing: [
+            if (_ctl.text.isEmpty && !offline && canIdentify)
+              IconButton(
+                tooltip: 'What\'s playing?',
+                icon: const Icon(Icons.hearing_rounded),
+                onPressed: () => showWhatsPlaying(context),
+              ),
             if (_ctl.text.isNotEmpty)
               IconButton(
                 tooltip: 'Clear',
