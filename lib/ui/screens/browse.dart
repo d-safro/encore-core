@@ -57,7 +57,7 @@ class _Header extends StatelessWidget {
   final bool circle;
   final IconData icon;
   final VoidCallback? onCoverTap; // e.g. change a playlist's picture
-  Widget _cover(double size) => GestureDetector(
+  Widget _cover(double size) => Tappable(
     onTap: onCoverTap,
     child: Container(
       decoration: BoxDecoration(
@@ -200,7 +200,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                 artist: a.artist,
                 album: a.name,
                 lines: [
-                  GestureDetector(
+                  Tappable(
                     onTap: a.artistId.isEmpty ? null : () => context.push('/artist/${a.artistId}'),
                     child: Text(a.artist, style: t.titleSmall),
                   ),

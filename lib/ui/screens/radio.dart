@@ -152,7 +152,7 @@ class DiscoveryCard extends ConsumerWidget {
     final previewing = ref.watch(mediaItemProvider).value?.id == song.id;
     return SizedBox(
       width: 140,
-      child: GestureDetector(
+      child: Tappable(
         onTap: () => showSongMenu(context, ref, song),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

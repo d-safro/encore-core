@@ -423,7 +423,7 @@ class _Titles extends ConsumerWidget {
                       : t.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
                 ),
                 const SizedBox(height: 2),
-                GestureDetector(
+                Tappable(
                   // a song's artist, or for an episode the show and who makes it
                   onTap: s == null
                       ? null

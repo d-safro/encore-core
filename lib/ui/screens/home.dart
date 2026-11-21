@@ -273,7 +273,7 @@ class _PlaylistShelf extends ConsumerWidget {
           for (final p in l)
             SizedBox(
               width: AppLook.of(context).cardWidth,
-              child: GestureDetector(
+              child: Tappable(
                 onTap: () => context.push('/playlist/${p.id}'),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

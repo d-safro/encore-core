@@ -486,7 +486,7 @@ class AlbumCard extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     return SizedBox(
       width: width ?? AppLook.of(context).cardWidth,
-      child: GestureDetector(
+      child: Tappable(
         onTap: () => context.push('/album/${album.id}'),
         onSecondaryTap: () => showCollectionMenu(
           context,
@@ -1138,7 +1138,7 @@ class _WideSongRowState extends ConsumerState<_WideSongRow> {
                           child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
                         ),
                       Flexible(
-                        child: GestureDetector(
+                        child: Tappable(
                           onTap: s.artistId.isEmpty ? null : () => context.push('/artist/${s.artistId}'),
                           child: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
                         ),
@@ -1153,7 +1153,7 @@ class _WideSongRowState extends ConsumerState<_WideSongRow> {
                 flex: 4,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: GestureDetector(
+                  child: Tappable(
                     onTap: s.albumId.isEmpty ? null : () => context.push('/album/${s.albumId}'),
                     child: Text(s.album, maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
                   ),
@@ -1195,3 +1195,74 @@ class _WideSongRowState extends ConsumerState<_WideSongRow> {
     );
   }
 }
+
+/// Something you click that isn't a button or a list row (a cover, a card, a link). It works like
+/// GestureDetector and also, with a mouse, shows the hand cursor and a soft gray highlight around it.
+class Tappable extends StatefulWidget {
+  const Tappable({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.onSecondaryTap,
+    this.onLongPress,
+    this.onDoubleTap,
+    this.behavior,
+    this.radius = 10,
+    this.outset = 4,
+  });
+  final Widget child;
+  final VoidCallback? onTap, onSecondaryTap, onLongPress, onDoubleTap;
+  final HitTestBehavior? behavior;
+  final double radius, outset; // the highlight's corners, and how far it reaches past the child
+
+  @override
+  State<Tappable> createState() => _TappableState();
+}
+
+class _TappableState extends State<Tappable> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final clickable = widget.onTap != null;
+    final gesture = GestureDetector(
+      behavior: widget.behavior,
+      onTap: widget.onTap,
+      onSecondaryTap: widget.onSecondaryTap,
+      onLongPress: widget.onLongPress,
+      onDoubleTap: widget.onDoubleTap,
+      child: widget.child,
+    );
+    if (!clickable) return gesture;
+    final o = widget.outset;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: -o,
+            top: -o,
+            right: -o,
+            bottom: -o,
+            child: IgnorePointer(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                decoration: BoxDecoration(
+                  color: _hover ? hoverGray(context) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(widget.radius + o),
+                ),
+              ),
+            ),
+          ),
+          gesture,
+        ],
+      ),
+    );
+  }
+}
+
+/// The gray that clickable things turn under the mouse.
+Color hoverGray(BuildContext context) => Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.09);

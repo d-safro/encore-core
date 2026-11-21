@@ -447,7 +447,7 @@ class EpisodeTile extends ConsumerWidget {
                             WidgetSpan(
                               alignment: PlaceholderAlignment.baseline,
                               baseline: TextBaseline.alphabetic,
-                              child: GestureDetector(
+                              child: Tappable(
                                 onTap: () => context.push(podcasterPath(name: e.author, show: e.channelId)),
                                 child: Text(
                                   e.show,

@@ -404,6 +404,8 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
         titleSmall: text.titleSmall?.copyWith(fontWeight: FontWeight.w600),
       ),
       scaffoldBackgroundColor: cs.surface,
+      // desktop: a clear gray under the mouse on anything clickable (rows, sidebar, buttons)
+      hoverColor: isDesktop ? cs.onSurface.withValues(alpha: 0.09) : null,
       splashFactory: InkSparkle.splashFactory,
       appBarTheme: AppBarTheme(
         backgroundColor: cs.surface,
