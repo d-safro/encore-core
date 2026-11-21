@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import '../../core/platform.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -228,7 +229,14 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
                   ), child: ListTile(
                   leading: Cover(a.coverArt, size: AppLook.of(context).compact ? 44 : 52),
                   title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text([a.artist, if (a.year != null) '${a.year}'].join(' · '), maxLines: 1),
+                  subtitle: isDesktop && a.artistId.isNotEmpty
+                      ? Row(
+                          children: [
+                            Flexible(child: NameLink(a.artist, to: NameLink.artistOf(a.artistId))),
+                            if (a.year != null) Text(' · ${a.year}'),
+                          ],
+                        )
+                      : Text([a.artist, if (a.year != null) '${a.year}'].join(' · '), maxLines: 1),
                   onTap: () => context.push('/album/${a.id}'),
                   onLongPress: () => showCollectionMenu(
                     context,

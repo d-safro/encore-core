@@ -405,11 +405,10 @@ class SongTile extends ConsumerWidget {
                             child: Icon(Icons.auto_awesome, size: 15, color: cs.primary),
                           ),
                         ),
-                      Expanded(
-                        child: Text(
+                      Flexible(
+                        child: NameLink(
                           song.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          to: showTrack ? null : NameLink.albumOf(song), // the album page lists it already
                           style: t.bodyLarge?.copyWith(
                             fontWeight: FontWeight.w500,
                             color: current ? cs.primary : (dim ? cs.onSurfaceVariant : cs.onSurface),
@@ -431,17 +430,31 @@ class SongTile extends ConsumerWidget {
                           padding: const EdgeInsets.only(right: 4),
                           child: Icon(Icons.favorite_rounded, size: 13, color: cs.primary),
                         ),
-                      Expanded(
-                        child: Text(
-                          [
-                            showTrack ? '' : song.artist,
-                            formatDuration(song.duration),
-                          ].where((e) => e.isNotEmpty).join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      if (isDesktop && !showTrack && song.artist.isNotEmpty) ...[
+                        // desktop: the artist is a link
+                        Flexible(
+                          child: NameLink(
+                            song.artist,
+                            to: NameLink.artistOf(song.artistId),
+                            style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ),
+                        Text(
+                          song.duration == null ? '' : ' · ${formatDuration(song.duration)}',
                           style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                         ),
-                      ),
+                      ] else
+                        Expanded(
+                          child: Text(
+                            [
+                              showTrack ? '' : song.artist,
+                              formatDuration(song.duration),
+                            ].where((e) => e.isNotEmpty).join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ),
                     ],
                   ),
                 ],
@@ -548,8 +561,23 @@ class AlbumCard extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
-            if (showArtist || showYear)
+            NameLink(album.name, to: album.isLookup ? null : '/album/${album.id}', style: t.titleSmall),
+            if (showArtist && isDesktop && album.artistId.isNotEmpty)
+              // desktop: the artist is a link of its own
+              Row(
+                children: [
+                  Flexible(
+                    child: NameLink(
+                      album.artist,
+                      to: NameLink.artistOf(album.artistId),
+                      style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                  if (showYear && album.year != null)
+                    Text(' · ${album.year}', style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                ],
+              )
+            else if (showArtist || showYear)
               Text(
                 [if (showArtist) album.artist, if (showYear && album.year != null) '${album.year}'].join(' · '),
                 maxLines: 1,
@@ -1121,10 +1149,9 @@ class _WideSongRowState extends ConsumerState<_WideSongRow> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
+                  NameLink(
                     s.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    to: widget.showTrack ? null : NameLink.albumOf(s), // on its album's page already
                     style: t.bodyLarge?.copyWith(
                       fontWeight: FontWeight.w500,
                       color: widget.current ? cs.primary : (widget.dim ? cs.onSurfaceVariant : cs.onSurface),
@@ -1137,12 +1164,7 @@ class _WideSongRowState extends ConsumerState<_WideSongRow> {
                           padding: const EdgeInsets.only(right: 4),
                           child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
                         ),
-                      Flexible(
-                        child: Tappable(
-                          onTap: s.artistId.isEmpty ? null : () => context.push('/artist/${s.artistId}'),
-                          child: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
-                        ),
-                      ),
+                      Flexible(child: NameLink(s.artist, to: NameLink.artistOf(s.artistId), style: sub)),
                     ],
                   ),
                 ],
@@ -1153,9 +1175,9 @@ class _WideSongRowState extends ConsumerState<_WideSongRow> {
                 flex: 4,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Tappable(
-                    onTap: s.albumId.isEmpty ? null : () => context.push('/album/${s.albumId}'),
-                    child: Text(s.album, maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: NameLink(s.album, to: NameLink.albumOf(s), style: sub),
                   ),
                 ),
               ),
@@ -1266,3 +1288,59 @@ class _TappableState extends State<Tappable> {
 
 /// The gray that clickable things turn under the mouse.
 Color hoverGray(BuildContext context) => Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.09);
+
+/// A song, album or artist name that takes you to its page. On the desktop it underlines, turns the pointer
+/// into a hand and shows the hover gray; on the phone it stays plain text (a tap there plays the row), unless
+/// [phoneToo].
+class NameLink extends StatefulWidget {
+  const NameLink(
+    this.text, {
+    super.key,
+    this.to,
+    this.onTap,
+    this.style,
+    this.maxLines = 1,
+    this.textAlign,
+    this.phoneToo = false,
+  });
+  final String text;
+  final String? to; // a route, e.g. /artist/<id>
+  final VoidCallback? onTap; // instead of [to]
+  final TextStyle? style;
+  final int maxLines;
+  final TextAlign? textAlign;
+  final bool phoneToo;
+
+  /// The album page of a song (none for podcast episodes, radio and songs you don't have).
+  static String? albumOf(Song s) => s.albumId.isEmpty || isPodcastId(s.id) || s.isLookup ? null : '/album/${s.albumId}';
+
+  /// The artist page of a song or album.
+  static String? artistOf(String artistId) => artistId.isEmpty ? null : '/artist/$artistId';
+
+  @override
+  State<NameLink> createState() => _NameLinkState();
+}
+
+class _NameLinkState extends State<NameLink> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final to = widget.to;
+    final go = widget.onTap ?? (to == null ? null : () => context.push(to));
+    final active = go != null && (isDesktop || widget.phoneToo);
+    final text = Text(
+      widget.text,
+      maxLines: widget.maxLines,
+      overflow: TextOverflow.ellipsis,
+      textAlign: widget.textAlign,
+      style: _hover && active ? (widget.style ?? const TextStyle()).copyWith(decoration: TextDecoration.underline) : widget.style,
+    );
+    if (!active) return text;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Tappable(onTap: go, radius: 4, outset: 2, child: text),
+    );
+  }
+}

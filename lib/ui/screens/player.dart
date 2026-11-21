@@ -414,10 +414,11 @@ class _Titles extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                // desktop: the song's name opens its album
+                NameLink(
                   item.title,
+                  to: s == null ? null : NameLink.albumOf(s),
                   maxLines: large ? 2 : 1,
-                  overflow: TextOverflow.ellipsis,
                   style: large
                       ? t.headlineLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -1, height: 1.1)
                       : t.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
