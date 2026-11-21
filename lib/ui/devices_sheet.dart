@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/platform.dart';
 import '../data/devices.dart';
 import '../data/models.dart' show formatDuration;
+import '../playback/private_session.dart';
 import 'actions.dart';
 import 'cast_sheet.dart';
 import 'widgets.dart';
@@ -36,6 +37,8 @@ class _DevicesSheet extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final online = st.online;
+    final privateUntil = ref.watch(privateSessionProvider);
+    final privateOn = privateSessionOn(privateUntil, DateTime.now());
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
@@ -51,6 +54,13 @@ class _DevicesSheet extends ConsumerWidget {
               leading: Icon(deviceIcon(deviceKind()), color: cs.primary),
               title: Text(deviceName()),
               subtitle: const Text('This device'),
+            ),
+            SwitchListTile(
+              secondary: Icon(Icons.lock_outline_rounded, color: privateOn ? Theme.of(context).colorScheme.primary : null),
+              title: const Text('Private session'),
+              subtitle: Text(privateSessionLabel(privateUntil)),
+              value: privateOn,
+              onChanged: (v) => ref.read(privateSessionProvider.notifier).set(v),
             ),
             if (st.supported == false)
               const ListTile(

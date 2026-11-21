@@ -22,6 +22,7 @@ import '../../data/online_lyrics.dart';
 import '../../playback/desktop_audio.dart';
 import '../../playback/fetching.dart';
 import '../../playback/handler.dart';
+import '../../playback/private_session.dart';
 import '../actions.dart';
 import '../update.dart';
 import '../download_quality.dart';
@@ -48,6 +49,8 @@ class SettingsScreen extends ConsumerWidget {
     final creds = ref.watch(accountProvider).value;
     final sync = ref.watch(syncProvider);
     void set(String k, Object v) => n.update({k: v});
+    final privateUntil = ref.watch(privateSessionProvider);
+    final privateOn = privateSessionOn(privateUntil, DateTime.now());
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -151,6 +154,13 @@ class SettingsScreen extends ConsumerWidget {
               if (v) await askNotificationPermission(prefs);
               ref.invalidate(settingsProvider); // redraw
             },
+          ),
+          SwitchListTile(
+            secondary: Icon(Icons.lock_outline_rounded, color: privateOn ? Theme.of(context).colorScheme.primary : null),
+            title: const Text('Private session'),
+            subtitle: Text(privateSessionLabel(privateUntil)),
+            value: privateOn,
+            onChanged: (v) => ref.read(privateSessionProvider.notifier).set(v),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.history),

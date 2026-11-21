@@ -13,6 +13,7 @@ import 'autoplay.dart';
 import 'cast.dart';
 import 'desktop_audio.dart';
 import 'fetching.dart';
+import 'private_session.dart';
 import '../core/platform.dart';
 import '../core/settings.dart';
 import '../data/account.dart';
@@ -125,6 +126,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   Settings get _settings => container.read(settingsProvider);
 
+  /// A private session is on: nothing is scrobbled, reported or learned from (see private_session.dart).
+  bool get _private => container.read(privateSessionProvider.notifier).on;
+
   Future<void> _init() async {
     if (!isDesktop) {
       // Android's audio focus (calls and other apps pause the music); the desktop has no such thing
@@ -199,6 +203,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     });
     container.listen(settingsProvider, (prev, next) => _applySettings(prev, next), fireImmediately: true);
     // going offline, or a song finishing its download: queued copies switch to the phone's file
+    container.listen(privateSessionProvider, (_, _) => _reportSoon()); // clears "now playing" when it starts
     container.listen(offlineProvider, (prev, next) {
       if (next == true) useDownloadedFiles();
     });
@@ -1405,7 +1410,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (_history.length > 30) _history.removeAt(0);
     _queueHistory.add(s);
     if (_queueHistory.length > 30) _queueHistory.removeAt(0);
-    if (isPodcastId(s.id)) return;
+    if (isPodcastId(s.id) || _private) return; // private: autoplay doesn't remember it
     final ids = _recentIds
       ..remove(s.id)
       ..add(s.id);
@@ -1420,11 +1425,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   void _countSkip(String id) {
+    if (_private) return;
     _skips.skipped(id);
     prefs.setString('skipStats', jsonEncode(_skips.toJson()));
   }
 
   void _countPlay(String id) {
+    if (_private) return;
     _skips.played(id);
     prefs.setString('skipStats', jsonEncode(_skips.toJson()));
   }
@@ -1724,7 +1731,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _listened = Duration.zero;
     _lastTick = null;
     _submitted = null;
-    if (_settings.scrobble && _scrobbledNow != s.id && !isPodcastId(s.id) && !container.read(offlineProvider)) {
+    if (_settings.scrobble && !_private && _scrobbledNow != s.id && !isPodcastId(s.id) && !container.read(offlineProvider)) {
       _scrobbledNow = s.id;
       container.read(clientProvider)?.scrobble(s.id, submission: false).catchError((_) {});
     }
@@ -1744,6 +1751,17 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (!_reportsWork || !_settings.scrobble) return;
     final c = container.read(clientProvider);
     if (c == null || container.read(offlineProvider)) return;
+    if (_private) {
+      // say "stopped" once for what was showing, then nothing until the private session ends
+      final was = _reportedId;
+      if (was == null || _reportedState == 'stopped') return;
+      try {
+        await c.reportPlayback(was, state: 'stopped', positionMs: 0);
+        _reportedId = null;
+        _reportedState = 'stopped';
+      } catch (_) {}
+      return;
+    }
     final s = radioStation == null ? currentSong : null;
     final ps = player.processingState;
     final ended = s == null || ps == ProcessingState.completed || ps == ProcessingState.idle;
@@ -1793,7 +1811,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _playCounted = s.id;
       _countPlay(s.id); // played through: not a song you skip
     }
-    if (_submitted == s.id || !_settings.scrobble) return;
+    if (_submitted == s.id || !_settings.scrobble || _private) return; // private: not even queued for later
     if (_listened >= need) {
       _submitted = s.id;
       final c = container.read(clientProvider);
