@@ -33,6 +33,7 @@ import 'ui/screens/search.dart';
 import 'ui/screens/settings.dart';
 import 'data/updates.dart';
 import 'ui/state.dart';
+import 'ui/screens/review.dart';
 import 'ui/screens/stats.dart';
 import 'ui/update.dart';
 import 'ui/widgets.dart';
@@ -79,6 +80,15 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(path: '/queue', parentNavigatorKey: _rootKey, builder: (_, _) => const QueueScreen()),
+      // the year (or month) in review: a full-screen story
+      GoRoute(
+        path: '/review',
+        parentNavigatorKey: _rootKey,
+        builder: (_, s) => ReviewScreen(
+          period: s.uri.queryParameters['period'] == 'month' ? 'month' : 'year',
+          offset: int.tryParse(s.uri.queryParameters['offset'] ?? '') ?? 0,
+        ),
+      ),
       ShellRoute(
         builder: (ctx, state, child) => isDesktop
             ? DesktopShell(location: state.uri.toString(), banner: const _ServerTrouble(), child: child)
@@ -349,6 +359,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
   Future<void> _checkEpisodes() async {
     if (!ref.read(repoProvider).online) return;
     final n = await checkNewEpisodes(p: prefs);
+    announceYearReview(p: prefs);
     ref.read(releasesProvider.notifier).refresh(); // once a day at most; it skips artists checked lately
     final c = ref.read(clientProvider);
     if (c != null) await warmPodcastCache(c); // so podcasts still show when the server is away
@@ -368,6 +379,8 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       router.go('/library?tab=1');
     } else if (payload == 'releases') {
       router.push('/following?tab=1');
+    } else if (payload == 'review') {
+      router.push('/review');
     }
   }
 

@@ -148,6 +148,25 @@ Future<void> checkNewReleases({SharedPreferences? p}) async {
   }
 }
 
+// ── Your year in review (1 December) ──
+const _reviewChannel = AndroidNotificationDetails(
+  'year_review',
+  'Your year in review',
+  channelDescription: 'Once a year, on 1 December: your year in music is ready',
+  importance: Importance.defaultImportance,
+  icon: 'drawable/ic_stat_encore',
+);
+
+/// Once a year, from 1 December: "Your 2026 in music is ready" (opens the story).
+Future<void> announceYearReview({SharedPreferences? p, DateTime? now}) async {
+  p ??= await SharedPreferences.getInstance();
+  final n = now ?? DateTime.now();
+  if (n.month != 12 || p.getInt('reviewAnnounced') == n.year || !(p.getBool('reviewAlerts') ?? true)) return;
+  await p.setInt('reviewAnnounced', n.year);
+  await _show(3, 'Your ${n.year} in music is ready', 'Your top artists, songs, streaks and finds', 'review',
+      android: _reviewChannel);
+}
+
 // ── Background check ──
 @pragma('vm:entry-point')
 void episodeCheckDispatcher() {
@@ -158,6 +177,7 @@ void episodeCheckDispatcher() {
       await initNotifications();
       await checkNewEpisodes();
       await checkNewReleases();
+      await announceYearReview();
     } catch (_) {}
     return true;
   });
@@ -171,6 +191,7 @@ Future<void> startEpisodeChecks() async {
     _desktopChecks ??= Timer.periodic(const Duration(hours: 1), (_) async {
       await checkNewEpisodes();
       await checkNewReleases();
+      await announceYearReview();
     });
     return;
   }

@@ -9,6 +9,7 @@ import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../playback/handler.dart';
 import '../widgets.dart';
+import 'review.dart' show reviewTitle;
 
 /// (period, offset) → your listening for it.
 final statsProvider = FutureProvider.autoDispose.family<ListeningStats, (String, int)>((ref, k) async {
@@ -90,6 +91,16 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               )
             else
               const SizedBox(height: 12),
+            // the story of this year / month, with a picture to share
+            if ((_period == 'year' || _period == 'month') && stats.value?.isEmpty == false)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: FilledButton.tonalIcon(
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: Text('Your ${reviewTitle(_period, _offset)} in review'),
+                  onPressed: () => context.push('/review?period=$_period&offset=$_offset'),
+                ),
+              ),
             AsyncView(stats, (ListeningStats s) => _Body(s, period: _period), onRetry: () {
               ref.invalidate(statsProvider((_period, _offset)));
             }),

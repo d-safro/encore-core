@@ -8,6 +8,7 @@ import 'package:http/io_client.dart';
 
 import '../core/platform.dart';
 import 'models.dart';
+import 'review.dart';
 
 class SubsonicException implements Exception {
   final int code;
@@ -566,6 +567,12 @@ class SubsonicClient {
   Future<ListeningStats> listeningStats(String period, {int offset = 0}) async {
     final r = await call('getListeningStats', {'period': period, 'offset': offset});
     return ListeningStats.fromJson(_m(r['listeningStats']));
+  }
+
+  /// The year (or month) in review (music-lookup's getListeningReview).
+  Future<ListeningReview> listeningReview(String period, {int offset = 0}) async {
+    final r = await call('getListeningReview', {'period': period, 'offset': offset}, null, const Duration(seconds: 60));
+    return ListeningReview.fromJson(_m(r['listeningReview']));
   }
 
   Future<List<Song>> songDiscoveries(String id, {int count = 30}) async {
