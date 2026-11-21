@@ -306,23 +306,22 @@ class _PodcastScreenState extends ConsumerState<PodcastScreen> {
                               label: 'About ${ch.author}',
                               excludeSemantics: true,
                               onTap: () => context.push(podcasterPath(name: ch.author, show: ch.id)),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(6),
-                                onTap: () => context.push(podcasterPath(name: ch.author, show: ch.id)),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 2),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          ch.author,
-                                          style: t.bodyMedium?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
-                                        ),
+                              // a link like every other name: underlined when pointed at, no gray box
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Flexible(
+                                      child: NameLink(
+                                        ch.author,
+                                        phoneToo: true,
+                                        onTap: () => context.push(podcasterPath(name: ch.author, show: ch.id)),
+                                        style: t.bodyMedium?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
                                       ),
-                                      Icon(Icons.chevron_right_rounded, size: 18, color: cs.primary),
-                                    ],
-                                  ),
+                                    ),
+                                    Icon(Icons.chevron_right_rounded, size: 18, color: cs.primary),
+                                  ],
                                 ),
                               ),
                             ),

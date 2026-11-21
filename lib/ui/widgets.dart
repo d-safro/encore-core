@@ -1305,9 +1305,9 @@ class _TappableState extends State<Tappable> {
 /// The gray that clickable things turn under the mouse.
 Color hoverGray(BuildContext context) => Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.09);
 
-/// A song, album or artist name that takes you to its page. On the desktop it underlines, turns the pointer
-/// into a hand and shows the hover gray; on the phone it stays plain text (a tap there plays the row), unless
-/// [phoneToo].
+/// A song, album or artist name that takes you to its page. On the desktop, pointing at it underlines it in
+/// white and turns the pointer into a hand (just the underline: no gray box around it); on the phone it stays
+/// plain text (a tap there plays the row), unless [phoneToo].
 class NameLink extends StatefulWidget {
   const NameLink(
     this.text, {
@@ -1350,13 +1350,19 @@ class _NameLinkState extends State<NameLink> {
       maxLines: widget.maxLines,
       overflow: TextOverflow.ellipsis,
       textAlign: widget.textAlign,
-      style: _hover && active ? (widget.style ?? const TextStyle()).copyWith(decoration: TextDecoration.underline) : widget.style,
+      style: _hover && active
+          ? (widget.style ?? const TextStyle()).copyWith(
+              decoration: TextDecoration.underline,
+              decorationColor: Theme.of(context).colorScheme.onSurface, // white on the dark theme
+            )
+          : widget.style,
     );
     if (!active) return text;
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: Tappable(onTap: go, radius: 4, outset: 2, child: text),
+      child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: go, child: text),
     );
   }
 }
