@@ -15,6 +15,7 @@ import '../core/appearance.dart';
 import '../core/settings.dart';
 import '../data/account.dart';
 import '../data/cover_cache.dart';
+import '../data/saved_covers.dart';
 import '../data/library.dart';
 import '../data/library_pins.dart';
 import '../data/models.dart';
@@ -140,6 +141,14 @@ final _serverCoverProvider = FutureProvider.autoDispose.family<File?, (String, i
   // the URL carries a fresh login token each time; the cache key is what identifies the picture
   final key = '${c.creds.base}|${k.$1}|${k.$2}';
   final cache = coverCache;
+  // the copy kept with the downloads: used when there's no server, or when it's big enough anyway
+  final kept = savedCovers?.best(c.creds.base, k.$1, k.$2);
+  File? fallback() {
+    final f = kept?.$1;
+    if (f != null) _remember(key, f);
+    return f;
+  }
+
   try {
     final hit = await cache.getFileFromCache(key);
     if (hit != null) {
@@ -149,23 +158,29 @@ final _serverCoverProvider = FutureProvider.autoDispose.family<File?, (String, i
       // hide a cover for good.
       final noCover = f == null && await hit.file.length() == _placeholderLength;
       final fresh = DateTime.now().difference(await hit.file.lastModified()) < const Duration(hours: 6);
-      if (f != null || (noCover && fresh) || offline) {
-        if (!offline || f != null) _remember(key, f);
+      if (f != null) {
+        _remember(key, f);
         return f;
+      }
+      if (offline) return fallback();
+      if (noCover && fresh) {
+        _remember(key, null);
+        return null;
       }
       await cache.removeFile(key);
     }
-    if (offline) return null; // not remembered: it may be there next time we're online
+    if (kept != null && kept.$2 >= k.$2) return fallback();
+    if (offline) return fallback(); // not remembered when missing: it may be there next time we're online
     final got = await cache.downloadFile(c.coverUrl(k.$1, size: k.$2).toString(), key: key);
     final f = await _checked(got.file);
     if (f == null && (await got.file.length()) != _placeholderLength) {
       await cache.removeFile(key); // an error message, not Navidrome's "no cover": try again next time
-      return null;
+      return fallback();
     }
     _remember(key, f);
     return f;
   } catch (_) {
-    return null; // network trouble: not remembered, so it's tried again
+    return fallback(); // network trouble: a missing one isn't remembered, so it's tried again
   }
 });
 

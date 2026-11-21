@@ -18,6 +18,7 @@ import '../data/account.dart';
 import '../data/ai.dart';
 import '../data/library.dart';
 import '../data/models.dart';
+import '../data/saved_covers.dart';
 import '../data/subsonic.dart';
 
 /// Extra state the UI shows next to the standard playback state.
@@ -565,6 +566,21 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     );
   }
 
+  /// The lock screen's, notification's and widget's picture: the one kept on the phone when there is one
+  /// (shows with no server too), else the server's.
+  static Uri? _artUri(SubsonicClient? c, String coverArt) {
+    if (c == null || coverArt.isEmpty) return null;
+    final kept = savedCovers?.file(c.creds.base, coverArt, SavedCovers.large);
+    return kept != null ? Uri.file(kept.path) : c.stableCoverUrl(coverArt);
+  }
+
+  /// The same for the car's lists, which can't open Encore's own files: shared through CoverArtProvider.
+  static Uri? _carArtUri(SubsonicClient? c, String coverArt) {
+    if (c == null || coverArt.isEmpty) return null;
+    final kept = savedCovers?.best(c.creds.base, coverArt, 300);
+    return kept != null ? sharedCoverUri(kept.$1) : c.coverUrl(coverArt, size: 300);
+  }
+
   MediaItem _mediaItem(Song s) {
     final c = container.read(clientProvider);
     return MediaItem(
@@ -574,7 +590,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       artist: s.artist,
       genre: s.genre,
       duration: s.duration != null ? Duration(seconds: s.duration!) : null,
-      artUri: c != null && s.coverArt.isNotEmpty ? c.stableCoverUrl(s.coverArt) : null,
+      artUri: _artUri(c, s.coverArt),
       rating: Rating.newHeartRating(s.starred),
       extras: {'albumId': s.albumId, 'artistId': s.artistId},
     );
@@ -1944,7 +1960,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Future<List<MediaItem>> getChildren(String parentMediaId, [Map<String, dynamic>? options]) async {
     final repo = container.read(repoProvider);
     final c = container.read(clientProvider);
-    Uri? art(String id, [int size = 300]) => c != null && id.isNotEmpty ? c.coverUrl(id, size: size) : null;
+    Uri? art(String id) => _carArtUri(c, id);
+    MediaItem songItem(Song s, String id) => _mediaItem(s).copyWith(id: id, playable: true, artUri: art(s.coverArt));
     MediaItem folder(String id, String title, {Map<String, dynamic>? extras, String? subtitle}) =>
         MediaItem(id: id, title: title, playable: false, extras: extras, displaySubtitle: subtitle);
     MediaItem action(String id, String title, {String? subtitle, Uri? artUri}) =>
@@ -1955,7 +1972,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       switch (parentMediaId) {
         case AudioService.recentRootId:
           final cur = currentSong;
-          return cur == null ? const [] : [_mediaItem(cur).copyWith(id: 'resume:${cur.id}', playable: true)];
+          return cur == null ? const [] : [songItem(cur, 'resume:${cur.id}')];
         case _root: // up to four tabs in the car
           return [
             folder('home', 'Home'),
@@ -2023,7 +2040,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         final a = await repo.album(parentMediaId.substring(6));
         return [
           for (final s in a.songs.where((s) => !s.isLookup && canPlay(s)))
-            _mediaItem(s).copyWith(id: 'song:${a.id}:${s.id}', playable: true),
+            songItem(s, 'song:${a.id}:${s.id}'),
         ];
       }
       if (parentMediaId.startsWith('pl:')) {
@@ -2032,7 +2049,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         return [
           action('plshuffle:$id', 'Shuffle', subtitle: p.name),
           for (final s in p.songs.where((s) => !s.isLookup && canPlay(s)).take(300))
-            _mediaItem(s).copyWith(id: 'plsong:$id:${s.id}', playable: true),
+            songItem(s, 'plsong:$id:${s.id}'),
         ];
       }
     } catch (_) {}

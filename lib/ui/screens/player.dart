@@ -21,6 +21,7 @@ import '../widgets.dart';
 import 'podcasts.dart';
 import 'radio.dart';
 import '../../data/cover_cache.dart';
+import '../../data/saved_covers.dart';
 import '../cast_sheet.dart';
 import '../devices_sheet.dart';
 import 'jam.dart';
@@ -30,12 +31,15 @@ final artSchemeProvider = FutureProvider.autoDispose.family<ColorScheme?, String
   final c = ref.watch(clientProvider);
   if (c == null || coverArt.isEmpty) return null;
   try {
+    final kept = savedCovers?.best(c.creds.base, coverArt, 200)?.$1; // kept with the downloads: also offline
     return await ColorScheme.fromImageProvider(
-      provider: CachedNetworkImageProvider(
-        c.coverUrl(coverArt, size: 200).toString(),
-        cacheKey: '${c.creds.base}|$coverArt|200',
-        cacheManager: coverCache,
-      ),
+      provider: kept != null
+          ? FileImage(kept)
+          : CachedNetworkImageProvider(
+              c.coverUrl(coverArt, size: 200).toString(),
+              cacheKey: '${c.creds.base}|$coverArt|200',
+              cacheManager: coverCache,
+            ),
       brightness: Brightness.dark,
     );
   } catch (_) {

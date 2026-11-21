@@ -13,6 +13,7 @@ import '../../core/platform.dart';
 import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/cover_cache.dart';
+import '../../data/saved_covers.dart';
 import '../../data/episode_alerts.dart';
 import '../../data/updates.dart';
 import '../../data/library.dart';
@@ -724,6 +725,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   late Future<List<(Song, String, int)>> _future = ref.read(dbProvider).downloads();
   late final Future<(int, int)> _library = _librarySize();
+  late Future<int> _covers = savedCovers?.bytes() ?? Future.value(0); // pictures kept with the downloads
 
   /// Songs in the library, and the space they'd take at the download quality (original sizes for Lossless).
   Future<(int, int)> _librarySize() async {
@@ -759,7 +761,12 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     final dl = ref.watch(downloadsProvider);
     // files added, removed or swapped for smaller copies: read the list (and sizes) again
     ref.listen(downloadsProvider.select((d) => d.files), (prev, next) {
-      if (prev != next) setState(() => _future = ref.read(dbProvider).downloads());
+      if (prev != next) {
+        setState(() {
+          _future = ref.read(dbProvider).downloads();
+          _covers = savedCovers?.bytes() ?? Future.value(0);
+        });
+      }
     });
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
@@ -783,10 +790,14 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('${nSongs(list.length)} on this $deviceWord', style: t.headlineSmall),
-                    Text(
-                      '${_gb(bytes)} used${dl.progress.isNotEmpty ? ' · ${dl.progress.length} downloading' : ''}'
-                      '${ref.watch(settingsProvider).downloadWifiOnly ? ' · Wi-Fi only' : ''}',
-                      style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                    FutureBuilder(
+                      future: _covers,
+                      builder: (_, pics) => Text(
+                        '${_gb(bytes + (pics.data ?? 0))} used${dl.progress.isNotEmpty ? ' · ${dl.progress.length} downloading' : ''}'
+                        '${ref.watch(settingsProvider).downloadWifiOnly ? ' · Wi-Fi only' : ''}'
+                        '${(pics.data ?? 0) > 0 ? '\nIncludes ${_gb(pics.data!)} of covers, so they show offline' : ''}',
+                        style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                      ),
                     ),
                     if (dl.progress.isNotEmpty)
                       Padding(

@@ -16,6 +16,7 @@ import '../core/settings.dart';
 import 'account.dart';
 import 'db.dart';
 import 'models.dart';
+import 'saved_covers.dart';
 import 'song_download.dart';
 import 'local_link.dart';
 import 'usb_link.dart';
@@ -350,6 +351,29 @@ class SyncNotifier extends Notifier<SyncState> {
 final syncProvider = NotifierProvider<SyncNotifier, SyncState>(SyncNotifier.new);
 
 // ── Offline downloads ──
+/// The covers to keep for [songs]: each song's own, its album's and its artist's, and those of the
+/// playlists any of them is in. [albums] / [artists]: id -> cover id; [playlistSongs]: playlist id -> song ids.
+Set<String> coverIdsFor(
+  List<Song> songs,
+  Map<String, String> albums,
+  Map<String, String> artists,
+  Map<String, String> playlists,
+  Map<String, Set<String>> playlistSongs,
+) {
+  final ids = <String>{};
+  final have = <String>{};
+  for (final s in songs) {
+    have.add(s.id);
+    ids.add(s.coverArt);
+    ids.add(albums[s.albumId] ?? '');
+    ids.add(artists[s.artistId] ?? '');
+  }
+  playlistSongs.forEach((pl, songIds) {
+    if (songIds.any(have.contains)) ids.add(playlists[pl] ?? '');
+  });
+  return ids..removeWhere((id) => id.isEmpty || id.startsWith('file:'));
+}
+
 class DownloadsState {
   final Map<String, String> files; // song id -> local file path
   final Map<String, double> progress; // song id -> 0..1 while downloading
@@ -405,6 +429,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
       _sub?.cancel();
       _disposed = true; // switched to another server: stop, keeping what has arrived
       _retry?.cancel();
+      _coverSoon?.cancel();
       _net?.close(force: true);
       _system.invokeMethod('downloading', {'count': 0}).catchError((_) => null);
     });
@@ -557,6 +582,65 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
       q.waitUntil = null;
     }
     _pump();
+    saveCovers();
+  }
+
+  // ── Covers kept with the downloads (saved_covers.dart) ──
+  Future<void>? _coverPass;
+  bool _coverAgain = false;
+  Timer? _coverSoon;
+
+  /// Soon: saves the covers of downloaded songs that aren't on the phone yet (the song's, its album's,
+  /// its artist's and its playlists'), and drops those of songs that were removed. One pass at a time.
+  void saveCovers() {
+    _coverSoon?.cancel();
+    _coverSoon = Timer(const Duration(seconds: 3), () {
+      if (_disposed) return;
+      if (_coverPass != null) {
+        _coverAgain = true;
+        return;
+      }
+      _coverPass = _saveCovers().whenComplete(() {
+        _coverPass = null;
+        if (_coverAgain) {
+          _coverAgain = false;
+          saveCovers();
+        }
+      });
+    });
+  }
+
+  Future<void> _saveCovers() async {
+    final store = savedCovers;
+    final c = ref.read(clientProvider);
+    if (store == null || c == null) return;
+    final server = c.creds.base; // the server's own address, whichever way it's reached now
+    try {
+      final db = ref.read(dbProvider);
+      final songs = [for (final (s, _, _) in await db.downloads()) s];
+      final albums = {for (final a in await db.albums()) a.id: a.coverArt};
+      final artists = {for (final a in await db.artists()) a.id: a.coverArt};
+      final ids = coverIdsFor(songs, albums, artists, await db.playlistCovers(), await db.playlistSongIds());
+      // the library copy may know a song's cover under a newer id than its download did
+      final now = {for (final s in await db.allSongs()) s.id: s.coverArt};
+      ids.addAll([for (final s in songs) now[s.id] ?? ''].where((id) => id.isNotEmpty));
+      // a song with no picture of its own shows its album's
+      store.setFallbacks(server, {for (final s in songs) s.coverArt: albums[s.albumId] ?? ''});
+      // without the library copy there's no telling which album and artist pictures are still needed
+      if (albums.isNotEmpty) await store.keepOnly(server, ids);
+      if (_disposed || !_allowed) return;
+      final n = await store.fill(server, ids, (id, size) => _fetchCover(c, id, size), stop: () => _disposed || !_allowed);
+      if (n > 0) debugPrint('Encore: saved $n covers for the downloads');
+    } catch (e) {
+      debugPrint('Encore: covers for the downloads stopped ($e), carrying on later');
+    }
+  }
+
+  static Future<List<int>?> _fetchCover(SubsonicClient c, String id, int size) async {
+    final r = await http.get(c.coverUrl(id, size: size)).timeout(const Duration(seconds: 20));
+    if (r.statusCode == 404) return null; // no picture
+    if (r.statusCode != 200) throw http.ClientException('HTTP ${r.statusCode}');
+    return r.bodyBytes;
   }
 
   /// Songs still to download (for the downloads screen).
@@ -678,6 +762,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     for (final twin in _waiting.remove(id) ?? const <Song>[]) {
       await _alias(twin, path);
     }
+    saveCovers();
   }
 
   /// Gives up on a song (gone from the server, or it sent something that isn't audio).
@@ -916,6 +1001,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     prefs.setStringList('manualDownloads', manual.toList());
     if (dequeued) _saveQueue();
     state = state.copy(files: files, progress: progress);
+    saveCovers(); // their pictures go too (unless other downloads use them)
   }
 
   // ── Collections kept downloaded (like Spotify's download switch) ──

@@ -28,11 +28,18 @@ void startWidgetSync(AudioHandler handler) {
     final art = item.artUri;
     if (art != null) {
       try {
-        final res = await http.get(art).timeout(const Duration(seconds: 10));
-        if (res.statusCode == 200) {
+        // the picture kept on the phone (works with no server), else the server's
+        List<int>? bytes;
+        if (art.scheme == 'file') {
+          bytes = await File(art.toFilePath()).readAsBytes();
+        } else {
+          final res = await http.get(art).timeout(const Duration(seconds: 10));
+          if (res.statusCode == 200) bytes = res.bodyBytes;
+        }
+        if (bytes != null) {
           final dir = await getApplicationSupportDirectory();
           final f = File(p.join(dir.path, 'widget_cover.jpg'));
-          await f.writeAsBytes(res.bodyBytes, flush: true);
+          await f.writeAsBytes(bytes, flush: true);
           coverPath = f.path;
         }
       } catch (_) {}

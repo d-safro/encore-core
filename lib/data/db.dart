@@ -199,6 +199,18 @@ class LibraryDb {
           .map((r) => Playlist.fromJson(jsonDecode(r['json'] as String) as Map<String, dynamic>))
           .toList();
 
+  /// Playlist id -> its cover id.
+  Future<Map<String, String>> playlistCovers() async => {for (final p in await playlists()) p.id: p.coverArt};
+
+  /// Playlist id -> the ids of its songs.
+  Future<Map<String, Set<String>>> playlistSongIds() async {
+    final m = <String, Set<String>>{};
+    for (final r in await db.rawQuery('SELECT playlist_id, song_id FROM playlist_songs')) {
+      (m[r['playlist_id'] as String] ??= {}).add(r['song_id'] as String);
+    }
+    return m;
+  }
+
   Future<List<Song>> playlistSongs(String id) async => _songs(
     await db.rawQuery(
       'SELECT s.json FROM playlist_songs ps JOIN songs s ON s.id = ps.song_id WHERE ps.playlist_id = ? ORDER BY ps.pos',
