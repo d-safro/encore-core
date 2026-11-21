@@ -17,6 +17,7 @@ import '../../core/platform.dart';
 import '../../playback/audio_device.dart';
 import '../../playback/desktop_audio.dart';
 import '../../playback/handler.dart';
+import '../../playback/private_session.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
@@ -198,6 +199,7 @@ class _TopBar extends ConsumerWidget {
         ? '${s.suffix.toUpperCase()}${s.bitRate != null ? ' · ${s.bitRate} kbps' : ''}'
         : '${fmt.toUpperCase()} · ${wifi ? set.wifiBitrate : set.mobileBitrate} kbps';
     final t = Theme.of(context).textTheme;
+    final private = privateSessionOn(ref.watch(privateSessionProvider), DateTime.now());
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       child: Row(
@@ -212,7 +214,24 @@ class _TopBar extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: t.labelMedium?.copyWith(fontWeight: FontWeight.w600),
                 ),
-                Text(quality, style: t.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // the private session's badge: plays aren't counted or shared
+                    if (private) ...[
+                      Icon(Icons.lock_rounded, size: 12, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 4),
+                    ],
+                    Flexible(
+                      child: Text(
+                        private ? 'Private session${quality.isEmpty ? '' : ' · $quality'}' : quality,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.labelSmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
