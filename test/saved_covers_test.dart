@@ -39,6 +39,25 @@ void main() {
     expect([for (var i = 0; i < 8; i++) s.file(server, 'mf-$i', 600)!.existsSync()], everyElement(isTrue));
   });
 
+  test("a newer version of a song's cover id finds the saved picture", () async {
+    final s = await SavedCovers.open(tmp);
+    await s.save(server, 'mf-abc_65a0', 600, pic(1));
+    expect(s.file(server, 'mf-abc_66ff', 600)!.path, s.file(server, 'mf-abc_65a0', 600)!.path);
+    expect(s.file(server, 'mf-abd_65a0', 600), isNull);
+    await s.flush();
+    expect((await SavedCovers.open(tmp)).file(server, 'mf-abc_1', 600), isNotNull); // also after a restart
+  });
+
+  test("a song with no picture of its own shows its album's", () async {
+    final s = await SavedCovers.open(tmp);
+    await s.save(server, 'al-1_9', 600, pic(1));
+    await s.save(server, 'mf-1_9', 600, const []); // none
+    s.setFallbacks(server, {'mf-1_9': 'al-1_9'});
+    expect(s.file(server, 'mf-1_10', 600)!.path, s.file(server, 'al-1_9', 600)!.path);
+    expect(await s.keepOnly(server, {'mf-1_9', 'al-1_9'}), 0);
+    expect(s.file(server, 'mf-1_9', 600), isNotNull); // the fallback survives tidying up
+  });
+
   test('the size that fits: small for lists, large for the player', () async {
     final s = await SavedCovers.open(tmp);
     await s.save(server, 'al-1', 200, pic(1));

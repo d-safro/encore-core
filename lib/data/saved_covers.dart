@@ -25,7 +25,11 @@ class SavedCovers {
   static const sizes = [small, large];
 
   /// `server|cover id|size` -> file name in [dir]; '' means the server has no picture for it.
+  /// Size 0 (keyed by [stem]): another cover to show instead when this one has no picture (a song -> its album).
   final _index = <String, String>{};
+
+  /// `server|stem|size` -> a file name: the same picture under any version of its id (see [stem]).
+  final _byStem = <String, String>{};
   Timer? _saveSoon;
   var _writes = 0; // each write its own temporary name: two songs with the same picture may arrive at once
 
@@ -39,6 +43,7 @@ class SavedCovers {
         final m = jsonDecode(await s._indexFile.readAsString()) as Map;
         m.forEach((k, v) => s._index['$k'] = '$v');
       }
+      s._restem();
     } catch (_) {
       // a damaged list: start again (the pictures are fetched again with the next downloads)
       s._index.clear();
@@ -48,10 +53,46 @@ class SavedCovers {
 
   static String _key(String server, String id, int size) => '$server|$id|$size';
 
-  /// The saved picture of [id] at [size], or null when there isn't one.
-  File? file(String server, String id, int size) {
+  /// A cover id without its version: Navidrome's ids end in when the file last changed (`mf-<song>_<time>`),
+  /// so a rescan gives the same picture a new id, while a download keeps the id it was saved under.
+  static String stem(String id) {
+    final cut = id.lastIndexOf('_');
+    return cut > 3 && RegExp(r'^[a-z]{2}-').hasMatch(id) ? id.substring(0, cut) : id;
+  }
+
+  void _restem() {
+    _byStem.clear();
+    _index.forEach((k, name) {
+      if (name.isEmpty || k.endsWith('|0')) return;
+      final size = k.substring(k.lastIndexOf('|') + 1);
+      final rest = k.substring(0, k.lastIndexOf('|'));
+      final server = rest.substring(0, rest.lastIndexOf('|'));
+      _byStem['$server|${stem(rest.substring(rest.lastIndexOf('|') + 1))}|$size'] = name;
+    });
+  }
+
+  /// The saved picture of [id] at [size] (or of another version of it, or of the cover set to show
+  /// instead, see [setFallbacks]), or null when there isn't one.
+  File? file(String server, String id, int size, [bool fallback = true]) {
     final name = _index[_key(server, id, size)];
-    return name == null || name.isEmpty ? null : File(p.join(dir.path, name));
+    final same = name != null && name.isNotEmpty ? name : _byStem[_key(server, stem(id), size)];
+    if (same != null) return File(p.join(dir.path, same));
+    final instead = fallback ? _index[_key(server, stem(id), 0)] : null;
+    return instead == null ? null : file(server, instead, size, false);
+  }
+
+  /// Covers to show instead of others that have no picture of their own: cover id -> other cover id
+  /// (a downloaded song's -> its album's).
+  void setFallbacks(String server, Map<String, String> instead) {
+    var changed = false;
+    instead.forEach((id, other) {
+      if (id.isEmpty || other.isEmpty || stem(id) == stem(other)) return;
+      final key = _key(server, stem(id), 0);
+      if (_index[key] == other) return;
+      _index[key] = other;
+      changed = true;
+    });
+    if (changed) _scheduleSave();
   }
 
   /// The saved picture that best fits something [px] pixels wide, and its size: the small one for small
@@ -84,6 +125,7 @@ class SavedCovers {
       }
       final old = _index[key];
       _index[key] = name;
+      _byStem[_key(server, stem(id), size)] = name;
       if (old != null && old.isNotEmpty && old != name) await _deleteIfUnused(old);
     }
     _scheduleSave();
@@ -136,11 +178,13 @@ class SavedCovers {
   /// nothing uses any more. Returns how many files went.
   Future<int> keepOnly(String server, Set<String> keep) async {
     final prefix = '$server|';
+    final stems = keep.map(stem).toSet();
     _index.removeWhere((k, _) {
       if (!k.startsWith(prefix)) return false;
       final id = k.substring(prefix.length, k.lastIndexOf('|'));
-      return !keep.contains(id);
+      return !stems.contains(stem(id));
     });
+    _restem();
     final used = _index.values.toSet();
     var gone = 0;
     try {

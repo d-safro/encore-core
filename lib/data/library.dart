@@ -621,6 +621,11 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
       final albums = {for (final a in await db.albums()) a.id: a.coverArt};
       final artists = {for (final a in await db.artists()) a.id: a.coverArt};
       final ids = coverIdsFor(songs, albums, artists, await db.playlistCovers(), await db.playlistSongIds());
+      // the library copy may know a song's cover under a newer id than its download did
+      final now = {for (final s in await db.allSongs()) s.id: s.coverArt};
+      ids.addAll([for (final s in songs) now[s.id] ?? ''].where((id) => id.isNotEmpty));
+      // a song with no picture of its own shows its album's
+      store.setFallbacks(server, {for (final s in songs) s.coverArt: albums[s.albumId] ?? ''});
       // without the library copy there's no telling which album and artist pictures are still needed
       if (albums.isNotEmpty) await store.keepOnly(server, ids);
       if (_disposed || !_allowed) return;
