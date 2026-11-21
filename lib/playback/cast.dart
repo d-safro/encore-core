@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart';
 import 'package:multicast_dns/multicast_dns.dart';
 
+import '../core/platform.dart';
+
 /// Chromecast and other Google Cast speakers / TVs, without Google Play Services: found on the Wi-Fi with
 /// mDNS, controlled over the Cast protocol (TLS on port 8009), playing through Google's standard media
 /// receiver. The audio comes from a small relay in the app (see [CastRelay]), because the speaker usually
@@ -22,6 +24,9 @@ class CastDevice {
 }
 
 const _system = MethodChannel('encore/system');
+
+/// The desktop's port for the speaker to fetch the music from.
+const castRelayPort = 4547;
 
 /// Cast devices on this Wi-Fi (looks for about [wait]).
 Future<List<CastDevice>> findCastDevices({Duration wait = const Duration(seconds: 4)}) async {
@@ -368,7 +373,13 @@ class CastRelay {
   static Future<CastRelay?> start({String? host}) async {
     final ip = host ?? await _wifiAddress();
     if (ip == null) return null;
-    final server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
+    // the desktop uses one known port, so a firewall can let the speaker in (README: firewall-cmd)
+    HttpServer server;
+    try {
+      server = await HttpServer.bind(InternetAddress.anyIPv4, isDesktop ? castRelayPort : 0);
+    } on SocketException {
+      server = await HttpServer.bind(InternetAddress.anyIPv4, 0);
+    }
     final rnd = Random.secure();
     final key = List.generate(16, (_) => rnd.nextInt(16).toRadixString(16)).join();
     final r = CastRelay._(server, ip, key);

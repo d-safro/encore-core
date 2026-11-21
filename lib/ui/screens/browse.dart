@@ -57,8 +57,77 @@ class _Header extends StatelessWidget {
   final bool circle;
   final IconData icon;
   final VoidCallback? onCoverTap; // e.g. change a playlist's picture
+  Widget _cover(double size) => GestureDetector(
+    onTap: onCoverTap,
+    child: Container(
+      decoration: BoxDecoration(
+        shape: circle ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: circle ? null : BorderRadius.circular(18),
+        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 40, offset: Offset(0, 16))],
+      ),
+      child: Semantics(
+        button: onCoverTap != null,
+        label: onCoverTap != null ? 'Change picture' : null,
+        child: Cover(
+          cover,
+          size: size,
+          radius: 18,
+          circle: circle,
+          icon: icon,
+          artist: artist,
+          album: album,
+          artistImage: circle,
+        ),
+      ),
+    ),
+  );
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) => box.maxWidth >= 720 ? _wide(context) : _narrow(context),
+  );
+
+  /// A wide page (desktop, tablet): the cover on the left and a big title beside it, so the songs start
+  /// near the top instead of under a screen-high cover.
+  Widget _wide(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final top = MediaQuery.paddingOf(context).top + kToolbarHeight;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: ArtBackdrop(cover: cover, artist: artist, album: album, strength: 0.35),
+        ),
+        Padding(
+          padding: EdgeInsets.fromLTRB(24, top - 8, 24, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _cover(200),
+              const SizedBox(width: 24),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.displaySmall?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -1),
+                    ),
+                    const SizedBox(height: 8),
+                    ...lines,
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _narrow(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final w = MediaQuery.sizeOf(context).width;
     final top = MediaQuery.paddingOf(context).top + kToolbarHeight;
@@ -73,32 +142,7 @@ class _Header extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(
-                child: GestureDetector(
-                  onTap: onCoverTap,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      shape: circle ? BoxShape.circle : BoxShape.rectangle,
-                      borderRadius: circle ? null : BorderRadius.circular(18),
-                      boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 40, offset: Offset(0, 16))],
-                    ),
-                    child: Semantics(
-                      button: onCoverTap != null,
-                      label: onCoverTap != null ? 'Change picture' : null,
-                      child: Cover(
-                        cover,
-                        size: size,
-                        radius: 18,
-                        circle: circle,
-                        icon: icon,
-                        artist: artist,
-                        album: album,
-                        artistImage: circle,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              Center(child: _cover(size)),
               const SizedBox(height: 22),
               Text(title, style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5)),
               const SizedBox(height: 6),
@@ -914,7 +958,7 @@ class RadioScreen extends ConsumerWidget {
             padding: const EdgeInsets.only(bottom: 96),
             children: [
               for (final r in list)
-                ListTile(
+                GestureDetector(onSecondaryTap: () => _menu(context, ref, r), child: ListTile(
                   leading: art(r.streamUrl),
                   title: Text(
                     r.name,
@@ -933,7 +977,7 @@ class RadioScreen extends ConsumerWidget {
                     final pic = stationArt(r.streamUrl);
                     audioHandler.playRadio(r, art: pic == null ? null : Uri.tryParse(pic));
                   },
-                ),
+                )),
             ],
           ),
         );

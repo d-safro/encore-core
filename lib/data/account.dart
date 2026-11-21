@@ -60,7 +60,12 @@ const _perServerKeys = {
   'playlistCovers',
 };
 bool _perServer(String k) =>
-    !k.contains('@') && (_perServerKeys.contains(k) || k.startsWith('shown:') || k.startsWith('podcastCache'));
+    !k.contains('@') &&
+    (_perServerKeys.contains(k) ||
+        k.startsWith('shown:') ||
+        k.startsWith('podcastCache') ||
+        k.startsWith('syncLast:') || // what was last agreed with that server's sync (data/sync.dart)
+        k.startsWith('syncAt:'));
 
 Future<void> _swapPrefs(String fromId, String toId) async {
   for (final k in prefs.getKeys().where(_perServer).toList()) {

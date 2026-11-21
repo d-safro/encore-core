@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../playback/cast.dart';
 import '../playback/handler.dart';
 
@@ -43,7 +44,7 @@ class _CastSheetState extends State<_CastSheet> {
                   ListTile(
                     leading: Icon(info.connecting ? Icons.cast_rounded : Icons.cast_connected_rounded),
                     title: Text(info.connecting ? 'Connecting to ${info.name}…' : 'Playing on ${info.name}'),
-                    subtitle: const Text('Your phone stays the remote: queue, lock screen and buttons work as usual'),
+                    subtitle: Text('Your $deviceWord stays the remote: queue, media controls and buttons work as usual'),
                   ),
                   if (!info.connecting)
                     Row(
@@ -88,12 +89,12 @@ class _CastSheetState extends State<_CastSheet> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (found.isEmpty)
-                          const ListTile(
-                            leading: Icon(Icons.cast_rounded),
-                            title: Text('Nothing found'),
+                          ListTile(
+                            leading: const Icon(Icons.cast_rounded),
+                            title: const Text('Nothing found'),
                             subtitle: Text(
-                              'Chromecasts, Google / Nest speakers and Android TVs show here when the phone is on '
-                              'the same Wi-Fi.',
+                              'Chromecasts, Google / Nest speakers and Android TVs show here when the $deviceWord is on '
+                              'the same network${isDesktop ? ' (and the firewall lets the speaker in: see the README)' : ' Wi-Fi'}.',
                             ),
                           ),
                         for (final d in found)

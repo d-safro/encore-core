@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/platform.dart';
 import '../core/settings.dart';
+import '../desktop/desktop.dart' show quitApp;
 import '../data/updates.dart';
 import 'actions.dart';
 
@@ -111,6 +114,7 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
   Future<void> _install() async {
     final f = _file;
     if (f == null || !mounted) return;
+    if (isDesktop) return _installDesktop(f);
     if (!await canInstallUpdates()) {
       setState(() {
         _needsPermission = true;
@@ -126,6 +130,36 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
       await installUpdate(f);
     } catch (e) {
       if (mounted) setState(() => _status = "Couldn't open the installer: $e");
+    }
+  }
+
+  String? _command; // an RPM install: the dnf command to run
+
+  Future<void> _installDesktop(File f) async {
+    if (!await canInstallUpdates()) {
+      // installed by the system (RPM): dnf does it, with your password
+      final url = widget.u.rpmUrl;
+      setState(() {
+        _command = url.isEmpty ? null : 'sudo dnf install $url';
+        _status = url.isEmpty
+            ? 'Encore was installed by the system. Get the new version from the release page.'
+            : 'Encore was installed with dnf. Run this in a terminal to update (it asks for your password):';
+      });
+      return;
+    }
+    setState(() => _status = 'Installing…');
+    try {
+      await installUpdate(f);
+      if (mounted) setState(() => _status = 'Done. Encore restarts on the new version.');
+      await Future.delayed(const Duration(milliseconds: 800));
+      await quitApp();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _failed = true;
+          _status = "Couldn't install the update: $e";
+        });
+      }
     }
   }
 
@@ -145,11 +179,23 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
             if (downloading) LinearProgressIndicator(value: _progress > 0 ? _progress : null),
             if (downloading) const SizedBox(height: 12),
             Text(downloading ? '${(_progress * 100).round()}%' : _status),
+            if (_command != null) ...[
+              const SizedBox(height: 12),
+              SelectableText(_command!, style: t.bodyMedium?.copyWith(fontFamily: 'monospace')),
+            ],
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                if (_failed)
+                if (_command != null)
+                  TextButton(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: _command!));
+                      toast(context, 'Copied');
+                    },
+                    child: const Text('Copy'),
+                  ),
+                if (_failed || _command != null)
                   TextButton(
                     onPressed: () => openUrl(widget.u.pageUrl).catchError((_) {}),
                     child: const Text('Open the release page'),
@@ -157,7 +203,7 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
                 TextButton(onPressed: () => Navigator.pop(context), child: Text(downloading ? 'Cancel' : 'Close')),
                 if (_failed) FilledButton(onPressed: _download, child: const Text('Try again')),
                 if (_needsPermission) FilledButton(onPressed: allowInstalls, child: const Text('Allow')),
-                if (_file != null && !_needsPermission && !_failed)
+                if (_file != null && !_needsPermission && !_failed && _command == null && !isDesktop)
                   FilledButton(onPressed: _install, child: const Text('Install')),
               ],
             ),

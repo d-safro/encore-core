@@ -7,9 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:home_widget/home_widget.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../../core/appearance.dart';
+import '../../core/platform.dart';
 import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/cover_cache.dart';
@@ -18,6 +18,7 @@ import '../../data/updates.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../data/online_lyrics.dart';
+import '../../playback/desktop_audio.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../update.dart';
@@ -27,6 +28,10 @@ import '../../data/local_link.dart';
 import '../../data/usb_link.dart';
 import '../widgets.dart';
 import 'login.dart';
+import '../../data/devices.dart';
+import '../../data/pairing.dart';
+import '../../data/subsonic.dart';
+import '../../desktop/desktop_settings.dart';
 
 const _formats = {'raw': 'Original', 'opus': 'Opus', 'mp3': 'MP3', 'aac': 'AAC'};
 const _bitrates = [64, 96, 128, 160, 192, 256, 320];
@@ -44,7 +49,9 @@ class SettingsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
+      // a wide window: settings in a readable column
+      body: _Readable(
+        child: ListView(
         children: [
           const SectionTitle('Server'),
           ListTile(
@@ -53,7 +60,7 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text('Signed in as ${creds?.username ?? ''}'),
             trailing: TextButton(
               onPressed: () async {
-                if (await confirm(context, 'Sign out?', 'Downloads stay on the phone.', ok: 'Sign out')) {
+                if (await confirm(context, 'Sign out?', 'Downloads stay on the $deviceWord.', ok: 'Sign out')) {
                   await ref.read(accountProvider.notifier).signOut(beforeSwitch: audioHandler.leaveServer);
                   await audioHandler.enterServer();
                 }
@@ -72,7 +79,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           ListTile(
             leading: const Icon(Icons.sync),
-            title: const Text('Save library on the phone'),
+            title: Text('Save library on the $deviceWord'),
             subtitle: Text(
               sync.running
                   ? sync.message
@@ -145,6 +152,13 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) => set('syncPlayQueue', v),
           ),
 
+          const SectionTitle('Your devices'),
+          const _DevicesSettings(),
+          if (isDesktop) ...[
+            const SectionTitle('Desktop'),
+            const DesktopSettings(),
+          ],
+
           const SectionTitle('Look'),
           ListTile(
             leading: const Icon(Icons.palette_outlined),
@@ -154,7 +168,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
             onTap: () => context.push('/appearance'),
           ),
-          ListTile(
+          if (!isDesktop) ListTile(
             leading: const Icon(Icons.widgets_outlined),
             title: const Text('Add the widget to your home screen'),
             subtitle: const Text('What\'s playing, with play, pause and skip'),
@@ -260,7 +274,7 @@ class SettingsScreen extends ConsumerWidget {
             title: Text('Encore $appVersion'),
             subtitle: Text('A music player for Navidrome and other Subsonic servers'),
           ),
-          const _AppIconPicker(),
+          if (!isDesktop) const _AppIconPicker(),
           const _CoverCacheTile(),
           SwitchListTile(
             secondary: const Icon(Icons.system_update_rounded),
@@ -279,6 +293,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 32),
         ],
+      ),
       ),
     );
   }
@@ -552,7 +567,7 @@ class _CoverCacheTileState extends State<_CoverCacheTile> {
     leading: const Icon(Icons.image_outlined),
     title: const Text('Saved pictures'),
     subtitle: Text(
-      _bytes == null ? 'Covers and artist photos kept on the phone' : '${(_bytes! / 1048576).toStringAsFixed(0)} MB of covers and artist photos',
+      _bytes == null ? 'Covers and artist photos kept on the $deviceWord' : '${(_bytes! / 1048576).toStringAsFixed(0)} MB of covers and artist photos',
     ),
     trailing: TextButton(
       onPressed: () async {
@@ -579,7 +594,7 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
     if (mounted) setState(f);
   }
 
-  AndroidEqualizerParameters? _params;
+  EqParams? _params;
   String? _error;
 
   static const _presets = {
@@ -594,9 +609,13 @@ class _EqualizerScreenState extends ConsumerState<EqualizerScreen> {
   @override
   void initState() {
     super.initState();
+    if (isDesktop) {
+      _params = EqParams.desktop(ref.read(settingsProvider).eqGains);
+      return;
+    }
     audioHandler.equalizer.parameters
         .timeout(const Duration(seconds: 4))
-        .then((p) => _safeSetState(() => _params = p))
+        .then((p) => _safeSetState(() => _params = EqParams.android(p)))
         .catchError((Object e) {
           _safeSetState(() => _error = 'Start playing a song first, then open the equalizer.');
         });
@@ -727,7 +746,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       await n.pin(key, list);
       if (mounted) toast(context, 'Downloading $what');
     } else if (mounted &&
-        await confirm(context, 'Remove $what from the phone?', 'Everything stays on your server.', ok: 'Remove')) {
+        await confirm(context, 'Remove $what from the $deviceWord?', 'Everything stays on your server.', ok: 'Remove')) {
       await n.unpin(key, list);
     }
   }
@@ -763,7 +782,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('${nSongs(list.length)} on this phone', style: t.headlineSmall),
+                    Text('${nSongs(list.length)} on this $deviceWord', style: t.headlineSmall),
                     Text(
                       '${_gb(bytes)} used${dl.progress.isNotEmpty ? ' · ${dl.progress.length} downloading' : ''}'
                       '${ref.watch(settingsProvider).downloadWifiOnly ? ' · Wi-Fi only' : ''}',
@@ -780,7 +799,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                   ],
                 ),
               ),
-              const UsbCard(),
+              if (!isDesktop) const UsbCard(),
               const ShrinkCard(),
               FutureBuilder<(int, int)>(
                 future: _library,
@@ -820,7 +839,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                       if (await confirm(
                         context,
                         'Remove all downloads?',
-                        'Frees the space on the phone. Your server keeps everything.',
+                        'Frees the space on the $deviceWord. Your server keeps everything.',
                         ok: 'Remove all',
                       )) {
                         for (final k in [...dl.pins]) {
@@ -981,9 +1000,11 @@ class _HomeAddress extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'The address your server answers on at home, e.g. https://lan-music.example.com:4541 or '
-              'http://192.168.1.20:4533. Encore uses it whenever it answers, and the main address otherwise.',
+              'http://192.168.1.20:4533. Encore uses it whenever it answers, and the main address otherwise.'
+              '${isDesktop ? '\n\nThis computer runs the server? Use its own address, e.g. http://127.0.0.1:4540 '
+                  '(with the server extras) or http://127.0.0.1:4533 (Navidrome alone).' : ''}',
             ),
             const SizedBox(height: 12),
             TextField(
@@ -1016,4 +1037,78 @@ class _HomeAddress extends ConsumerWidget {
     );
     ref.read(localLinkProvider.notifier).check();
   }
+}
+
+/// This device's name on your others, phone sign-in for another device, and the switch for it all.
+class _DevicesSettings extends ConsumerWidget {
+  const _DevicesSettings();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final st = ref.watch(devicesProvider);
+    final on = prefs.getBool('connectDevices') ?? true;
+    return Column(
+      children: [
+        SwitchListTile(
+          secondary: const Icon(Icons.devices_rounded),
+          title: const Text('Connect to your other devices'),
+          subtitle: Text(switch (st.supported) {
+            false => 'Your server doesn\'t have the extras for this (music-lookup)',
+            _ when !on => 'Off: your devices don\'t see this one',
+            _ => st.online.isEmpty
+                ? 'See what they play, control them, move playback (none open right now)'
+                : 'Open now: ${st.online.map((d) => d.name).join(', ')}',
+          }),
+          value: on,
+          onChanged: (v) async {
+            if (!v) await ref.read(devicesProvider.notifier).bye();
+            await prefs.setBool('connectDevices', v);
+            ref.invalidate(devicesProvider);
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.badge_outlined),
+          title: const Text('This device\'s name'),
+          subtitle: Text(deviceName()),
+          onTap: () async {
+            final name = await askText(context, 'This device\'s name', 'Name', initial: deviceName());
+            if (name == null) return;
+            await prefs.setString('deviceName', name.trim());
+            ref.invalidate(devicesProvider); // says hello again with the new name
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.phonelink_lock_rounded),
+          title: const Text('Sign in another device'),
+          subtitle: const Text('Type the code it shows (Sign in with another device)'),
+          onTap: () => _approve(context, ref),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _approve(BuildContext context, WidgetRef ref) async {
+    final c = ref.read(clientProvider);
+    if (c == null) return;
+    final code = await askText(context, 'Sign in another device', 'The 6-digit code it shows');
+    if (code == null || code.trim().isEmpty || !context.mounted) return;
+    try {
+      final name = await approvePairing(c, code, localAddress: ref.read(localAddressProvider));
+      if (context.mounted) toast(context, 'Signed in on $name');
+    } on SubsonicException catch (e) {
+      if (context.mounted) toast(context, e.message);
+    } catch (e) {
+      if (context.mounted) toast(context, "Couldn't reach the server: $e");
+    }
+  }
+}
+
+/// At most ~860 px wide, centred (desktop and tablets); phones are narrower anyway.
+class _Readable extends StatelessWidget {
+  const _Readable({required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => Center(
+    child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 860), child: child),
+  );
 }

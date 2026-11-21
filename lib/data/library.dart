@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../core/platform.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -197,7 +198,7 @@ class Repo {
       userRating: a.userRating,
       songs: a.songs.where((s) => !s.isLookup).toList(),
     );
-  }, () async => (await db.album(id)) ?? (throw Exception('This album isn\'t saved on the phone')));
+  }, () async => (await db.album(id)) ?? (throw Exception('This album isn\'t saved on the $deviceWord')));
 
   Future<List<Artist>> artists() => _either((c) => c.artists(), db.artists);
 
@@ -211,14 +212,14 @@ class Repo {
       starred: a.starred,
       albums: a.albums.where((x) => !x.isLookup).toList(),
     );
-  }, () async => (await db.artist(id)) ?? (throw Exception('This artist isn\'t saved on the phone')));
+  }, () async => (await db.artist(id)) ?? (throw Exception('This artist isn\'t saved on the $deviceWord')));
 
   Future<List<Playlist>> playlists() => _either((c) => c.playlists(), db.playlists);
 
   Future<Playlist> playlist(String id) => _either((c) => c.playlist(id), () async {
     final pl = (await db.playlists()).firstWhere(
       (p) => p.id == id,
-      orElse: () => throw Exception("This playlist isn't saved on the phone"),
+      orElse: () => throw Exception("This playlist isn't saved on the $deviceWord"),
     );
     return Playlist(id: pl.id, name: pl.name, comment: pl.comment, songs: await db.playlistSongs(id));
   });

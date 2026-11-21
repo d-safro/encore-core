@@ -1,12 +1,19 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/appearance.dart';
+import 'core/platform.dart';
 import 'core/settings.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
+import 'data/devices.dart';
+import 'desktop/shell.dart';
+import 'data/sync.dart';
 import 'data/library.dart';
 import 'data/local_link.dart';
 import 'data/usb_link.dart';
@@ -42,7 +49,8 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
   return GoRouter(
     navigatorKey: _rootKey,
-    initialLocation: '/home',
+    // debug builds can start on another page (visual checks: ENCORE_START=/settings)
+    initialLocation: kDebugMode && isDesktop ? (Platform.environment['ENCORE_START'] ?? '/home') : '/home',
     refreshListenable: signedIn,
     redirect: (ctx, state) {
       final s = signedIn.value;
@@ -70,7 +78,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/queue', parentNavigatorKey: _rootKey, builder: (_, _) => const QueueScreen()),
       ShellRoute(
-        builder: (ctx, state, child) => _Shell(location: state.uri.path, child: child),
+        builder: (ctx, state, child) => isDesktop
+            ? DesktopShell(location: state.uri.toString(), banner: const _ServerTrouble(), child: child)
+            : _Shell(location: state.uri.path, child: child),
         routes: [
           GoRoute(
             path: '/home',
@@ -82,13 +92,21 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/library',
-            pageBuilder: (_, s) => NoTransitionPage(
-              child: LibraryScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0),
-            ),
+            pageBuilder: (_, s) {
+              final tab = int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0;
+              // the desktop's sidebar opens a tab directly: a new tab, a fresh screen
+              return NoTransitionPage(
+                key: isDesktop ? ValueKey('library-$tab') : null,
+                child: LibraryScreen(key: isDesktop ? ValueKey('library-$tab') : null, initialTab: tab),
+              );
+            },
           ),
           GoRoute(
             path: '/search',
-            pageBuilder: (_, _) => const NoTransitionPage(child: SearchScreen()),
+            pageBuilder: (_, s) {
+              final q = s.uri.queryParameters['q'] ?? '';
+              return NoTransitionPage(key: ValueKey('search-$q'), child: SearchScreen(key: ValueKey('search-$q'), initialQuery: q));
+            },
           ),
           GoRoute(
             path: '/album/:id',
@@ -256,6 +274,9 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _startEpisodeAlerts();
+    // your other devices (remote control, moving playback) and small things kept in step with them
+    ref.listenManual(devicesProvider, (_, _) {});
+    ref.listenManual(syncServiceProvider, (_, _) {});
     // when the network comes back: send plays made offline
     ref.listenManual(offlineProvider, (prev, next) {
       if (prev == true && next == false) {
@@ -290,6 +311,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(serverReachableProvider.notifier).check();
+      ref.read(syncServiceProvider.notifier).syncNow();
       _checkEpisodes();
       _syncIfStale();
       ref.read(usbLinkProvider.notifier).check(); // plugged into the server's computer meanwhile?
@@ -309,7 +331,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
   // ── New podcast episode notifications ──
   Future<void> _startEpisodeAlerts() async {
     await initNotifications(onTap: _openFromNotification);
-    final launch = await notifications.getNotificationAppLaunchDetails();
+    final launch = isDesktop ? null : await notifications.getNotificationAppLaunchDetails(); // Android only
     final payload = launch?.notificationResponse?.payload;
     if (launch?.didNotificationLaunchApp == true && payload != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openFromNotification(payload));

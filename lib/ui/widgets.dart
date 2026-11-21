@@ -1,4 +1,6 @@
 import 'dart:io';
+import '../desktop/drag.dart';
+import '../core/platform.dart';
 import 'dart:ui';
 
 import 'package:crypto/crypto.dart';
@@ -341,7 +343,7 @@ class SongTile extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final dim = song.isLookup || !available;
     final compact = AppLook.of(context).compact;
-    return InkWell(
+    Widget tile = InkWell(
       onTap: !(available || song.isLookup)
           ? null
           : () {
@@ -354,8 +356,14 @@ class SongTile extends ConsumerWidget {
                 audioHandler.playSongs(l, index: index ?? l.indexOf(song), context: playContext);
               }
             },
+      onSecondaryTap: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
       onLongPress: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
-      child: Padding(
+      // desktop, a wide list: a table row (title and artist, album, length); else the phone's row
+      child: LayoutBuilder(
+        builder: (context, box) => isDesktop && queueIndex == null && trailing == null && box.maxWidth >= 760
+            ? _WideSongRow(song: song, current: current, dim: dim, showTrack: showTrack, showCover: showCover,
+                hearted: hearted, progress: progress, onPhone: onPhone, queueIndex: queueIndex)
+            : Padding(
         padding: EdgeInsets.fromLTRB(16, compact ? 2 : 6, 4, compact ? 2 : 6),
         child: Row(
           children: [
@@ -458,7 +466,11 @@ class SongTile extends ConsumerWidget {
           ],
         ),
       ),
+      ),
     );
+    // desktop: drag songs onto the queue, Liked songs or a playlist in the sidebar
+    if (isDesktop && queueIndex == null && !song.isLookup) tile = songDragSource(songs: [song], child: tile);
+    return tile;
   }
 }
 
@@ -476,6 +488,15 @@ class AlbumCard extends ConsumerWidget {
       width: width ?? AppLook.of(context).cardWidth,
       child: GestureDetector(
         onTap: () => context.push('/album/${album.id}'),
+        onSecondaryTap: () => showCollectionMenu(
+          context,
+          ref,
+          album.name,
+          () async => (await ref.read(repoProvider).album(album.id)).songs,
+          pin: album.isLookup
+              ? null
+              : LibraryPin('album', album.id, album.name, cover: album.coverArt, subtitle: 'Album · ${album.artist}'),
+        ),
         onLongPress: () => showCollectionMenu(
           context,
           ref,
@@ -500,6 +521,20 @@ class AlbumCard extends ConsumerWidget {
                     album: album.name,
                   ),
                 ),
+                // desktop: a play button on hover, like a desktop music app
+                if (isDesktop && !album.isLookup)
+                  Positioned.fill(
+                    child: HoverPlay(
+                      onPlay: () async {
+                        final songs = (await ref.read(repoProvider).album(album.id)).songs;
+                        await audioHandler.playSongs(
+                          songs,
+                          context: PlayContext.album(album.id, album.name),
+                          source: 'album:${album.id}',
+                        );
+                      },
+                    ),
+                  ),
                 if (album.isLookup)
                   Positioned(
                     right: 6,
@@ -529,7 +564,7 @@ class AlbumCard extends ConsumerWidget {
 }
 
 /// A titled horizontal row (home, artist pages, discover).
-class Shelf extends StatelessWidget {
+class Shelf extends StatefulWidget {
   const Shelf({
     super.key,
     required this.title,
@@ -547,22 +582,78 @@ class Shelf extends StatelessWidget {
   final double textHeight;
 
   @override
+  State<Shelf> createState() => _ShelfState();
+}
+
+class _ShelfState extends State<Shelf> {
+  final _ctl = ScrollController();
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  /// Desktop: ‹ › page the row (a mouse wheel scrolls the page, not the row).
+  void _page(int dir) {
+    if (!_ctl.hasClients) return;
+    final p = _ctl.position;
+    _ctl.animateTo(
+      (p.pixels + dir * p.viewportDimension * 0.8).clamp(0.0, p.maxScrollExtent),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (children.isEmpty) return const SizedBox.shrink();
+    if (widget.children.isEmpty) return const SizedBox.shrink();
+    Widget list = ListView.separated(
+      controller: _ctl,
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: widget.children.length,
+      separatorBuilder: (_, _) => const SizedBox(width: 14),
+      itemBuilder: (_, i) => widget.children[i],
+    );
+    if (isDesktop) {
+      // the row can also be dragged with the mouse
+      list = ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(
+          dragDevices: {PointerDeviceKind.mouse, PointerDeviceKind.touch, PointerDeviceKind.trackpad},
+          scrollbars: false,
+        ),
+        child: list,
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionTitle(title, subtitle: subtitle, onMore: onMore),
-        SizedBox(
-          height: height ?? AppLook.of(context).cardWidth + textHeight,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: children.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 14),
-            itemBuilder: (_, i) => children[i],
-          ),
+        SectionTitle(
+          widget.title,
+          subtitle: widget.subtitle,
+          onMore: widget.onMore,
+          trailing: isDesktop
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: 'Back',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.chevron_left_rounded),
+                      onPressed: () => _page(-1),
+                    ),
+                    IconButton(
+                      tooltip: 'More',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.chevron_right_rounded),
+                      onPressed: () => _page(1),
+                    ),
+                  ],
+                )
+              : null,
         ),
+        SizedBox(height: widget.height ?? AppLook.of(context).cardWidth + widget.textHeight, child: list),
       ],
     );
   }
@@ -810,7 +901,7 @@ class DownloadToggle extends ConsumerWidget {
               await confirm(
                 context,
                 'Remove download?',
-                'These songs stay on your server; they just leave the phone.',
+                'These songs stay on your server; they just leave the $deviceWord.',
                 ok: 'Remove',
               )) {
             await n.unpin(pinKey, list);
@@ -915,4 +1006,192 @@ class LazyListView extends StatelessWidget {
       return footer[i - count];
     },
   );
+}
+
+/// Desktop: a round play button that shows in the corner while the mouse is over [child]'s area.
+class HoverPlay extends StatefulWidget {
+  const HoverPlay({super.key, required this.onPlay});
+  final Future<void> Function() onPlay;
+  @override
+  State<HoverPlay> createState() => _HoverPlayState();
+}
+
+class _HoverPlayState extends State<HoverPlay> {
+  bool _hover = false, _busy = false;
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Align(
+        alignment: Alignment.bottomRight,
+        child: AnimatedOpacity(
+          opacity: _hover || _busy ? 1 : 0,
+          duration: const Duration(milliseconds: 150),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: IgnorePointer(
+              ignoring: !_hover && !_busy,
+              child: FloatingActionButton.small(
+                heroTag: null,
+                elevation: 2,
+                tooltip: 'Play',
+                backgroundColor: cs.primary,
+                foregroundColor: cs.onPrimary,
+                shape: const CircleBorder(),
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        setState(() => _busy = true);
+                        try {
+                          await widget.onPlay();
+                        } finally {
+                          if (mounted) setState(() => _busy = false);
+                        }
+                      },
+                child: _busy
+                    ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: cs.onPrimary))
+                    : const Icon(Icons.play_arrow_rounded),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A song as a table row on a wide desktop list: number or cover, title and artist, album, heart, length, menu.
+class _WideSongRow extends ConsumerStatefulWidget {
+  const _WideSongRow({
+    required this.song,
+    required this.current,
+    required this.dim,
+    required this.showTrack,
+    required this.showCover,
+    required this.hearted,
+    required this.progress,
+    required this.onPhone,
+    required this.queueIndex,
+  });
+  final Song song;
+  final bool current, dim, showTrack, showCover, hearted, onPhone;
+  final double? progress;
+  final int? queueIndex;
+
+  @override
+  ConsumerState<_WideSongRow> createState() => _WideSongRowState();
+}
+
+class _WideSongRowState extends ConsumerState<_WideSongRow> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.song;
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    final sub = t.bodySmall?.copyWith(color: cs.onSurfaceVariant);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+        child: Row(
+          children: [
+            if (widget.showTrack)
+              SizedBox(
+                width: 32,
+                child: widget.current
+                    ? Icon(Icons.graphic_eq_rounded, size: 18, color: cs.primary)
+                    : Text('${s.track ?? ''}', style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant)),
+              )
+            else if (widget.showCover)
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Opacity(
+                  opacity: widget.dim ? 0.55 : 1,
+                  child: Cover(s.coverArt, size: 40, radius: 6, icon: Icons.music_note_outlined, artist: s.artist, album: s.album),
+                ),
+              ),
+            Expanded(
+              flex: 5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    s.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w500,
+                      color: widget.current ? cs.primary : (widget.dim ? cs.onSurfaceVariant : cs.onSurface),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      if (widget.onPhone)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
+                        ),
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: s.artistId.isEmpty ? null : () => context.push('/artist/${s.artistId}'),
+                          child: Text(s.artist, maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (!widget.showTrack)
+              Expanded(
+                flex: 4,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: GestureDetector(
+                    onTap: s.albumId.isEmpty ? null : () => context.push('/album/${s.albumId}'),
+                    child: Text(s.album, maxLines: 1, overflow: TextOverflow.ellipsis, style: sub),
+                  ),
+                ),
+              ),
+            // the heart: always when liked, else only under the mouse
+            SizedBox(
+              width: 40,
+              child: widget.hearted || _hover
+                  ? IconButton(
+                      tooltip: widget.hearted ? 'Unlike' : 'Like',
+                      iconSize: 18,
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(
+                        widget.hearted ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        color: widget.hearted ? cs.primary : cs.onSurfaceVariant,
+                      ),
+                      onPressed: s.isLookup ? null : () => toggleStarSong(context, ref, s),
+                    )
+                  : null,
+            ),
+            SizedBox(
+              width: 52,
+              child: Text(formatDuration(s.duration), textAlign: TextAlign.right, style: sub),
+            ),
+            SizedBox(
+              width: 44,
+              child: widget.progress != null
+                  ? const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))
+                  : IconButton(
+                      tooltip: 'More',
+                      icon: Icon(Icons.more_horiz_rounded, color: cs.onSurfaceVariant),
+                      onPressed: () => showSongMenu(context, ref, s, queueIndex: widget.queueIndex),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

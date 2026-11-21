@@ -71,7 +71,8 @@ void removeRecent(RecentItem r) =>
     _saveRecents(recentSearches().where((x) => !(x.kind == r.kind && x.id == r.id)).toList());
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.initialQuery = ''});
+  final String initialQuery; // the desktop's search box: search for this at once
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
@@ -89,6 +90,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _loading = false;
   String? _error;
   int _seq = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final q = widget.initialQuery.trim();
+    if (q.isNotEmpty) {
+      _ctl.text = q;
+      Future.microtask(() => _run(q));
+    }
+  }
 
   @override
   void dispose() {

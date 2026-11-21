@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/platform.dart';
 import '../core/settings.dart';
 
 /// Updates come from the app's GitHub releases. Only GitHub is asked (no account, nothing about you is sent).
@@ -22,8 +23,10 @@ class UpdateInfo {
     required this.size,
     required this.sumsUrl,
     required this.pageUrl,
+    this.rpmUrl = '',
   });
-  final String version, notes, apkUrl, apkName, sumsUrl, pageUrl;
+  // apkUrl / apkName: the file this device installs (the APK, or on the desktop the .tar.gz)
+  final String version, notes, apkUrl, apkName, sumsUrl, pageUrl, rpmUrl;
   final int size;
 }
 
@@ -57,6 +60,25 @@ String? pickApk(List<String> names, List<String> abis) {
   return null;
 }
 
+/// Desktop: the build for this computer, e.g. encore-1.8.0-linux-x86_64.tar.gz (never an APK).
+String? pickLinuxAsset(List<String> names, String arch) {
+  final want = RegExp('^encore-[0-9][^/]*-linux-${RegExp.escape(arch)}\\.tar\\.gz\$');
+  return names.where(want.hasMatch).firstOrNull;
+}
+
+/// Desktop: the RPM for this computer, for `dnf install` (encore-1.8.0-1.x86_64.rpm).
+String? pickRpm(List<String> names, String arch) =>
+    names.where((n) => n.startsWith('encore-') && n.endsWith('.$arch.rpm')).firstOrNull;
+
+String _arch() {
+  try {
+    final m = Process.runSync('uname', ['-m']).stdout.toString().trim();
+    return m.isEmpty ? 'x86_64' : m;
+  } catch (_) {
+    return 'x86_64';
+  }
+}
+
 Future<List<String>> _abis() async {
   try {
     return ((await _system.invokeMethod<List>('abis')) ?? const []).cast<String>();
@@ -78,8 +100,10 @@ Future<UpdateInfo?> fetchUpdate() async {
   final version = '${j['tag_name'] ?? ''}'.replaceFirst(RegExp(r'^v'), '');
   if (version.isEmpty || compareVersions(version, appVersion) <= 0) return null;
   final assets = [for (final a in (j['assets'] as List? ?? const [])) (a as Map).cast<String, dynamic>()];
-  final name = pickApk([for (final a in assets) '${a['name']}'], await _abis());
+  final names = [for (final a in assets) '${a['name']}'];
+  final name = isDesktop ? pickLinuxAsset(names, _arch()) : pickApk(names, await _abis());
   if (name == null) return null;
+  final rpm = isDesktop ? pickRpm(names, _arch()) : null;
   final apk = assets.firstWhere((a) => a['name'] == name);
   final sums = assets.where((a) => a['name'] == 'SHA256SUMS.txt').firstOrNull;
   return UpdateInfo(
@@ -90,6 +114,7 @@ Future<UpdateInfo?> fetchUpdate() async {
     size: (apk['size'] as num?)?.toInt() ?? 0,
     sumsUrl: sums == null ? '' : '${sums['browser_download_url']}',
     pageUrl: '${j['html_url'] ?? 'https://github.com/$updateRepo/releases'}',
+    rpmUrl: rpm == null ? '' : '${assets.firstWhere((a) => a['name'] == rpm)['browser_download_url']}',
   );
 }
 
@@ -148,6 +173,7 @@ Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress) asyn
 }
 
 Future<bool> canInstallUpdates() async {
+  if (isDesktop) return desktopInstallDir() != null;
   try {
     return await _system.invokeMethod<bool>('canInstall') ?? false;
   } catch (_) {
@@ -158,8 +184,54 @@ Future<bool> canInstallUpdates() async {
 /// Android's "Install unknown apps" page for Encore.
 Future<void> allowInstalls() => _system.invokeMethod('allowInstalls');
 
-/// Opens Android's installer for the downloaded file (it asks you to confirm).
-Future<void> installUpdate(File f) => _system.invokeMethod('install', {'path': f.path});
+/// Opens Android's installer for the downloaded file (it asks you to confirm). On the desktop: puts the new
+/// version in place of this one (see [installDesktopUpdate]); the app then restarts.
+Future<void> installUpdate(File f) =>
+    isDesktop ? installDesktopUpdate(f) : _system.invokeMethod('install', {'path': f.path});
 
 /// Opens a web page in the browser.
-Future<void> openUrl(String url) => _system.invokeMethod('openUrl', {'url': url});
+Future<void> openUrl(String url) async {
+  if (isDesktop) {
+    await Process.start('xdg-open', [url], mode: ProcessStartMode.detached);
+  } else {
+    await _system.invokeMethod('openUrl', {'url': url});
+  }
+}
+
+// ── The desktop app updating itself ──
+
+/// The folder this desktop app runs from, when Encore may replace it itself: installed in your home folder
+/// (tools/linux/install.sh). null for an RPM (dnf updates it) or a build run from the source folder.
+Directory? desktopInstallDir() {
+  final dir = File(Platform.resolvedExecutable).parent;
+  final home = Platform.environment['HOME'] ?? '';
+  if (home.isEmpty || !dir.path.startsWith('$home/')) return null;
+  if (!File('${dir.path}/.encore-install').existsSync()) return null; // put there by install.sh
+  return dir;
+}
+
+/// Unpacks the downloaded .tar.gz next to the running app and swaps the folders; the new version starts a
+/// moment after this one quits.
+Future<void> installDesktopUpdate(File tarball) async {
+  final dir = desktopInstallDir();
+  if (dir == null) throw const FileSystemException('Encore is installed by the system here: update it with dnf');
+  final staging = Directory('${dir.path}.new');
+  if (await staging.exists()) await staging.delete(recursive: true);
+  await staging.create(recursive: true);
+  final r = await Process.run('tar', ['-xzf', tarball.path, '-C', staging.path]);
+  if (r.exitCode != 0) throw FileSystemException("Couldn't unpack the update: ${r.stderr}");
+  // the archive holds encore-<version>-linux-<arch>/app/…
+  final app = (await staging.list(recursive: true).toList())
+      .whereType<File>()
+      .where((e) => e.path.endsWith('/app/encore'))
+      .firstOrNull;
+  if (app == null) throw const FormatException("The update doesn't contain the app");
+  await File('${app.parent.path}/.encore-install').writeAsString('$appVersion\n');
+  final old = Directory('${dir.path}.old');
+  if (await old.exists()) await old.delete(recursive: true);
+  await dir.rename(old.path); // the running app keeps its open files
+  await app.parent.rename(dir.path);
+  await staging.delete(recursive: true);
+  // the new version starts once this one has quit (only one Encore runs at a time); the caller quits
+  await Process.start('sh', ['-c', 'sleep 2; exec "\$0"', '${dir.path}/encore'], mode: ProcessStartMode.detached);
+}

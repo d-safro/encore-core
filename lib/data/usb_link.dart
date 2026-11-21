@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../core/platform.dart';
 import 'account.dart';
 import 'subsonic.dart';
 
@@ -27,6 +28,9 @@ class UsbLinkNotifier extends Notifier<bool> {
 
   @override
   bool build() {
+    // the desktop is never "the phone on a cable": its own 127.0.0.1:4533 may be the server itself, without
+    // the extras (Settings › Server › Address on your home network covers that computer, see README)
+    if (isDesktop) return false;
     ref.watch(accountProvider); // not clientProvider: that one follows this
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 10), (_) => check());
@@ -36,6 +40,7 @@ class UsbLinkNotifier extends Notifier<bool> {
   }
 
   Future<void> check() async {
+    if (isDesktop) return;
     final creds = ref.read(accountProvider).value;
     if (creds == null || _checking) return;
     _checking = true;

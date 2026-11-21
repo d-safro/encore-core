@@ -11,6 +11,8 @@ import 'package:just_audio/just_audio.dart';
 
 import 'autoplay.dart';
 import 'cast.dart';
+import 'desktop_audio.dart';
+import '../core/platform.dart';
 import '../core/settings.dart';
 import '../data/account.dart';
 import '../data/ai.dart';
@@ -46,7 +48,8 @@ class PlayContext {
 }
 
 /// The one playback engine: a just_audio player behind audio_service, so playback keeps going in the
-/// background with the media notification, lock-screen and Bluetooth controls and Android Auto.
+/// background with the media notification, lock-screen and Bluetooth controls and Android Auto. On the
+/// desktop the player is mpv and audio_service speaks MPRIS (Plasma's media controls, media keys).
 class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
   EncoreAudioHandler(this.container) {
     _init();
@@ -55,7 +58,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   final ProviderContainer container;
   final equalizer = AndroidEqualizer();
   final loudness = AndroidLoudnessEnhancer();
-  late final AudioPlayer player = AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [equalizer, loudness]));
+  late final AudioPlayer player = isDesktop
+      ? AudioPlayer() // the equalizer and loudness are mpv filters there (desktop_audio.dart)
+      : AudioPlayer(audioPipeline: AudioPipeline(androidAudioEffects: [equalizer, loudness]));
 
   final List<Song> _songs = []; // same order as the player's sequence
   List<Song> get songs => List.unmodifiable(_songs);
@@ -119,8 +124,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Settings get _settings => container.read(settingsProvider);
 
   Future<void> _init() async {
-    final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.music());
+    if (!isDesktop) {
+      // Android's audio focus (calls and other apps pause the music); the desktop has no such thing
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    }
 
     player.playbackEventStream.listen(
       _broadcast,
@@ -130,6 +138,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         await _skipToPlayable();
       },
     );
+    if (isDesktop) {
+      // mpv reports a song that won't play here (just_audio's errorStream), not as an error on the events
+      player.errorStream.listen((_) async {
+        if (_loading) return; // _load tries the next song itself
+        container.read(serverReachableProvider.notifier).suspect();
+        await _skipToPlayable();
+      });
+    }
     // the downloader asks before deleting a file the queue may be playing from
     DownloadsNotifier.fileInUse = (id) => _onPhone.contains(id) && _songs.any((s) => s.id == id);
     player.currentIndexStream.listen(_onIndex);
@@ -191,6 +207,16 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   // ── Settings that act on the player ──
   Future<void> _applySettings(Settings? prev, Settings s) async {
+    if (isDesktop) {
+      if (prev == null) await _quiet(restoreDesktopSound);
+      if (prev?.skipSilence != s.skipSilence || prev?.eqEnabled != s.eqEnabled || prev?.eqGains != s.eqGains) {
+        await _quiet(() => applyDesktopSound(s));
+      }
+      if (prev?.speed != s.speed) await _quiet(() => setSpeed(s.speed));
+      if (prev?.pitch != s.pitch) await _quiet(() => player.setPitch(s.pitch));
+      if (prev?.replayGain != s.replayGain || prev?.replayGainPreamp != s.replayGainPreamp) _applyReplayGain();
+      return;
+    }
     if (prev?.skipSilence != s.skipSilence) await _quiet(() => player.setSkipSilenceEnabled(s.skipSilence));
     if (prev?.speed != s.speed) await _quiet(() => setSpeed(s.speed));
     if (prev?.pitch != s.pitch) await _quiet(() => player.setPitch(s.pitch));
@@ -213,6 +239,18 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     } catch (_) {} // audio effects can fail before the first song is loaded; they're set again later
   }
 
+  /// Extra loudness above full volume: Android's loudness enhancer, or a gain filter in mpv. 0 switches it off.
+  void _boost(double db) {
+    if (isDesktop) {
+      _quiet(() => setDesktopBoost(db));
+    } else if (db <= 0) {
+      _quiet(() => loudness.setEnabled(false));
+    } else {
+      _quiet(() => loudness.setTargetGain(db));
+      _quiet(() => loudness.setEnabled(true));
+    }
+  }
+
   /// Volume from ReplayGain tags. Quieter-than-reference songs use the player volume; louder needs the
   /// loudness enhancer (Android can't amplify through volume alone).
   void _applyReplayGain() {
@@ -220,7 +258,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final s = _settings;
     if (i == null || i >= _songs.length || s.replayGain == ReplayGainMode.off) {
       _setMainVolume(1);
-      _quiet(() => loudness.setEnabled(false));
+      _boost(0);
       return;
     }
     final song = _songs[i];
@@ -235,19 +273,18 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final gain = (albumMode ? rg.albumGain ?? rg.trackGain : rg.trackGain ?? rg.albumGain);
     if (gain == null) {
       _setMainVolume(1);
-      _quiet(() => loudness.setEnabled(false));
+      _boost(0);
       return;
     }
     final peak = (albumMode ? rg.albumPeak ?? rg.trackPeak : rg.trackPeak ?? rg.albumPeak) ?? 1.0;
     var db = gain + s.replayGainPreamp;
     if (peak > 0) db = min(db, -20 * log(peak) / ln10); // never push past full scale
     if (db <= 0) {
-      _quiet(() => loudness.setEnabled(false));
+      _boost(0);
       _setMainVolume(pow(10, db / 20).toDouble());
     } else {
       _setMainVolume(1);
-      _quiet(() => loudness.setTargetGain(db));
-      _quiet(() => loudness.setEnabled(true));
+      _boost(db);
     }
   }
 
@@ -397,7 +434,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     castInfo.value = CastInfo(d.name, connecting: true);
     try {
       _relay ??= await CastRelay.start();
-      if (_relay == null) throw Exception('connect the phone to the same Wi-Fi as the speaker');
+      if (_relay == null) throw Exception('connect the $deviceWord to the same network as the speaker');
       final s = await CastSession.connect(d);
       _cast = s;
       _cancelFade();
@@ -609,7 +646,18 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   /// Load a new queue. If the first song can't be loaded (server down, file gone, unreadable file), start
   /// from the next one that loads. False when none would (nothing should then claim to be playing).
+  bool _loading = false; // a queue is being loaded (its errors are handled there)
+
   Future<bool> _load(List<Song> list, int index, {Duration? position, bool quiet = false}) async {
+    _loading = true;
+    try {
+      return await _loadNow(list, index, position: position, quiet: quiet);
+    } finally {
+      _loading = false;
+    }
+  }
+
+  Future<bool> _loadNow(List<Song> list, int index, {Duration? position, bool quiet = false}) async {
     final offline = container.read(offlineProvider);
     final files = container.read(downloadsProvider).files;
     for (var i = index, tries = 0; i < list.length && tries < 6; i++) {
@@ -1589,6 +1637,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _saveTimer = Timer(const Duration(seconds: 5), _saveQueue);
   }
 
+  /// Remember the queue and position now (before quitting).
+  Future<void> saveNow() => _saveQueue();
+
   Future<void> _saveQueue() async {
     final i = player.currentIndex ?? 0;
     final pos = player.position.inMilliseconds;
@@ -1866,6 +1917,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   @override
   Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) async {
+    // desktop: Plasma's media controls (MPRIS) set the volume
+    if (name == 'dbusVolume' && isDesktop) {
+      final v = extras?['value'];
+      if (v is num) await setDesktopVolume(v.toDouble().clamp(0.0, 1.0));
+      return null;
+    }
     if (name == 'toggleStar') {
       final s = currentSong;
       if (s != null) await setRating(Rating.newHeartRating(!s.starred));

@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../core/platform.dart';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -101,14 +102,16 @@ Future<void> showPlaylistPicture(BuildContext context, WidgetRef ref, Playlist p
         mainAxisSize: MainAxisSize.min,
         children: [
           const ListTile(title: Text('Playlist picture')),
-          ListTile(
-            leading: const Icon(Icons.photo_library_outlined),
-            title: const Text('Choose from your photos'),
-            onTap: () => Navigator.pop(ctx, 'photos'),
-          ),
+          // the desktop has one file chooser for both
+          if (!isDesktop)
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from your photos'),
+              onTap: () => Navigator.pop(ctx, 'photos'),
+            ),
           ListTile(
             leading: const Icon(Icons.folder_open_outlined),
-            title: const Text('Choose a file'),
+            title: Text(isDesktop ? 'Choose a picture' : 'Choose a file'),
             onTap: () => Navigator.pop(ctx, 'files'),
           ),
           if (p.songs.any((s) => s.coverArt.isNotEmpty))
@@ -127,7 +130,8 @@ Future<void> showPlaylistPicture(BuildContext context, WidgetRef ref, Playlist p
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Text(
-                "Your server doesn't keep playlist pictures, so this playlist's picture is saved on this phone only.",
+                "Your server doesn't keep playlist pictures, so this playlist's picture is saved on this "
+                "${isDesktop ? 'computer' : 'phone'} only.",
                 style: Theme.of(ctx).textTheme.bodySmall,
               ),
             ),
@@ -168,7 +172,7 @@ Future<void> showPlaylistPicture(BuildContext context, WidgetRef ref, Playlist p
         context,
         saved == CoverSaved.onServer
             ? 'Saved on your server: your other devices and apps show it too'
-            : "Your server doesn't keep playlist pictures, so it's saved on this phone only",
+            : "Your server doesn't keep playlist pictures, so it's saved on this $deviceWord only",
       );
     }
   } catch (e) {

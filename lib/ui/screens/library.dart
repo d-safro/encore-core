@@ -220,7 +220,12 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
               itemCount: _albums.length,
               itemBuilder: (_, i) {
                 final a = _albums[i];
-                return ListTile(
+                return GestureDetector(onSecondaryTap: () => showCollectionMenu(
+                    context,
+                    ref,
+                    a.name,
+                    () async => (await ref.read(repoProvider).album(a.id)).songs,
+                  ), child: ListTile(
                   leading: Cover(a.coverArt, size: AppLook.of(context).compact ? 44 : 52),
                   title: Text(a.name, maxLines: 1, overflow: TextOverflow.ellipsis),
                   subtitle: Text([a.artist, if (a.year != null) '${a.year}'].join(' · '), maxLines: 1),
@@ -231,7 +236,7 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
                     a.name,
                     () async => (await ref.read(repoProvider).album(a.id)).songs,
                   ),
-                );
+                ));
               },
             ),
           if (_loading)
@@ -385,7 +390,13 @@ class _PlaylistsTab extends ConsumerWidget {
               for (final pin in ref.watch(libraryPinsProvider)) _PinnedTile(pin),
               if (lists.isNotEmpty) const SectionTitle('Playlists'),
               for (final p in lists)
-                ListTile(
+                GestureDetector(onSecondaryTap: () => showCollectionMenu(
+                    context,
+                    ref,
+                    p.name,
+                    () async => (await ref.read(repoProvider).playlist(p.id)).songs,
+                    pin: LibraryPin('playlist', p.id, p.name, cover: p.coverArt, subtitle: 'Playlist'),
+                  ), child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
                   leading: Cover(
                     shownPlaylistCover(covers[p.id], p.coverArt),
@@ -415,7 +426,7 @@ class _PlaylistsTab extends ConsumerWidget {
                     () async => (await ref.read(repoProvider).playlist(p.id)).songs,
                     pin: LibraryPin('playlist', p.id, p.name, cover: p.coverArt, subtitle: 'Playlist'),
                   ),
-                ),
+                )),
               const SizedBox(height: 88),
             ],
           ),
@@ -506,7 +517,15 @@ class _PinnedTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final album = pin.kind == 'album';
-    return ListTile(
+    return GestureDetector(onSecondaryTap: () => showCollectionMenu(
+        context,
+        ref,
+        pin.name,
+        () async => album
+            ? (await ref.read(repoProvider).album(pin.id)).songs
+            : (await ref.read(repoProvider).playlist(pin.id)).songs,
+        pin: pin,
+      ), child: ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
       leading: Cover(
         pin.kind == 'playlist'
@@ -538,7 +557,7 @@ class _PinnedTile extends ConsumerWidget {
             : (await ref.read(repoProvider).playlist(pin.id)).songs,
         pin: pin,
       ),
-    );
+    ));
   }
 }
 
