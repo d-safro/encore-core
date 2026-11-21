@@ -271,10 +271,11 @@ class Artist {
 }
 
 class ArtistInfo {
-  final String biography, imageUrl, lastFmUrl;
+  final String biography, imageUrl, lastFmUrl, mbid; // mbid: the artist's MusicBrainz id, when the server knows it
   final List<Artist> similar;
-  const ArtistInfo({this.biography = '', this.imageUrl = '', this.lastFmUrl = '', this.similar = const []});
+  const ArtistInfo({this.biography = '', this.imageUrl = '', this.lastFmUrl = '', this.mbid = '', this.similar = const []});
   factory ArtistInfo.fromJson(Map<String, dynamic> j) => ArtistInfo(
+    mbid: _str(j['musicBrainzId']),
     biography: _str(j['biography']).replaceAll(RegExp(r'<[^>]+>'), '').trim(),
     imageUrl: _str(j['largeImageUrl'] ?? j['mediumImageUrl']),
     lastFmUrl: _str(j['lastFmUrl']),

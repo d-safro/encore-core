@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/appearance.dart';
 import '../../core/settings.dart';
+import '../../data/follows.dart';
 import '../../data/library.dart';
 import '../../data/library_pins.dart';
 import '../../data/models.dart';
@@ -280,9 +281,10 @@ class _ArtistsTab extends ConsumerWidget {
       return RefreshIndicator(
         onRefresh: () async => ref.invalidate(artistsProvider),
         child: ListView.builder(
-          itemCount: list.length,
+          itemCount: list.length + 1,
           itemBuilder: (_, i) {
-            final a = list[i];
+            if (i == 0) return const _FollowingTile();
+            final a = list[i - 1];
             return ListTile(
               leading: Cover(a.coverArt, size: 48, circle: true, icon: Icons.person),
               title: Text(a.name),
@@ -294,6 +296,26 @@ class _ArtistsTab extends ConsumerWidget {
         ),
       );
     }, onRetry: () => ref.invalidate(artistsProvider));
+  }
+}
+
+/// Top of the Artists tab: the artists you follow, with their new releases and shows.
+class _FollowingTile extends ConsumerWidget {
+  const _FollowingTile();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final n = ref.watch(followsProvider).length;
+    return ListTile(
+      leading: CircleAvatar(
+        radius: 24,
+        backgroundColor: cs.primaryContainer,
+        child: Icon(Icons.how_to_reg_rounded, color: cs.onPrimaryContainer),
+      ),
+      title: const Text('Followed artists'),
+      subtitle: Text(n == 0 ? 'New releases and shows from artists you follow' : '${plural(n, 'artist')} · new releases · shows'),
+      onTap: () => context.push('/following'),
+    );
   }
 }
 

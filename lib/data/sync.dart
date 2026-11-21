@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import 'account.dart';
 import 'devices.dart';
+import 'follows.dart';
 import 'library_pins.dart';
+import 'shows.dart';
 import 'subsonic.dart';
 
 /// Small things kept the same on all your devices (through the server's extras, music-lookup): pinned
@@ -45,6 +47,8 @@ final syncedValues = <SyncedValue>[
   _pref('smartShuffleHidden'),
   _pref('lyricsPicks'),
   _pref('podcastDone'),
+  _pref('followedArtists', after: (ref) => ref.invalidate(followsProvider)),
+  _pref('showsPrefs', after: (ref) => ref.invalidate(showsPrefsProvider)),
   SyncedValue(
     'homeSections',
     (ref) => ref.read(settingsProvider).homeSections,

@@ -7,6 +7,7 @@ import '../data/account.dart';
 import '../data/library.dart';
 import '../data/library_pins.dart';
 import '../data/models.dart';
+import '../data/playlist_add.dart';
 import '../data/share_links.dart';
 import '../playback/handler.dart';
 import 'screens/radio.dart';
@@ -150,26 +151,97 @@ Future<void> addToPlaylist(BuildContext context, WidgetRef ref, List<Song> songs
     ),
   );
   if (choice == null || !context.mounted) return;
+  final ids = songs.map((s) => s.id).toList();
+  final what = songs.length == 1 ? '"${songs.first.title}"' : nSongs(songs.length);
   try {
     if (choice == 'new') {
       final name = await askText(context, 'New playlist', 'Name');
       if (name == null || name.isEmpty) return;
-      await c.createPlaylist(name, songs.map((s) => s.id).toList());
-      if (context.mounted) toast(context, 'Created "$name"');
-    } else if (choice is Playlist) {
-      await c.updatePlaylist(choice.id, add: songs.map((s) => s.id).toList());
+      final made = await c.createPlaylist(name, ids);
+      ref.invalidate(playlistsProvider);
       if (context.mounted) {
-        toast(
-          context,
-          'Added ${songs.length == 1 ? '"${songs.first.title}"' : nSongs(songs.length)} to ${choice.name}',
-        );
+        undoToast(context, 'Created "$name"', () async {
+          await c.deletePlaylist(made.id);
+          ref.invalidate(playlistsProvider);
+        });
       }
+    } else if (choice is Playlist) {
+      final before = (await c.playlist(choice.id)).songs.map((s) => s.id).toList();
+      final dupes = alreadyIn(before, ids);
+      var send = ids;
+      if (dupes.isNotEmpty) {
+        if (!context.mounted) return;
+        final all = dupes.length == ids.length;
+        final skip = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Already in the playlist'),
+            content: Text(
+              all
+                  ? (ids.length == 1
+                        ? 'This song is already in ${choice.name}.'
+                        : 'All of these songs are already in ${choice.name}.')
+                  : '${dupes.length == 1 ? '1 of these songs is' : '${dupes.length} of these songs are'} '
+                        'already in ${choice.name}.',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Add anyway')),
+              if (!all) FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Skip them')),
+            ],
+          ),
+        );
+        if (skip == null) return;
+        send = toSend(before, ids, skipDuplicates: skip);
+      }
+      await c.updatePlaylist(choice.id, add: send);
       ref.invalidate(playlistProvider(choice.id));
+      ref.invalidate(playlistsProvider);
+      if (context.mounted) {
+        final added = send.length == ids.length ? what : nSongs(send.length);
+        undoToast(context, 'Added $added to ${choice.name}', () async {
+          final now = (await c.playlist(choice.id)).songs.map((s) => s.id).toList();
+          final idx = undoIndexes(now, before.length, send);
+          if (idx == null) throw 'the playlist changed since';
+          await c.updatePlaylist(choice.id, removeIndexes: idx);
+          ref.invalidate(playlistProvider(choice.id));
+          ref.invalidate(playlistsProvider);
+        });
+      }
     }
-    ref.invalidate(playlistsProvider);
   } catch (e) {
     if (context.mounted) toast(context, 'Couldn\'t add: $e');
   }
+}
+
+/// A toast with an Undo button. [undo] runs if it's pressed; a failure shows as another toast.
+void undoToast(BuildContext context, String text, Future<void> Function() undo) {
+  if (!context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(text),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+          label: 'Undo',
+          onPressed: () async {
+            try {
+              await undo();
+              messenger.showSnackBar(
+                const SnackBar(content: Text('Undone'), behavior: SnackBarBehavior.floating),
+              );
+            } catch (e) {
+              messenger.showSnackBar(
+                SnackBar(content: Text('Couldn\'t undo: $e'), behavior: SnackBarBehavior.floating),
+              );
+            }
+          },
+        ),
+      ),
+    );
 }
 
 Future<String?> askText(BuildContext context, String title, String label, {String initial = ''}) {

@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'core/appearance.dart';
 import 'core/platform.dart';
 import 'core/settings.dart';
+import 'data/follows.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
 import 'data/devices.dart';
@@ -18,6 +19,7 @@ import 'data/library.dart';
 import 'data/local_link.dart';
 import 'data/usb_link.dart';
 import 'playback/handler.dart';
+import 'ui/screens/following.dart';
 import 'ui/screens/appearance.dart';
 import 'ui/screens/browse.dart';
 import 'ui/screens/discover.dart';
@@ -132,6 +134,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/folders', builder: (_, _) => const FoldersScreen()),
           GoRoute(path: '/radio', builder: (_, _) => const RadioScreen()),
           GoRoute(path: '/liked', builder: (_, _) => const LikedSongsScreen()),
+          GoRoute(
+            path: '/following',
+            builder: (_, s) => FollowingScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0),
+          ),
           GoRoute(path: '/stats', builder: (_, _) => const StatsScreen()),
           GoRoute(path: '/podcasts/add', builder: (_, _) => const AddPodcastScreen()),
           GoRoute(
@@ -343,6 +349,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
   Future<void> _checkEpisodes() async {
     if (!ref.read(repoProvider).online) return;
     final n = await checkNewEpisodes(p: prefs);
+    ref.read(releasesProvider.notifier).refresh(); // once a day at most; it skips artists checked lately
     final c = ref.read(clientProvider);
     if (c != null) await warmPodcastCache(c); // so podcasts still show when the server is away
     if (n > 0) {
@@ -359,6 +366,8 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       router.push('/podcast/${payload.substring(8)}');
     } else if (payload == 'podcasts') {
       router.go('/library?tab=1');
+    } else if (payload == 'releases') {
+      router.push('/following?tab=1');
     }
   }
 
