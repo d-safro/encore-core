@@ -258,7 +258,15 @@ class SettingsScreen extends ConsumerWidget {
             label: s.crossfade == 0 ? 'Off' : '${s.crossfade} s',
             onChanged: (v) => set('crossfade', v.round()),
           ),
-          if (s.crossfade > 0)
+          SwitchListTile(
+            secondary: const Icon(Icons.auto_fix_high_outlined),
+            title: const Text('Automix'),
+            subtitle: const Text('The next song comes in where this one starts to fade, for a few bars at its '
+                'tempo; silence at the ends is cut. Uses your server\'s analysis, else the crossfade above'),
+            value: s.automix,
+            onChanged: (v) => set('automix', v),
+          ),
+          if (s.crossfade > 0 || s.automix)
             SwitchListTile(
               secondary: const SizedBox(width: 24),
               title: const Text('Crossfade inside albums'),

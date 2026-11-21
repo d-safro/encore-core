@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import 'automix.dart';
 import 'autoplay.dart';
 import 'cast.dart';
 import 'desktop_audio.dart';
@@ -340,7 +341,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   bool _fadeAllowed(int i) {
     final cf = _settings.crossfade;
-    if (cf <= 0 || _cast != null || radioStation != null || i + 1 >= _songs.length || player.loopMode == LoopMode.one) return false;
+    if ((cf <= 0 && !_settings.automix) || _cast != null || radioStation != null || i + 1 >= _songs.length || player.loopMode == LoopMode.one) return false;
     final a = _songs[i], b = _songs[i + 1];
     if (isPodcastId(a.id) || isPodcastId(b.id) || a.isLookup || b.isLookup) return false;
     if (!canPlay(b)) return false;
@@ -351,29 +352,72 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     return true;
   }
 
+  // Automix (automix.dart): what the server measured of each song, for where and how long the blend is
+  final _mixInfo = <String, MixInfo>{};
+  final _mixAsked = <String, DateTime>{};
+
+  Future<void> _fetchMixInfo(int i) async {
+    if (!_settings.automix || container.read(offlineProvider)) return;
+    final c = container.read(clientProvider);
+    if (c == null) return;
+    final now = DateTime.now();
+    final ids = [
+      for (var k = i; k < min(i + 4, _songs.length); k++)
+        if (!_mixInfo.containsKey(_songs[k].id) && !isPodcastId(_songs[k].id) && !_songs[k].isLookup &&
+            now.difference(_mixAsked[_songs[k].id] ?? DateTime(0)) > const Duration(seconds: 20))
+          _songs[k].id,
+    ];
+    if (ids.isEmpty) return;
+    for (final id in ids) {
+      _mixAsked[id] = now; // songs not measured yet are measured first on the server: ask again in a while
+    }
+    try {
+      _mixInfo.addAll(await c.mixInfo(ids));
+    } catch (_) {}
+  }
+
+  Transition? _plan(int i, Duration dur) => i + 1 >= _songs.length
+      ? null
+      : planTransition(
+          length: dur,
+          a: _mixInfo[_songs[i].id],
+          b: _mixInfo[_songs[i + 1].id],
+          automix: _settings.automix,
+          crossfade: _settings.crossfade,
+        );
+
   void _fadeTick(Duration pos) {
     if (!player.playing) return;
     final i = player.currentIndex, dur = player.duration;
     if (i == null || dur == null || dur <= Duration.zero) return;
     final left = dur - pos;
-    final cf = Duration(seconds: _settings.crossfade);
     if (_fadeFrom != null && _fadeFrom != i) _cancelFade(); // moved somewhere else
-    if (_fadeFrom == null && left <= cf + const Duration(seconds: 6) && left > cf && _fadeAllowed(i)) {
-      _prepareFade(i); // load the next song a few seconds early so the fade starts on time
+    // not measured yet (just asked, the server measures it first): ask again before it's time
+    if (_settings.automix && left < const Duration(seconds: 60) && i + 1 < _songs.length &&
+        (!_mixInfo.containsKey(_songs[i].id) || !_mixInfo.containsKey(_songs[i + 1].id))) {
+      _fetchMixInfo(i);
     }
-    if (_fadeFrom == i && _fadeReady && _fadeTimer == null && left <= cf && left > const Duration(milliseconds: 500)) {
-      _runFade(i, left);
+    final plan = _plan(i, dur);
+    if (plan == null) return;
+    final from = dur - plan.fadeAt; // how long before the end the blend starts
+    if (_fadeFrom == null && left <= from + const Duration(seconds: 6) && left > from && _fadeAllowed(i)) {
+      _prepareFade(i, plan.nextStart); // load the next song a few seconds early so the fade starts on time
+    }
+    if (_fadeFrom == i && _fadeReady && _fadeTimer == null && left <= from && left > const Duration(milliseconds: 500)) {
+      final length = plan.length < left ? plan.length : left;
+      // the blend is over before this song ends (its outro, trailing silence): move on to the next one then
+      _runFade(i, length, moveOn: left - length > const Duration(seconds: 1));
     }
   }
 
-  Future<void> _prepareFade(int i) async {
+  Future<void> _prepareFade(int i, [Duration nextStart = Duration.zero]) async {
     _fadeFrom = i;
     _fadeReady = false;
     // shares the main player's audio focus: it must not pause the main player when it starts
     final fp = _fadePlayer ??= AudioPlayer(handleInterruptions: false, handleAudioSessionActivation: false);
     try {
       await fp.setVolume(0);
-      await fp.setAudioSource(_source(_songs[i + 1]), preload: true);
+      await fp.setAudioSource(_source(_songs[i + 1]), preload: true, initialPosition: nextStart);
       await fp.setSpeed(player.speed);
       if (_fadeFrom == i) _fadeReady = true;
     } catch (_) {
@@ -381,7 +425,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
   }
 
-  void _runFade(int i, Duration left) {
+  void _runFade(int i, Duration left, {bool moveOn = false}) {
     final fp = _fadePlayer!;
     final start = DateTime.now();
     final target = _rgVolume(i + 1);
@@ -392,7 +436,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _fadeShare = cos(x * pi / 2);
       _quiet(() => player.setVolume(_mainVolume * _fadeShare));
       _quiet(() => fp.setVolume(target * sin(x * pi / 2)));
-      if (x >= 1) t.cancel();
+      if (x >= 1) {
+        t.cancel();
+        // Automix: the rest of this song is its faded-out tail: the next one takes over now (not a skip)
+        if (moveOn && _fadeFrom == i && player.currentIndex == i) player.seekToNext();
+      }
     });
   }
 
@@ -1739,6 +1787,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _smartFill();
     _scheduleSave();
     _reportSoon();
+    _fetchMixInfo(i);
   }
 
   // ── Playback reports (exact play / pause / position for other apps, e.g. the Discord status) ──
