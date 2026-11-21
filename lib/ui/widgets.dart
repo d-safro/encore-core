@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -207,9 +208,9 @@ class ScrollTitle {
   final shown = ValueNotifier(false);
   Widget title(String text) => ValueListenableBuilder<bool>(
     valueListenable: shown,
-    builder: (_, v, _) => AnimatedOpacity(
+    builder: (context, v, _) => AnimatedOpacity(
       opacity: v ? 1 : 0,
-      duration: const Duration(milliseconds: 180),
+      duration: motion(context, const Duration(milliseconds: 180)),
       child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
     ),
   );
@@ -325,6 +326,22 @@ class LookupBadge extends StatelessWidget {
 }
 
 /// One song row: cover, title, artist; taps play [list] from this song; long press / ⋮ opens the menu.
+/// How long an animation runs: none with Reduce animations (Appearance) or the phone's "Remove animations".
+Duration motion(BuildContext context, Duration d) => MediaQuery.disableAnimationsOf(context) ? Duration.zero : d;
+
+/// What a screen reader says for a song row.
+String songSemanticsLabel(Song s, {bool current = false, bool downloaded = false, bool liked = false, bool available = true}) =>
+    [
+      s.title,
+      if (s.artist.isNotEmpty) s.artist,
+      if (s.duration != null) formatDuration(s.duration),
+      if (current) 'playing',
+      if (downloaded) 'downloaded',
+      if (liked) 'liked',
+      if (s.isLookup) 'not in your library yet',
+      if (!available) 'not available offline',
+    ].join(', ');
+
 class SongTile extends ConsumerWidget {
   const SongTile(
     this.song, {
@@ -358,22 +375,24 @@ class SongTile extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final dim = song.isLookup || !available;
     final compact = AppLook.of(context).compact;
+    final VoidCallback? play = !(available || song.isLookup)
+        ? null
+        : () {
+            if (queueIndex != null) {
+              audioHandler.skipToQueueItem(queueIndex!);
+            } else if (song.isLookup && !audioHandler.autoGet) {
+              showSongMenu(context, ref, song); // ask first (the setting is off)
+            } else {
+              // a song you don't have plays from its list when the list has it, else on its own
+              final l = list != null && list!.contains(song) ? list! : [song];
+              audioHandler.playSongs(l, index: index != null && l.length > 1 ? index! : l.indexOf(song), context: playContext);
+            }
+          };
+    void menu() => showSongMenu(context, ref, song, queueIndex: queueIndex);
     Widget tile = InkWell(
-      onTap: !(available || song.isLookup)
-          ? null
-          : () {
-              if (queueIndex != null) {
-                audioHandler.skipToQueueItem(queueIndex!);
-              } else if (song.isLookup && !audioHandler.autoGet) {
-                showSongMenu(context, ref, song); // ask first (the setting is off)
-              } else {
-                // a song you don't have plays from its list when the list has it, else on its own
-                final l = list != null && list!.contains(song) ? list! : [song];
-                audioHandler.playSongs(l, index: index != null && l.length > 1 ? index! : l.indexOf(song), context: playContext);
-              }
-            },
-      onSecondaryTap: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
-      onLongPress: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
+      onTap: play,
+      onSecondaryTap: menu,
+      onLongPress: menu,
       // desktop, a wide list: a table row (title and artist, album, length); else the phone's row
       child: LayoutBuilder(
         builder: (context, box) => isDesktop && queueIndex == null && trailing == null && box.maxWidth >= 760
@@ -487,6 +506,7 @@ class SongTile extends ConsumerWidget {
                         child: CircularProgressIndicator(strokeWidth: 2, value: progress > 0 ? progress : null),
                       ),
                     IconButton(
+                      tooltip: 'More',
                       icon: Icon(Icons.more_vert_rounded, color: cs.onSurfaceVariant),
                       onPressed: () => showSongMenu(context, ref, song, queueIndex: queueIndex),
                     ),
@@ -496,6 +516,23 @@ class SongTile extends ConsumerWidget {
         ),
       ),
       ),
+    );
+    // a screen reader hears the row as one item ("title, artist, length, playing, downloaded, liked") with the
+    // row's buttons as actions, instead of every link and icon on its own
+    tile = Semantics(
+      container: true,
+      button: true,
+      enabled: play != null,
+      excludeSemantics: trailing == null,
+      label: songSemanticsLabel(song, current: current, downloaded: onPhone, liked: hearted, available: available),
+      onTap: play,
+      onLongPress: menu,
+      customSemanticsActions: {
+        if (!song.isLookup) CustomSemanticsAction(label: 'Play next'): () => audioHandler.playNext([song]),
+        CustomSemanticsAction(label: hearted ? 'Unlike' : 'Like'): () => toggleStarSong(context, ref, song),
+        const CustomSemanticsAction(label: 'More options'): menu,
+      },
+      child: tile,
     );
     // desktop: drag songs onto the queue, Liked songs or a playlist in the sidebar
     if (isDesktop && queueIndex == null && !song.isLookup) tile = songDragSource(songs: [song], child: tile);
@@ -642,11 +679,9 @@ class _ShelfState extends State<Shelf> {
   void _page(int dir) {
     if (!_ctl.hasClients) return;
     final p = _ctl.position;
-    _ctl.animateTo(
-      (p.pixels + dir * p.viewportDimension * 0.8).clamp(0.0, p.maxScrollExtent),
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
-    );
+    final to = (p.pixels + dir * p.viewportDimension * 0.8).clamp(0.0, p.maxScrollExtent);
+    final d = motion(context, const Duration(milliseconds: 350));
+    d == Duration.zero ? _ctl.jumpTo(to) : _ctl.animateTo(to, duration: d, curve: Curves.easeOutCubic);
   }
 
   @override
@@ -777,7 +812,7 @@ class MiniPlayer extends ConsumerWidget {
               padding: slim ? const EdgeInsets.fromLTRB(6, 4, 2, 4) : EdgeInsets.fromLTRB(flat ? 12 : 8, 8, 4, 8),
               child: Row(
                 children: [
-                  Hero(
+                  HeroMode(enabled: !MediaQuery.disableAnimationsOf(context), child: Hero(
                     tag: 'cover',
                     child: Cover(
                       song?.coverArt ?? '',
@@ -787,7 +822,7 @@ class MiniPlayer extends ConsumerWidget {
                       artist: song?.artist ?? '',
                       album: song?.album ?? '',
                     ),
-                  ),
+                  )),
                   SizedBox(width: slim ? 10 : 12),
                   Expanded(
                     child: GestureDetector(
@@ -830,6 +865,7 @@ class MiniPlayer extends ConsumerWidget {
                   ),
                   if (!slim && song != null && !isPodcastId(song.id))
                     IconButton(
+                      tooltip: song.starred ? 'Unlike' : 'Like',
                       icon: Icon(
                         song.starred ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                         color: song.starred ? cs.primary : null,
@@ -846,6 +882,7 @@ class MiniPlayer extends ConsumerWidget {
                           ),
                         )
                       : IconButton(
+                        tooltip: playing ? 'Pause' : 'Play',
                           iconSize: slim ? 26 : 30,
                           visualDensity: slim ? VisualDensity.compact : null,
                           icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
@@ -1072,7 +1109,7 @@ class _HoverPlayState extends State<HoverPlay> {
         alignment: Alignment.bottomRight,
         child: AnimatedOpacity(
           opacity: _hover || _busy ? 1 : 0,
-          duration: const Duration(milliseconds: 150),
+          duration: motion(context, const Duration(milliseconds: 150)),
           child: Padding(
             padding: const EdgeInsets.all(8),
             child: IgnorePointer(
@@ -1287,7 +1324,7 @@ class _TappableState extends State<Tappable> {
             bottom: -o,
             child: IgnorePointer(
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
+                duration: motion(context, const Duration(milliseconds: 120)),
                 decoration: BoxDecoration(
                   color: _hover ? hoverGray(context) : Colors.transparent,
                   borderRadius: BorderRadius.circular(widget.radius + o),

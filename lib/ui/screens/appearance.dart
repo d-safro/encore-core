@@ -41,7 +41,7 @@ class AppearanceScreen extends ConsumerWidget {
             padding: const EdgeInsets.only(top: 6),
             child: SegmentedButton<T>(
               showSelectedIcon: false,
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              style: const ButtonStyle(tapTargetSize: MaterialTapTargetSize.padded), // 48 dp to touch (compact was 40)
               segments: [for (final e in options.entries) ButtonSegment(value: e.key, label: Text(e.value))],
               selected: {selected},
               onSelectionChanged: (v) => onChanged(v.first),
@@ -92,7 +92,7 @@ class AppearanceScreen extends ConsumerWidget {
               padding: const EdgeInsets.only(top: 6),
               child: SegmentedButton<ThemeSource>(
                 showSelectedIcon: false,
-                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                style: const ButtonStyle(tapTargetSize: MaterialTapTargetSize.padded), // 48 dp to touch (compact was 40)
                 segments: const [
                   ButtonSegment(value: ThemeSource.wallpaper, label: Text('Wallpaper')),
                   ButtonSegment(value: ThemeSource.albumArt, label: Text('Album art')),
@@ -173,6 +173,14 @@ class AppearanceScreen extends ConsumerWidget {
             subtitle: const Text('Tighter rows and buttons, more on screen'),
             value: s.compact,
             onChanged: (v) => set('compact', v),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.motion_photos_off_outlined),
+            title: const Text('Reduce animations'),
+            subtitle: const Text('No sliding pages, colour fades or smooth scrolling. On by itself when the phone\'s '
+                '"Remove animations" is on'),
+            value: s.reduceMotion,
+            onChanged: (v) => set('reduceMotion', v),
           ),
 
           const SectionTitle('Albums'),

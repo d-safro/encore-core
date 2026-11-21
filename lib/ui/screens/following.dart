@@ -305,6 +305,7 @@ class _NearMeFieldState extends ConsumerState<NearMeField> {
         suffixIcon: _ctl.text.isEmpty
             ? null
             : IconButton(
+              tooltip: 'Clear',
                 icon: const Icon(Icons.clear),
                 onPressed: () {
                   _ctl.clear();

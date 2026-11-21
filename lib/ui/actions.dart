@@ -108,6 +108,7 @@ Future<void> rateSong(BuildContext context, WidgetRef ref, Song s) async {
             children: [
               for (var i = 1; i <= 5; i++)
                 IconButton(
+                  tooltip: '$i star${i == 1 ? '' : 's'}',
                   iconSize: 36,
                   icon: Icon(i <= r ? Icons.star_rounded : Icons.star_outline_rounded),
                   onPressed: () => set(() => r = r == i ? 0 : i),

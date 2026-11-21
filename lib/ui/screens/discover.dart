@@ -370,7 +370,7 @@ class _PromptCardState extends State<_PromptCard> {
                 decoration: InputDecoration(
                   hintText: widget.hint,
                   border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(icon: const Icon(Icons.arrow_forward), onPressed: () => _go(_ctl.text)),
+                  suffixIcon: IconButton(tooltip: 'Search', icon: const Icon(Icons.arrow_forward), onPressed: () => _go(_ctl.text)),
                 ),
               ),
               if (widget.examples.isNotEmpty) ...[
@@ -524,6 +524,7 @@ class _AlchemyScreenState extends ConsumerState<AlchemyScreen> {
               title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: Text(s.artist, maxLines: 1),
               trailing: IconButton(
+                tooltip: 'Remove',
                 icon: const Icon(Icons.close),
                 onPressed: () => _safeSetState(() => songs.remove(s)),
               ),

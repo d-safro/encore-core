@@ -477,9 +477,15 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       sliderTheme: const SliderThemeData(year2023: false),
       progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
       dividerTheme: DividerThemeData(color: cs.onSurface.withValues(alpha: 0.06)),
-      pageTransitionsTheme: const PageTransitionsTheme(
-        builders: {TargetPlatform.android: PredictiveBackPageTransitionsBuilder()},
-      ),
+      // reduce animations: pages appear without sliding
+      pageTransitionsTheme: s.reduceMotion
+          ? const PageTransitionsTheme(builders: {
+              TargetPlatform.android: _NoTransition(),
+              TargetPlatform.linux: _NoTransition(),
+              TargetPlatform.windows: _NoTransition(),
+              TargetPlatform.macOS: _NoTransition(),
+            })
+          : const PageTransitionsTheme(builders: {TargetPlatform.android: PredictiveBackPageTransitionsBuilder()}),
     );
   }
 
@@ -505,12 +511,22 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
           darkTheme: theme(scheme, s),
           routerConfig: router,
           scaffoldMessengerKey: messengerKey,
+          // the album-art colours change at once with Reduce animations (or the phone's own switch)
+          themeAnimationDuration: s.reduceMotion ||
+                  WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations
+              ? Duration.zero
+              : kThemeAnimationDuration,
           // Appearance's text size goes on top of the phone's own
+          // and Reduce animations turns on Flutter's own "no animations" (the phone's switch sets it too), which
+          // the app's fades and scrolls follow (see motion() in widgets.dart)
           builder: (ctx, child) {
             final mq = MediaQuery.of(ctx);
-            if (s.textScale == 1.0) return child!;
+            if (s.textScale == 1.0 && !s.reduceMotion) return child!;
             return MediaQuery(
-              data: mq.copyWith(textScaler: _TimesScaler(mq.textScaler, s.textScale)),
+              data: mq.copyWith(
+                textScaler: s.textScale == 1.0 ? mq.textScaler : _TimesScaler(mq.textScaler, s.textScale),
+                disableAnimations: mq.disableAnimations || s.reduceMotion,
+              ),
               child: child!,
             );
           },
@@ -518,6 +534,15 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       },
     );
   }
+}
+
+/// Reduce animations: a new page just appears.
+class _NoTransition extends PageTransitionsBuilder {
+  const _NoTransition();
+  @override
+  Widget buildTransitions<T>(PageRoute<T> route, BuildContext context, Animation<double> animation,
+          Animation<double> secondaryAnimation, Widget child) =>
+      child;
 }
 
 /// The phone's text scaling (which Android makes gentler for big text), then Appearance's text size on top.

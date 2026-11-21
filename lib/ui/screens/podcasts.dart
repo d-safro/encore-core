@@ -515,10 +515,11 @@ class EpisodeTile extends ConsumerWidget {
               ),
             ),
             IconButton(
+              tooltip: playing ? 'Playing' : 'Play',
               icon: Icon(playing ? Icons.graphic_eq_rounded : Icons.play_circle_outline_rounded, color: cs.primary),
               onPressed: () => audioHandler.playEpisode(e),
             ),
-            IconButton(icon: const Icon(Icons.more_vert), onPressed: () => showEpisodeMenu(context, ref, e)),
+            IconButton(tooltip: 'More', icon: const Icon(Icons.more_vert), onPressed: () => showEpisodeMenu(context, ref, e)),
           ],
         ),
       ),

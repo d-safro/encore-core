@@ -73,6 +73,7 @@ class Settings {
   final double textScale; // on top of the phone's own text size
   final Corners corners;
   final bool compact; // tighter rows and buttons
+  final bool reduceMotion; // no cover swipe / colour fades / autoscroll easing (the phone's own switch does it too)
   final CardSize cardSize;
   final bool showQuickPills, showJumpBackIn, showGreeting; // parts of Home
   final PlayerLayout playerLayout;
@@ -120,6 +121,7 @@ class Settings {
     this.textScale = 1.0,
     this.corners = Corners.soft,
     this.compact = false,
+    this.reduceMotion = false,
     this.cardSize = CardSize.medium,
     this.showQuickPills = true,
     this.showJumpBackIn = true,
@@ -173,6 +175,7 @@ class Settings {
     'textScale': textScale,
     'corners': corners.name,
     'compact': compact,
+    'reduceMotion': reduceMotion,
     'cardSize': cardSize.name,
     'showQuickPills': showQuickPills,
     'showJumpBackIn': showJumpBackIn,
@@ -227,6 +230,7 @@ class Settings {
       textScale: ((j['textScale'] as num?)?.toDouble() ?? d.textScale).clamp(0.8, 1.4),
       corners: pick(Corners.values, j['corners'], d.corners),
       compact: j['compact'] ?? d.compact,
+      reduceMotion: j['reduceMotion'] ?? d.reduceMotion,
       cardSize: pick(CardSize.values, j['cardSize'], d.cardSize),
       showQuickPills: j['showQuickPills'] ?? d.showQuickPills,
       showJumpBackIn: j['showJumpBackIn'] ?? d.showJumpBackIn,
