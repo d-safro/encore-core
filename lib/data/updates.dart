@@ -24,9 +24,12 @@ class UpdateInfo {
     required this.sumsUrl,
     required this.pageUrl,
     this.rpmUrl = '',
+    this.debUrl = '',
+    this.archUrl = '',
   });
-  // apkUrl / apkName: the file this device installs (the APK, or on the desktop the .tar.gz)
-  final String version, notes, apkUrl, apkName, sumsUrl, pageUrl, rpmUrl;
+  // apkUrl / apkName: the file this device installs (the APK; on Linux the .tar.gz; on Windows the setup
+  // program). rpmUrl / debUrl / archUrl: the system packages, for the command a packaged copy shows.
+  final String version, notes, apkUrl, apkName, sumsUrl, pageUrl, rpmUrl, debUrl, archUrl;
   final int size;
 }
 
@@ -70,6 +73,28 @@ String? pickLinuxAsset(List<String> names, String arch) {
 String? pickRpm(List<String> names, String arch) =>
     names.where((n) => n.startsWith('encore-') && n.endsWith('.$arch.rpm')).firstOrNull;
 
+/// Debian and Ubuntu name processors their own way (x86_64 is amd64).
+String debArch(String arch) => switch (arch) {
+  'x86_64' => 'amd64',
+  'aarch64' => 'arm64',
+  _ => arch,
+};
+
+/// Desktop: the .deb for this computer, for `apt install` (encore_1.8.0_amd64.deb).
+String? pickDeb(List<String> names, String arch) => names
+    .where((n) => RegExp('^encore_[0-9][^/]*_${RegExp.escape(debArch(arch))}\\.deb\$').hasMatch(n))
+    .firstOrNull;
+
+/// Desktop: the Arch package for this computer, for `pacman -U` (encore-bin-1.8.0-1-x86_64.pkg.tar.zst).
+String? pickArchPackage(List<String> names, String arch) => names
+    .where((n) => RegExp('^encore-bin-[0-9][^/]*-${RegExp.escape(arch)}\\.pkg\\.tar\\.zst\$').hasMatch(n))
+    .firstOrNull;
+
+/// Windows: the setup program (encore-1.8.0-windows-x64-setup.exe). The portable .zip is never picked: a
+/// portable copy is updated by hand.
+String? pickWindowsAsset(List<String> names) =>
+    names.where(RegExp(r'^encore-[0-9][^/]*-windows-x64-setup\.exe$').hasMatch).firstOrNull;
+
 String _arch() {
   try {
     final m = Process.runSync('uname', ['-m']).stdout.toString().trim();
@@ -101,9 +126,15 @@ Future<UpdateInfo?> fetchUpdate() async {
   if (version.isEmpty || compareVersions(version, appVersion) <= 0) return null;
   final assets = [for (final a in (j['assets'] as List? ?? const [])) (a as Map).cast<String, dynamic>()];
   final names = [for (final a in assets) '${a['name']}'];
-  final name = isDesktop ? pickLinuxAsset(names, _arch()) : pickApk(names, await _abis());
+  final name = !isDesktop
+      ? pickApk(names, await _abis())
+      : Platform.isWindows
+      ? pickWindowsAsset(names)
+      : pickLinuxAsset(names, _arch());
   if (name == null) return null;
-  final rpm = isDesktop ? pickRpm(names, _arch()) : null;
+  final linux = isDesktop && Platform.isLinux;
+  String urlOf(String? n) =>
+      n == null ? '' : '${assets.firstWhere((a) => a['name'] == n)['browser_download_url']}';
   final apk = assets.firstWhere((a) => a['name'] == name);
   final sums = assets.where((a) => a['name'] == 'SHA256SUMS.txt').firstOrNull;
   return UpdateInfo(
@@ -114,7 +145,9 @@ Future<UpdateInfo?> fetchUpdate() async {
     size: (apk['size'] as num?)?.toInt() ?? 0,
     sumsUrl: sums == null ? '' : '${sums['browser_download_url']}',
     pageUrl: '${j['html_url'] ?? 'https://github.com/$updateRepo/releases'}',
-    rpmUrl: rpm == null ? '' : '${assets.firstWhere((a) => a['name'] == rpm)['browser_download_url']}',
+    rpmUrl: linux ? urlOf(pickRpm(names, _arch())) : '',
+    debUrl: linux ? urlOf(pickDeb(names, _arch())) : '',
+    archUrl: linux ? urlOf(pickArchPackage(names, _arch())) : '',
   );
 }
 
@@ -173,6 +206,7 @@ Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress) asyn
 }
 
 Future<bool> canInstallUpdates() async {
+  if (isDesktop && Platform.isWindows) return windowsInstalledBySetup();
   if (isDesktop) return desktopInstallDir() != null;
   try {
     return await _system.invokeMethod<bool>('canInstall') ?? false;
@@ -186,12 +220,17 @@ Future<void> allowInstalls() => _system.invokeMethod('allowInstalls');
 
 /// Opens Android's installer for the downloaded file (it asks you to confirm). On the desktop: puts the new
 /// version in place of this one (see [installDesktopUpdate]); the app then restarts.
-Future<void> installUpdate(File f) =>
-    isDesktop ? installDesktopUpdate(f) : _system.invokeMethod('install', {'path': f.path});
+Future<void> installUpdate(File f) => !isDesktop
+    ? _system.invokeMethod('install', {'path': f.path})
+    : Platform.isWindows
+    ? installWindowsUpdate(f)
+    : installDesktopUpdate(f);
 
 /// Opens a web page in the browser.
 Future<void> openUrl(String url) async {
-  if (isDesktop) {
+  if (isDesktop && Platform.isWindows) {
+    await Process.start('rundll32', ['url.dll,FileProtocolHandler', url], mode: ProcessStartMode.detached);
+  } else if (isDesktop) {
     await Process.start('xdg-open', [url], mode: ProcessStartMode.detached);
   } else {
     await _system.invokeMethod('openUrl', {'url': url});
@@ -214,7 +253,7 @@ Directory? desktopInstallDir() {
 /// moment after this one quits.
 Future<void> installDesktopUpdate(File tarball) async {
   final dir = desktopInstallDir();
-  if (dir == null) throw const FileSystemException('Encore is installed by the system here: update it with dnf');
+  if (dir == null) throw const FileSystemException('Encore is installed by the system here: update it with its package manager');
   final staging = Directory('${dir.path}.new');
   if (await staging.exists()) await staging.delete(recursive: true);
   await staging.create(recursive: true);
@@ -234,4 +273,57 @@ Future<void> installDesktopUpdate(File tarball) async {
   await staging.delete(recursive: true);
   // the new version starts once this one has quit (only one Encore runs at a time); the caller quits
   await Process.start('sh', ['-c', 'sleep 2; exec "\$0"', '${dir.path}/encore'], mode: ProcessStartMode.detached);
+}
+
+// ── Copies installed by the system's package manager ──
+
+/// How a Linux system package was installed: 'deb' (apt), 'arch' (pacman) or 'rpm' (dnf).
+String linuxPackageKind({String root = ''}) {
+  if (File('$root/var/lib/dpkg/info/encore.list').existsSync()) return 'deb';
+  try {
+    final local = Directory('$root/var/lib/pacman/local');
+    if (local.existsSync() && local.listSync().any((e) => e.path.split('/').last.startsWith('encore-bin-'))) {
+      return 'arch';
+    }
+  } catch (_) {}
+  return 'rpm';
+}
+
+/// The terminal command that updates a system-installed copy (it asks for your password), or null when the
+/// release has no package of that kind.
+String? systemUpdateCommand(UpdateInfo u, String kind) {
+  switch (kind) {
+    case 'deb':
+      if (u.debUrl.isEmpty) return null;
+      final file = Uri.parse(u.debUrl).pathSegments.last;
+      return 'cd /tmp && curl -LO ${u.debUrl} && sudo apt install ./$file';
+    case 'arch':
+      return u.archUrl.isEmpty ? null : 'sudo pacman -U ${u.archUrl}';
+    default:
+      return u.rpmUrl.isEmpty ? null : 'sudo dnf install ${u.rpmUrl}';
+  }
+}
+
+/// What the package manager is called, for the update screen.
+String packageManagerName(String kind) => switch (kind) {
+  'deb' => 'apt',
+  'arch' => 'pacman',
+  _ => 'dnf',
+};
+
+// ── Windows ──
+
+/// Installed by the setup program (it leaves its uninstaller next to encore.exe), so a new setup program
+/// can update it. The portable .zip has none: that copy is updated by hand.
+bool windowsInstalledBySetup() =>
+    File('${File(Platform.resolvedExecutable).parent.path}\\unins000.exe').existsSync();
+
+/// Runs the downloaded setup program quietly: it closes this copy, puts the new version in place and
+/// starts it again (/launch=1, see tools/windows/encore.iss). The caller then quits.
+Future<void> installWindowsUpdate(File setup) async {
+  await Process.start(
+    setup.path,
+    ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/launch=1'],
+    mode: ProcessStartMode.detached,
+  );
 }
