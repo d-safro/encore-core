@@ -12,10 +12,12 @@ import '../../data/playlist_covers.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
+import '../../data/concerts.dart';
 import '../widgets.dart';
 import 'podcasts.dart';
 import 'following.dart';
 import '../../data/mixes.dart';
+import 'concerts.dart';
 import 'jam.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -45,6 +47,7 @@ class HomeScreen extends ConsumerWidget {
           }
           ref.invalidate(playlistsProvider);
           ref.invalidate(mixesProvider);
+          ref.invalidate(concertsProvider);
         },
         child: SafeArea(
           bottom: false,
@@ -86,6 +89,7 @@ class HomeScreen extends ConsumerWidget {
               if (set.showJumpBackIn) const SliverToBoxAdapter(child: _JumpBackIn()),
               const SliverToBoxAdapter(child: NewEpisodesShelf()),
               const SliverToBoxAdapter(child: NewReleasesShelf()),
+              const SliverToBoxAdapter(child: ConcertsShelf()),
               for (final s in sections)
                 SliverToBoxAdapter(
                   child: switch (s) {

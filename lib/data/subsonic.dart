@@ -10,6 +10,7 @@ import '../core/platform.dart';
 import 'lyrics_translation.dart' show LyricsTranslation;
 import 'mixes.dart' show Mixes;
 import '../playback/automix.dart' show MixInfo;
+import 'concerts.dart' show Concerts;
 import 'models.dart';
 import 'review.dart';
 
@@ -605,6 +606,9 @@ class SubsonicClient {
         if (s['id'] != null) '${s['id']}': MixInfo.fromJson(s),
     };
   }
+
+  /// Concerts near you (music-lookup's concerts.py).
+  Future<Concerts> concerts() async => Concerts.fromJson(_m((await call('getConcerts'))['concerts']));
 
   Future<List<Song>> songDiscoveries(String id, {int count = 30}) async {
     try {

@@ -34,6 +34,7 @@ import 'ui/screens/settings.dart';
 import 'data/updates.dart';
 import 'ui/state.dart';
 import 'ui/screens/review.dart';
+import 'ui/screens/concerts.dart';
 import 'ui/screens/stats.dart';
 import 'ui/update.dart';
 import 'ui/widgets.dart';
@@ -149,6 +150,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, s) => FollowingScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0),
           ),
           GoRoute(path: '/stats', builder: (_, _) => const StatsScreen()),
+          GoRoute(path: '/concerts', builder: (_, _) => const ConcertsScreen()),
           GoRoute(path: '/podcasts/add', builder: (_, _) => const AddPodcastScreen()),
           GoRoute(
             path: '/podcast/:id',
@@ -379,6 +381,8 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       router.go('/library?tab=1');
     } else if (payload == 'releases') {
       router.push('/following?tab=1');
+    } else if (payload == 'concerts') {
+      router.push('/concerts');
     } else if (payload == 'review') {
       router.push('/review');
     }
