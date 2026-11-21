@@ -340,7 +340,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
-                'Tap to download through your server, or play a preview.',
+                audioHandler.autoGet
+                    ? 'Tap to play: your server gets it on trial. Heart it to keep it.'
+                    : 'Tap to download through your server, or play a preview.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),

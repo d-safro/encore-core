@@ -268,20 +268,11 @@ Future<void> showSongMenu(
                     toast(context, 'Added to queue: ${song.title}');
                   },
                 ),
-                ListTile(
-                  leading: const Icon(Icons.favorite_border_rounded),
-                  title: const Text('Keep in my library'),
-                  subtitle: const Text('Downloads it for good (the same as a heart)'),
-                  onTap: () {
-                    close();
-                    if (!(ref.read(heartsProvider)[song.id] ?? song.starred)) toggleStarSong(context, ref, song);
-                  },
-                ),
                 if (online)
                   ListTile(
                     leading: const Icon(Icons.playlist_add),
                     title: const Text('Add to playlist'),
-                    subtitle: const Text('Downloads it, then adds it to the playlist'),
+                    subtitle: const Text('Downloads it for good, then adds it to the playlist'),
                     onTap: () {
                       close();
                       addToPlaylist(context, ref, [song]);
