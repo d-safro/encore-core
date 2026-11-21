@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../core/platform.dart';
+import 'follows.dart';
 import 'models.dart';
 import 'subsonic.dart';
 
@@ -89,13 +90,57 @@ Future<int> checkNewEpisodes({SharedPreferences? p, bool notify = true}) async {
   }
 }
 
-Future<void> _show(int id, String title, String body, String payload) => notifications.show(
-  id: id,
-  title: title,
-  body: body,
-  notificationDetails: const NotificationDetails(android: _channel, linux: _linux),
-  payload: payload,
+Future<void> _show(int id, String title, String body, String payload, {AndroidNotificationDetails android = _channel}) =>
+    notifications.show(
+      id: id,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(android: android, linux: _linux),
+      payload: payload,
+    );
+
+// ── New releases from artists you follow ──
+const _releaseChannel = AndroidNotificationDetails(
+  'new_releases',
+  'New releases',
+  channelDescription: 'When an artist you follow puts out an album, EP or single',
+  importance: Importance.defaultImportance,
+  icon: 'drawable/ic_stat_encore',
 );
+
+bool releaseAlertsOn(SharedPreferences p) => p.getBool('releaseAlerts') ?? true;
+
+Future<void> showReleaseAlerts(SharedPreferences p, List<Release> fresh) async {
+  if (fresh.isEmpty || !releaseAlertsOn(p)) return;
+  try {
+    if (fresh.length <= 3) {
+      for (final r in fresh) {
+        await _show(r.key.hashCode & 0x7fffffff, 'New from ${r.artist}', r.title, 'releases', android: _releaseChannel);
+      }
+    } else {
+      final who = fresh.map((r) => r.artist).toSet().join(', ');
+      await _show(2, '${fresh.length} new releases', who, 'releases', android: _releaseChannel);
+    }
+  } catch (_) {}
+}
+
+/// The background version: the daily check (it does nothing when the last one was under a day ago).
+Future<void> checkNewReleases({SharedPreferences? p}) async {
+  p ??= await SharedPreferences.getInstance();
+  await p.reload();
+  if (readFollows(p).isEmpty) return;
+  const storage = FlutterSecureStorage();
+  final server = await storage.read(key: 'server');
+  final user = await storage.read(key: 'user');
+  final pass = await storage.read(key: 'pass');
+  final c = server == null || user == null || pass == null ? null : SubsonicClient(Credentials(server, user, pass));
+  try {
+    await showReleaseAlerts(p, await refreshReleasesOnce(p, c));
+  } catch (_) {
+  } finally {
+    c?.close();
+  }
+}
 
 // ── Background check ──
 @pragma('vm:entry-point')
@@ -106,6 +151,7 @@ void episodeCheckDispatcher() {
     try {
       await initNotifications();
       await checkNewEpisodes();
+      await checkNewReleases();
     } catch (_) {}
     return true;
   });
@@ -116,7 +162,10 @@ Timer? _desktopChecks;
 Future<void> startEpisodeChecks() async {
   if (isDesktop) {
     // no background jobs on the desktop: check hourly while Encore runs (it stays in the tray when closed)
-    _desktopChecks ??= Timer.periodic(const Duration(hours: 1), (_) => checkNewEpisodes());
+    _desktopChecks ??= Timer.periodic(const Duration(hours: 1), (_) async {
+      await checkNewEpisodes();
+      await checkNewReleases();
+    });
     return;
   }
   try {

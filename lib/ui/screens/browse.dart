@@ -6,7 +6,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/account.dart';
 import '../../data/artist_extra.dart';
+import '../../data/follows.dart';
 import '../../data/library.dart';
+import '../../data/shows.dart';
 import '../../data/library_pins.dart';
 import '../../data/models.dart';
 import '../../data/updates.dart' show openUrl;
@@ -20,6 +22,7 @@ import '../../data/playlist_covers.dart';
 import 'playlist_edit.dart';
 import 'smart_playlist.dart';
 import 'radio.dart';
+import 'following.dart' show ShowTile;
 
 /// Re-loads a page every 20 s while it shows songs that are being downloaded (⏳ → real song).
 mixin _PollWhileDownloading<T extends ConsumerStatefulWidget> on ConsumerState<T> {
@@ -250,6 +253,12 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                     ),
                     if (ref.watch(repoProvider).online)
                       IconButton(
+                        tooltip: 'Add to playlist',
+                        icon: const Icon(Icons.playlist_add_rounded),
+                        onPressed: () => addToPlaylist(context, ref, playable),
+                      ),
+                    if (ref.watch(repoProvider).online)
+                      IconButton(
                         tooltip: 'Share',
                         icon: const Icon(Icons.share_outlined),
                         onPressed: () => shareLink(context, '${a.name} · ${a.artist}', () => albumLink(a)),
@@ -354,6 +363,33 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
     ];
   }
 
+  bool _allShows = false;
+
+  /// Their next concerts (Ticketmaster with a key, else MusicBrainz). Nothing at all when none are known.
+  List<Widget> _shows(Artist a, String mbid) {
+    final l = ref.watch(artistShowsProvider((a.name, mbid))).value ?? const <Show>[];
+    if (l.isEmpty) return const [];
+    final city = ref.watch(showsPrefsProvider).city;
+    // the ones near you first
+    final sorted = [...l.where((s) => city.isNotEmpty && s.near(city)), ...l.where((s) => city.isEmpty || !s.near(city))];
+    return [
+      SectionTitle(
+        'Upcoming shows',
+        subtitle: city.isEmpty ? null : '${l.where((s) => s.near(city)).length} near $city',
+        onMore: () => context.push('/following?tab=2'),
+      ),
+      for (final s in sorted.take(_allShows ? 20 : 3)) ShowTile(s, showArtist: false),
+      if (l.length > 3)
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: TextButton(
+            onPressed: () => setState(() => _allShows = !_allShows),
+            child: Text(_allShows ? 'Show less' : 'All ${l.length} shows'),
+          ),
+        ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final artist = ref.watch(artistProvider(widget.id));
@@ -419,6 +455,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
               onPlay: () async => audioHandler.playSongs(await allSongs(), source: 'artist:${a.id}'),
               onShuffle: () async => audioHandler.playSongs(await allSongs(), shuffle: true, source: 'artist:${a.id}'),
               leading: [
+                if (!a.isLookup) _FollowButton(a, mbid: info.value?.mbid ?? ''),
                 IconButton(
                   iconSize: 26,
                   icon: Icon(
@@ -492,6 +529,7 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
               ),
             ],
             ..._discography(own, missing, extra),
+            if (info.hasValue && ref.watch(repoProvider).online) ..._shows(a, info.value!.mbid),
             ...switch (ref.watch(soundAlikeArtistsProvider(a.name))) {
               AsyncData(:final value) when value.isNotEmpty => [
                 Shelf(
@@ -566,6 +604,32 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
           ],
         );
       }, onRetry: () => ref.invalidate(artistProvider(widget.id)))),
+    );
+  }
+}
+
+/// Follow / Following, as on Spotify: their new releases and shows then come to you.
+class _FollowButton extends ConsumerWidget {
+  const _FollowButton(this.a, {required this.mbid});
+  final Artist a;
+  final String mbid;
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final on = ref.watch(followsProvider.select((l) => l.any((x) => x.id == a.id)));
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, right: 4),
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          foregroundColor: on ? Theme.of(context).colorScheme.primary : null,
+        ),
+        onPressed: () {
+          ref.read(followsProvider.notifier).toggle(FollowedArtist(a.id, a.name, mbid: mbid, cover: a.coverArt));
+          toast(context, on ? 'Unfollowed ${a.name}' : 'Following ${a.name}: new releases and shows will show up');
+        },
+        child: Text(on ? 'Following' : 'Follow'),
+      ),
     );
   }
 }
