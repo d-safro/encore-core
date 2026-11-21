@@ -29,6 +29,12 @@ Future<void> initNotifications({void Function(String payload)? onTap}) async {
     settings: InitializationSettings(
       android: const AndroidInitializationSettings('drawable/ic_stat_encore'),
       linux: LinuxInitializationSettings(defaultActionName: 'Open', defaultIcon: ThemeLinuxIcon('dev.safro.encore')),
+      // Windows: the same id as the Start menu shortcut the installer makes (tools/windows/encore.iss)
+      windows: const WindowsInitializationSettings(
+        appName: 'Encore',
+        appUserModelId: 'dev.safro.encore',
+        guid: '6f1c9e0a-3b7d-4c52-9a8e-2d4f5b6c7e81',
+      ),
     ),
     onDidReceiveNotificationResponse: (r) {
       if (r.payload != null) onTap?.call(r.payload!);
@@ -93,7 +99,7 @@ Future<void> _show(int id, String title, String body, String payload) => notific
   id: id,
   title: title,
   body: body,
-  notificationDetails: const NotificationDetails(android: _channel, linux: _linux),
+  notificationDetails: const NotificationDetails(android: _channel, linux: _linux, windows: WindowsNotificationDetails()),
   payload: payload,
 );
 

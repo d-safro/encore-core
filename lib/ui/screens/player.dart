@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:material_ui/material_ui.dart';
@@ -828,7 +830,7 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
                       leading: const Icon(Icons.surround_sound_rounded),
                       title: Text(isDesktop ? 'Sound settings' : 'Mono audio and left/right balance'),
                       subtitle: Text(isDesktop
-                          ? 'KDE\'s volume, devices and balance (they apply to every app)'
+                          ? '${Platform.isWindows ? 'Windows\'' : 'KDE\'s'} volume, devices and balance (they apply to every app)'
                           : 'Android\'s audio settings (they apply to every app)'),
                       trailing: const Icon(Icons.open_in_new_rounded, size: 18),
                       onTap: () => AudioDevice.openSettings(isDesktop ? 'sound' : 'accessibility'),

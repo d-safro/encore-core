@@ -137,13 +137,22 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
 
   Future<void> _installDesktop(File f) async {
     if (!await canInstallUpdates()) {
-      // installed by the system (RPM): dnf does it, with your password
-      final url = widget.u.rpmUrl;
+      if (Platform.isWindows) {
+        // the portable .zip: unpacked by hand, so it's updated by hand
+        setState(() => _status = 'This is the portable Encore. Get the new .zip from the release page and unpack '
+            'it over this folder, or use the setup program, which keeps Encore up to date itself.');
+        return;
+      }
+      // installed by the system (a .deb, the Arch package or the RPM): its package manager does it, with
+      // your password
+      final kind = linuxPackageKind();
+      final command = systemUpdateCommand(widget.u, kind);
       setState(() {
-        _command = url.isEmpty ? null : 'sudo dnf install $url';
-        _status = url.isEmpty
+        _command = command;
+        _status = command == null
             ? 'Encore was installed by the system. Get the new version from the release page.'
-            : 'Encore was installed with dnf. Run this in a terminal to update (it asks for your password):';
+            : 'Encore was installed with ${packageManagerName(kind)}. Run this in a terminal to update '
+                  '(it asks for your password):';
       });
       return;
     }
