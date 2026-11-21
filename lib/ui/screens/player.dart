@@ -11,6 +11,7 @@ import '../../core/appearance.dart';
 import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/library.dart';
+import '../../data/lyrics_translation.dart';
 import '../../data/models.dart';
 import '../../data/jam.dart';
 import '../../data/online_lyrics.dart';
@@ -952,6 +953,62 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
 
   final _keys = <int, GlobalKey>{};
   int _current = -1;
+  // translated / romanized second lines: stays on from song to song
+  String _mode = prefs.getString('lyricsTranslate') ?? 'off';
+
+  void _setMode(String m) {
+    setState(() => _mode = _mode == m ? 'off' : m);
+    prefs.setString('lyricsTranslate', _mode);
+  }
+
+  /// The Translate / Romanize chips over the words, and why there's no translation when there isn't.
+  Widget _translateBar(Lyrics l, AsyncValue<LyricsTranslation>? tr) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    final busy = tr?.isLoading ?? false;
+    final v = tr?.value;
+    final lang = lyricsLanguages[lyricsTargetLanguage(ref.watch(settingsProvider).lyricsLanguage)];
+    final note = v == null
+        ? null
+        : v.error != null
+        ? lyricsTranslationProblem(v.error)
+        : v.same
+        ? (_mode == 'romanize' ? 'Already in the Latin alphabet' : 'Already in $lang')
+        : null;
+    Widget spinner() => const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 8,
+            children: [
+              FilterChip(
+                avatar: busy && _mode == 'translate' ? spinner() : const Icon(Icons.translate_rounded, size: 18),
+                label: Text('Translate into $lang'),
+                selected: _mode == 'translate',
+                showCheckmark: false,
+                onSelected: (_) => _setMode('translate'),
+              ),
+              if (needsRomanizing(l.lines.map((e) => e.text)))
+                FilterChip(
+                  avatar: busy && _mode == 'romanize' ? spinner() : const Icon(Icons.abc_rounded, size: 18),
+                  label: const Text('Romanize'),
+                  selected: _mode == 'romanize',
+                  showCheckmark: false,
+                  onSelected: (_) => _setMode('romanize'),
+                ),
+            ],
+          ),
+          if (busy)
+            Text('Translating on your server, the first time takes a moment',
+                style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+          if (note != null) Text(note, style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -979,6 +1036,12 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             ),
           );
         }
+        final tr = _mode == 'off'
+            ? null
+            : ref.watch(lyricsTranslationProvider(
+                (id: widget.song.id, romanize: _mode == 'romanize', text: l.lines.map((e) => e.text).join('\n')),
+              ));
+        final second = tr?.value;
         var cur = -1;
         if (l.synced) {
           for (var i = 0; i < l.lines.length; i++) {
@@ -1005,8 +1068,10 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
           child: ListView.builder(
             controller: _scroll,
             padding: EdgeInsets.symmetric(horizontal: 24, vertical: widget.compact ? 20 : 48),
-            itemCount: l.lines.length + 1,
-            itemBuilder: (_, i) {
+            itemCount: l.lines.length + 2,
+            itemBuilder: (_, row) {
+              if (row == 0) return _translateBar(l, tr);
+              final i = row - 1;
               if (i == l.lines.length) {
                 return Padding(
                   padding: const EdgeInsets.only(top: 24),
@@ -1033,13 +1098,30 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
                 onTap: line.start == null ? null : () => audioHandler.seek(line.start!),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: AnimatedDefaultTextStyle(
-                    duration: motion(context, const Duration(milliseconds: 200)),
-                    style: (l.synced ? (widget.compact ? t.titleMedium! : t.titleLarge!) : t.bodyLarge!).copyWith(
-                      color: !l.synced || active ? cs.onSurface : cs.onSurface.withValues(alpha: 0.45),
-                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                    ),
-                    child: Text(line.text.isEmpty ? '♪' : line.text),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AnimatedDefaultTextStyle(
+                        duration: motion(context, const Duration(milliseconds: 200)),
+                        style: (l.synced ? (widget.compact ? t.titleMedium! : t.titleLarge!) : t.bodyLarge!).copyWith(
+                          color: !l.synced || active ? cs.onSurface : cs.onSurface.withValues(alpha: 0.45),
+                          fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                        child: Text(line.text.isEmpty ? '♪' : line.text),
+                      ),
+                      // the translation / romanization, muted under the line
+                      if (second?.under(i, line.text) case final u?)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            u,
+                            style: (widget.compact ? t.bodyMedium : t.bodyLarge)?.copyWith(
+                              color: cs.onSurfaceVariant.withValues(alpha: active || !l.synced ? 0.9 : 0.55),
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               );
