@@ -12,6 +12,7 @@ const accentChoices = [
 ];
 
 const homeSectionNames = {
+  'yourMixes': 'Your mixes',
   'recent': 'Recently played',
   'newest': 'Recently added',
   'frequent': 'Most played',

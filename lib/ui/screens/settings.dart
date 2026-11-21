@@ -11,6 +11,7 @@ import 'package:home_widget/home_widget.dart';
 import '../../core/appearance.dart';
 import '../../core/platform.dart';
 import '../../core/settings.dart';
+import '../../data/mixes.dart';
 import '../../data/lyrics_translation.dart';
 import '../../data/account.dart';
 import '../../data/cover_cache.dart';
@@ -203,6 +204,7 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) => set('syncPlayQueue', v),
           ),
 
+          const _MixesSettings(),
           const SectionTitle('Your devices'),
           const _DevicesSettings(),
           if (isDesktop) ...[
@@ -1172,4 +1174,51 @@ class _Readable extends StatelessWidget {
   Widget build(BuildContext context) => Center(
     child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 860), child: child),
   );
+}
+
+/// Settings › Your mixes: each kind on or off (made on the server; off deletes its playlists).
+class _MixesSettings extends ConsumerStatefulWidget {
+  const _MixesSettings();
+  @override
+  ConsumerState<_MixesSettings> createState() => _MixesSettingsState();
+}
+
+class _MixesSettingsState extends ConsumerState<_MixesSettings> {
+  final _busy = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final m = ref.watch(mixesProvider).value;
+    if (m == null || !m.supported) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionTitle('Your mixes'),
+        for (final k in mixNames.keys)
+          SwitchListTile(
+            secondary: Icon(switch (k) {
+              'discover' => Icons.explore_outlined,
+              'radar' => Icons.new_releases_outlined,
+              'daylist' => Icons.wb_twilight_rounded,
+              _ => Icons.queue_music_rounded,
+            }),
+            title: Text(mixNames[k]!),
+            subtitle: Text(mixAbout[k]!),
+            value: m.isOn(k),
+            onChanged: _busy.contains(k)
+                ? null
+                : (v) async {
+                    setState(() => _busy.add(k));
+                    try {
+                      await setMixOn(ref, k, v);
+                    } catch (e) {
+                      if (context.mounted) toast(context, 'Couldn\'t change ${mixNames[k]}: $e');
+                    } finally {
+                      if (mounted) setState(() => _busy.remove(k));
+                    }
+                  },
+          ),
+      ],
+    );
+  }
 }

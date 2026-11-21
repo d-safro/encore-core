@@ -135,7 +135,7 @@ class Settings {
     this.navLabels = NavLabels.selected,
   });
 
-  static const defaultHomeSections = ['recent', 'newest', 'frequent', 'starred', 'random', 'playlists'];
+  static const defaultHomeSections = ['yourMixes', 'recent', 'newest', 'frequent', 'starred', 'random', 'playlists'];
   static const defaultNavTabs = ['home', 'discover', 'library', 'search'];
 
   Map<String, dynamic> toJson() => {
@@ -170,6 +170,7 @@ class Settings {
     'albumGrid': albumGrid,
     'sleepMinutes': sleepMinutes,
     'homeSections': homeSections,
+    'homeMixesAdded': true, // see _withMixes
     'eqEnabled': eqEnabled,
     'eqGains': eqGains,
     'cacheMb': cacheMb,
@@ -225,7 +226,8 @@ class Settings {
       albumSort: pick(AlbumSort.values, j['albumSort'], d.albumSort),
       albumGrid: j['albumGrid'] ?? d.albumGrid,
       sleepMinutes: j['sleepMinutes'] ?? d.sleepMinutes,
-      homeSections: (j['homeSections'] as List?)?.cast<String>().where((x) => x != 'mixes').toList() ?? d.homeSections,
+      homeSections: _withMixes(j, (j['homeSections'] as List?)?.cast<String>().where((x) => x != 'mixes').toList()) ??
+          d.homeSections,
       eqEnabled: j['eqEnabled'] ?? d.eqEnabled,
       eqGains: (j['eqGains'] as List?)?.map((e) => (e as num).toDouble()).toList() ?? d.eqGains,
       cacheMb: j['cacheMb'] ?? d.cacheMb,
@@ -306,3 +308,10 @@ class SettingsNotifier extends Notifier<Settings> {
 }
 
 final settingsProvider = NotifierProvider<SettingsNotifier, Settings>(SettingsNotifier.new);
+
+/// "Your mixes" came after people had picked their Home sections: it's put first once, the first time these
+/// settings are read after it came (removing it afterwards in Appearance sticks).
+List<String>? _withMixes(Map<String, dynamic> j, List<String>? saved) {
+  if (saved == null || j['homeMixesAdded'] == true || saved.contains('yourMixes')) return saved;
+  return ['yourMixes', ...saved];
+}
