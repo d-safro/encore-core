@@ -12,6 +12,7 @@ import 'package:just_audio/just_audio.dart';
 import 'automix.dart';
 import 'autoplay.dart';
 import 'cast.dart';
+import 'upnp.dart';
 import 'desktop_audio.dart';
 import 'fetching.dart';
 import 'private_session.dart';
@@ -506,7 +507,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   // ── Casting (Chromecast / Google Cast) ──
   // The phone keeps playing silently and stays in charge (queue, scrobbles, lock screen); the speaker plays
   // the same song at the same place, fetched through the relay.
-  CastSession? _cast;
+  RemoteSpeaker? _cast; // Google Cast or UPnP / DLNA
   CastRelay? _relay;
   StreamSubscription<CastMediaStatus>? _castSub;
   Timer? _castSync;
@@ -522,7 +523,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     try {
       _relay ??= await CastRelay.start();
       if (_relay == null) throw Exception('connect the $deviceWord to the same network as the speaker');
-      final s = await CastSession.connect(d);
+      final RemoteSpeaker s = d.isUpnp ? await UpnpSession.connect(d) : await CastSession.connect(d);
       _cast = s;
       _cancelFade();
       _setMainVolume(_mainVolume); // silences the phone
@@ -551,7 +552,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (i != null) castInfo.value = CastInfo(i.name, volume: v);
   }
 
-  void _castEnded(CastSession s) {
+  void _castEnded(RemoteSpeaker s) {
     if (_cast != s) return;
     _cast = null;
     _castSub?.cancel();

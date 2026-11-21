@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/platform.dart';
 import '../playback/cast.dart';
 import '../playback/handler.dart';
+import '../playback/upnp.dart';
 
 /// Play on a Chromecast / Google Cast speaker or TV on this Wi-Fi, or stop.
 Future<void> showCastSheet(BuildContext context) => showModalBottomSheet(
@@ -24,7 +25,7 @@ class _CastSheetState extends State<_CastSheet> {
   @override
   void initState() {
     super.initState();
-    if (castInfo.value == null) _search = findCastDevices();
+    if (castInfo.value == null) _search = findSpeakers();
   }
 
   @override
@@ -100,7 +101,7 @@ class _CastSheetState extends State<_CastSheet> {
                             leading: const Icon(Icons.cast_rounded),
                             title: const Text('Nothing found'),
                             subtitle: Text(
-                              'Chromecasts, Google / Nest speakers and Android TVs show here when the $deviceWord is on '
+                              'Chromecasts, Google / Nest speakers, Android TVs and UPnP / DLNA speakers, TVs and receivers show here when the $deviceWord is on '
                               'the same network${isDesktop ? ' (and the firewall lets the speaker in: see the README)' : ' Wi-Fi'}.',
                             ),
                           ),
@@ -110,13 +111,13 @@ class _CastSheetState extends State<_CastSheet> {
                               d.model.toLowerCase().contains('tv') ? Icons.tv_rounded : Icons.speaker_rounded,
                             ),
                             title: Text(d.name),
-                            subtitle: d.model.isEmpty ? null : Text(d.model),
+                            subtitle: Text([if (d.model.isNotEmpty) d.model, d.isUpnp ? 'UPnP / DLNA' : 'Google Cast'].join(' · ')),
                             onTap: () => audioHandler.startCasting(d),
                           ),
                         TextButton.icon(
                           icon: const Icon(Icons.refresh_rounded),
                           label: const Text('Search again'),
-                          onPressed: () => setState(() => _search = findCastDevices()),
+                          onPressed: () => setState(() => _search = findSpeakers()),
                         ),
                       ],
                     );
