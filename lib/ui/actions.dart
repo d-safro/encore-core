@@ -1,4 +1,6 @@
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart';
+import '../core/platform.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -29,6 +31,12 @@ Future<void> shareLink(BuildContext context, String label, Future<String?> Funct
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     if (url == null) {
       toast(context, "Couldn't find $label on streaming services");
+      return;
+    }
+    if (isDesktop) {
+      // no share sheet on the desktop: the link goes on the clipboard
+      await Clipboard.setData(ClipboardData(text: url));
+      if (context.mounted) toast(context, 'Link copied');
       return;
     }
     await SharePlus.instance.share(ShareParams(text: '$label\n$url', subject: label));
