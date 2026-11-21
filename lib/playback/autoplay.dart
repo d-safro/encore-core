@@ -145,6 +145,7 @@ List<AutoCandidate> pickAutoplay({
   Random? rng,
   int artistGap = 4, // songs before the same artist may come again
   int maxPerArtist = 2, // at most this many by one artist among the picks and the last 10 songs
+  bool allowLookup = false, // songs you don't have may come (they're got automatically)
 }) {
   final r = rng ?? Random();
   final st = skips ?? SkipStats();
@@ -163,7 +164,7 @@ List<AutoCandidate> pickAutoplay({
       c = AutoCandidate(c.song, AutoSource.anything, c.rank);
     }
     final s = c.song;
-    if (s.id.isEmpty || s.isLookup || isPodcastId(s.id) || exclude.contains(s.id)) continue;
+    if (s.id.isEmpty || (s.isLookup && !allowLookup) || isPodcastId(s.id) || exclude.contains(s.id)) continue;
     if (recentKeys.contains(songKey(s)) || st.skipsALot(s.id) || s.userRating == 1) continue;
     hits[s.id] = (hits[s.id] ?? 0) + 1;
     final had = byId[s.id];

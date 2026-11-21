@@ -14,6 +14,7 @@ import '../../data/models.dart';
 import '../../data/updates.dart' show openUrl;
 import '../../data/share_links.dart';
 import '../../data/radio_browser.dart';
+import '../../core/settings.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
@@ -182,6 +183,9 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
         pollIf(a.songs.any((s) => s.lookup == LookupState.downloading), () => ref.invalidate(albumProvider(widget.id)));
         final playable = a.songs.where((s) => !s.isLookup).toList();
         final missing = a.songs.length - playable.length;
+        // songs you don't have play too when they're got automatically (the server gets them on trial)
+        final auto = ref.watch(settingsProvider.select((s) => s.autoGetSongs)) && audioHandler.autoGet;
+        final toPlay = auto ? a.songs.where(audioHandler.usable).toList() : playable;
         final discs = a.songs.map((s) => s.disc ?? 1).toSet();
         final children = <Widget>[];
         int? lastDisc;
@@ -190,7 +194,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
             lastDisc = s.disc;
             children.add(SectionTitle('Disc ${s.disc ?? 1}'));
           }
-          children.add(SongTile(s, list: playable, showTrack: true, playContext: PlayContext.album(a.id, a.name)));
+          children.add(SongTile(s, list: toPlay, showTrack: true, playContext: PlayContext.album(a.id, a.name)));
         }
         final t = Theme.of(context).textTheme;
         return RefreshIndicator(
@@ -227,7 +231,11 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                       title: Text(
                         a.isLookup ? 'This album isn\'t in your library' : (missing == 1 ? '1 song isn\'t in your library' : '$missing songs aren\'t in your library'),
                       ),
-                      subtitle: const Text('Download them from Soulseek through your server'),
+                      subtitle: Text(
+                        auto
+                            ? 'Playing them gets them for a while; Get keeps them for good'
+                            : 'Download them from Soulseek through your server',
+                      ),
                       trailing: FilledButton.tonal(
                         onPressed: () => toggleStarAlbum(context, ref, a),
                         child: const Text('Get'),
@@ -235,12 +243,12 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                     ),
                   ),
                 ),
-              if (playable.isNotEmpty)
+              if (toPlay.isNotEmpty)
                 PlayButtons(
                   source: PlayContext.album(a.id, a.name).key,
-                  onPlay: () => audioHandler.playSongs(playable, context: PlayContext.album(a.id, a.name)),
+                  onPlay: () => audioHandler.playSongs(toPlay, context: PlayContext.album(a.id, a.name)),
                   onShuffle: () =>
-                      audioHandler.playSongs(playable, shuffle: true, context: PlayContext.album(a.id, a.name)),
+                      audioHandler.playSongs(toPlay, shuffle: true, context: PlayContext.album(a.id, a.name)),
                   leading: [
                     DownloadToggle(pinKey: 'album:${a.id}', songs: () async => playable),
                     IconButton(

@@ -12,6 +12,7 @@ import 'package:just_audio/just_audio.dart';
 import 'autoplay.dart';
 import 'cast.dart';
 import 'desktop_audio.dart';
+import 'fetching.dart';
 import '../core/platform.dart';
 import '../core/settings.dart';
 import '../data/account.dart';
@@ -167,6 +168,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }
     });
     player.playingStream.distinct().listen((playing) {
+      // a song you don't have that's still on its way: nothing plays until it's there (only silence would)
+      if (playing && _waitingFor != null && currentSong?.id == _waitingFor) {
+        player.pause();
+        return;
+      }
       if (!playing && _fadeFrom != null) _cancelFade(); // paused mid-blend: the rest plays plainly
       final c = _cast;
       if (c != null && c.isOpen) {
@@ -208,6 +214,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   // ── Settings that act on the player ──
   Future<void> _applySettings(Settings? prev, Settings s) async {
+    if (prev != null && prev.autoGetSongs && !s.autoGetSongs) {
+      fetcher.reset(); // back to asking first; what the server is already getting carries on there
+      _stopWaiting();
+    }
     if (isDesktop) {
       if (prev == null) await _quiet(restoreDesktopSound);
       if (prev?.skipSilence != s.skipSilence || prev?.eqEnabled != s.eqEnabled || prev?.eqGains != s.eqGains) {
@@ -538,6 +548,171 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
   }
 
+  // ── Songs you don't have (music-lookup): got "on trial" as soon as they're played or queued ──
+  late final SongFetcher fetcher = SongFetcher(
+    ask: (ids) async {
+      final c = container.read(clientProvider);
+      if (c == null) throw StateError('no server');
+      return c.lookupSongs(ids, fetch: true);
+    },
+  )
+    ..onChange = _fetchChanged
+    ..onUnreachable = _fetchUnreachable;
+
+  /// Playing or queueing a song you don't have gets it straight away (the setting is on and the server answers).
+  bool get autoGet =>
+      _settings.autoGetSongs && container.read(clientProvider) != null && !container.read(offlineProvider);
+
+  /// Whether a song can go in the queue: one you don't have only when it's got automatically.
+  bool usable(Song s) => (!s.isLookup || autoGet) && canPlay(s);
+
+  final Set<String> _onTrial = {}; // songs that arrived on trial this session (deleted later unless hearted)
+  bool isOnTrial(String id) => _onTrial.contains(id);
+  void kept(String id) => _onTrial.remove(id);
+
+  String? _waitingFor; // the playing song you don't have, still on its way
+  Timer? _waitTimer;
+  String? get waitingFor => _waitingFor;
+
+  void _fetchAll() {
+    if (!autoGet) return;
+    final ids = [for (final s in _songs) if (s.isLookup) s.id];
+    if (ids.isNotEmpty) fetcher.want(ids);
+  }
+
+  void _fetchChanged(FetchInfo f) {
+    if (f.status == FetchStatus.ready && f.songId != null) {
+      _arrived(f);
+      return;
+    }
+    _retag(f.id, f.failed ? LookupState.failed : LookupState.downloading);
+    final cur = currentSong;
+    if (f.failed && cur != null && cur.id == f.id) _giveUp(cur, f);
+  }
+
+  void _fetchUnreachable() {
+    playerNotices.add("Your server's song finder isn't answering, so songs you don't have can't be got right now");
+    final cur = currentSong;
+    if (cur != null && cur.id == _waitingFor) _giveUp(cur, null);
+  }
+
+  /// Show how getting a song is going on its queue entries (⏳ on its way, ✕ couldn't be had).
+  void _retag(String id, LookupState state) {
+    var changed = false;
+    for (var i = 0; i < _songs.length; i++) {
+      if (_songs[i].id == id && _songs[i].lookup != state) {
+        _songs[i] = _songs[i].copyWith(lookup: state);
+        changed = true;
+      }
+    }
+    if (changed) _broadcastQueue();
+  }
+
+  /// A song you didn't have is on your server now: its queue entries become your copy (it plays right away
+  /// if it's the one waiting).
+  Future<void> _arrived(FetchInfo f, {int tries = 0}) async {
+    final c = container.read(clientProvider);
+    if (c == null) return;
+    Song real;
+    try {
+      real = await c.song(f.songId!);
+    } catch (_) {
+      if (tries < 3) Timer(const Duration(seconds: 5), () => _arrived(f, tries: tries + 1));
+      return;
+    }
+    // a heart given while it was on its way stays (the server hearts your copy too)
+    final liked = container.read(heartsProvider)[f.id];
+    if (liked != null && liked != real.starred) real = real.copyWith(starred: liked);
+    if (liked != null) container.read(heartsProvider.notifier).set(real.id, liked);
+    if (f.temporary && !real.starred) _onTrial.add(real.id);
+    final cur = player.currentIndex;
+    var here = false;
+    _rearranging = true;
+    try {
+      for (var i = 0; i < _songs.length; i++) {
+        if (_songs[i].id != f.id) continue;
+        _songs[i] = real;
+        await player.removeAudioSourceAt(i);
+        await player.insertAudioSource(i, _source(real));
+        if (i == cur) {
+          here = true;
+          await player.seek(Duration.zero, index: i);
+        }
+      }
+    } catch (_) {
+      // the queue changed underneath; the entry plays the server's copy anyway (same address)
+    } finally {
+      _rearranging = false;
+    }
+    final o = _original;
+    if (o != null) {
+      for (var i = 0; i < o.length; i++) {
+        if (o[i].id == f.id) o[i] = real;
+      }
+    }
+    if (_autoplay.remove(f.id)) _autoplay.add(real.id);
+    if (_suggested.remove(f.id)) _suggested.add(real.id);
+    _broadcastQueue();
+    _scheduleSave();
+    if (here) {
+      final waited = _waitingFor == f.id;
+      _stopWaiting();
+      _onIndex(player.currentIndex); // it's that song for real now (now playing, plays counted, autoplay)
+      if (waited) player.play();
+    }
+  }
+
+  /// The playing song isn't here yet: hold (silence, paused) until it is, for a couple of minutes at most.
+  void _waitFor(Song s) {
+    final f = fetcher[s.id];
+    if (f != null && f.failed) {
+      _giveUp(s, f);
+      return;
+    }
+    if (fetcher.unreachable) {
+      _giveUp(s, null);
+      return;
+    }
+    _waitingFor = s.id;
+    player.pause();
+    playerNotices.add('Getting "${s.title}" from your server… it plays as soon as it\'s there');
+    _waitTimer?.cancel();
+    _waitTimer = Timer(const Duration(minutes: 2), () {
+      final cur = currentSong;
+      if (_waitingFor == s.id && cur != null && cur.id == s.id) _giveUp(cur, null);
+    });
+    fetcher.want([s.id]);
+  }
+
+  void _stopWaiting() {
+    _waitingFor = null;
+    _waitTimer?.cancel();
+    _waitTimer = null;
+  }
+
+  /// A song you don't have can't be had (or not soon): say why, and go on with the next one.
+  Future<void> _giveUp(Song s, FetchInfo? f) async {
+    _stopWaiting();
+    final why = switch (f?.status) {
+      FetchStatus.notFound => 'no copy of it was found',
+      FetchStatus.limit => "today's ${fetcher.rules?.perDay ?? 40} new songs are used up",
+      _ =>
+        fetcher.unreachable
+            ? "your server's song finder isn't answering"
+            : "it's taking a while (it goes in your On trial playlist if it comes)",
+    };
+    playerNotices.add('Skipped "${s.title}": $why');
+    final i = player.currentIndex;
+    if (i == null || i >= _songs.length || _songs[i].id != s.id) return;
+    final next = _songs.indexWhere((x) => x.id != s.id && !(x.isLookup && (fetcher[x.id]?.failed ?? false)), i + 1);
+    if (next < 0) {
+      await player.pause();
+      return;
+    }
+    await player.seek(Duration.zero, index: next);
+    player.play();
+  }
+
   // ── Sources ──
   /// Downloaded, or the server can be reached (offline, only downloaded songs play).
   bool canPlay(Song s) =>
@@ -556,6 +731,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _onPhone.remove(s.id);
     final c = container.read(clientProvider);
     if (c == null) return AudioSource.uri(Uri.parse('file:///missing/${s.id}'), tag: item); // fails, then skipped
+    // a song you don't have: the server's copy once it's there; meanwhile silence (got automatically) or a preview
+    if (s.isLookup) return AudioSource.uri(c.streamUrl(s.id, hold: autoGet), tag: item);
     final set = _settings;
     final wifi = container.read(onWifiProvider);
     final fmt = wifi ? set.wifiFormat : set.mobileFormat;
@@ -611,7 +788,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _newQueue();
     playContext = context;
     playSource = source ?? context?.key;
-    var list = songs.where((s) => (allowLookup || !s.isLookup) && canPlay(s)).toList();
+    var list = songs.where((s) => (allowLookup || !s.isLookup || autoGet) && canPlay(s)).toList();
     if (list.isEmpty) {
       if (songs.isNotEmpty) {
         playerNotices.add(
@@ -716,7 +893,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   /// Put songs into the queue at [at] (clamped to after the playing song and the end).
   Future<void> insertSongs(int at, List<Song> songs) async {
-    final add = songs.where((s) => !s.isLookup && canPlay(s)).toList();
+    final add = songs.where(usable).toList();
     if (add.isEmpty) return;
     if (_songs.isEmpty || radioStation != null) return playSongs(add);
     at = at.clamp((player.currentIndex ?? -1) + 1, _songs.length);
@@ -744,7 +921,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   Future<void> addLast(List<Song> songs) async {
-    final add = songs.where((s) => !s.isLookup && canPlay(s)).toList();
+    final add = songs.where(usable).toList();
     if (add.isEmpty) return;
     if (_songs.isEmpty) return playSongs(add);
     // what you add goes before autoplay's songs, like Spotify's queue
@@ -952,14 +1129,14 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final c = container.read(clientProvider);
     if (c == null) return;
     final similar = await c.similarSongs(seed.id, count: 50);
-    await playSongs([seed, ...similar.where((s) => s.id != seed.id && !s.isLookup)]);
+    await playSongs([seed, ...similar.where((s) => s.id != seed.id && (!s.isLookup || autoGet))]);
   }
 
   /// Song radio (like Spotify's): the song, then songs that sound like it; it never runs out.
   Future<bool> songRadio(Song seed) async {
     final c = container.read(clientProvider);
     if (c == null) return false;
-    final similar = (await c.similarSongs(seed.id, count: 60)).where((s) => s.id != seed.id && !s.isLookup).toList();
+    final similar = (await c.similarSongs(seed.id, count: 60)).where((s) => s.id != seed.id && (!s.isLookup || autoGet)).toList();
     if (similar.isEmpty) return false;
     similar.shuffle();
     await playSongs([seed, ...similar.take(40)], radio: seed);
@@ -1066,6 +1243,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     // the queue and the last few songs are off limits
     List<Song> pick((List<AutoCandidate>, Set<String>) from, {bool loose = false}) => pickAutoplay(
       candidates: from.$1.where((x) => canPlay(x.song)).toList(),
+      allowLookup: autoGet,
       n: n,
       recent: recent,
       exclude: loose ? {..._songs.map((s) => s.id), ..._history.map((s) => s.id)} : exclude,
@@ -1513,6 +1691,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final s = _songs[i];
     if (s.id == _lastSongId) return; // same song, maybe moved by a queue edit: not a new track
     _lastSongId = s.id;
+    if (s.isLookup && autoGet) {
+      _waitFor(s); // not here yet: wait for it (or skip it if it can't be had)
+    } else if (_waitingFor != null) {
+      _stopWaiting();
+    }
     final was = _nowSong, sameQueue = _nowGen == _queueGen;
     _nowSong = s;
     _nowGen = _queueGen;
@@ -1687,6 +1870,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   /// Switching servers: keep this server's queue where it is (it comes back when you switch back) and stop.
   Future<void> leaveServer() async {
+    fetcher.reset();
+    _stopWaiting();
+    _onTrial.clear();
     _saveTimer?.cancel();
     _cancelFade();
     await _saveQueue();
@@ -1868,6 +2054,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   // ── Broadcasting to the notification / UI ──
   void _broadcastQueue() {
     queue.add(_songs.map(_mediaItem).toList());
+    _fetchAll(); // songs you don't have that just came into the queue: start getting them
   }
 
   void _broadcast(PlaybackEvent event) {

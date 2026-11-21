@@ -20,6 +20,7 @@ import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../data/online_lyrics.dart';
 import '../../playback/desktop_audio.dart';
+import '../../playback/fetching.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../update.dart';
@@ -103,6 +104,19 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: const Text('Search and album pages include songs your server can download (music-lookup)'),
             value: s.showLookup,
             onChanged: (v) => set('showLookup', v),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.bolt_rounded),
+            title: const Text('Get songs you don\'t have automatically'),
+            subtitle: ValueListenableBuilder(
+              valueListenable: audioHandler.fetcher.rulesNow,
+              builder: (_, r, _) {
+                if (r == null && s.showLookup) audioHandler.fetcher.loadRules();
+                return Text(trialRules(r));
+              },
+            ),
+            value: s.autoGetSongs,
+            onChanged: s.showLookup ? (v) => set('autoGetSongs', v) : null,
           ),
           SwitchListTile(
             secondary: const Icon(Icons.image_search_rounded),
