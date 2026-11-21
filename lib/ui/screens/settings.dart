@@ -12,6 +12,7 @@ import '../../core/appearance.dart';
 import '../../core/platform.dart';
 import '../../core/settings.dart';
 import '../../data/mixes.dart';
+import '../../data/audiobooks.dart';
 import '../../data/lyrics_translation.dart';
 import '../../data/account.dart';
 import '../../data/cover_cache.dart';
@@ -31,6 +32,7 @@ import '../download_quality.dart';
 import '../usb_card.dart';
 import '../../data/local_link.dart';
 import '../../data/usb_link.dart';
+import 'audiobooks.dart' show showAbsSignIn;
 import '../widgets.dart';
 import 'login.dart';
 import '../../data/devices.dart';
@@ -216,6 +218,26 @@ class SettingsScreen extends ConsumerWidget {
           ),
 
           const _MixesSettings(),
+          const SectionTitle('Audiobooks'),
+          Builder(builder: (context) {
+            final abs = ref.watch(absAccountProvider);
+            return abs == null
+                ? ListTile(
+                    leading: const Icon(Icons.headphones_outlined),
+                    title: const Text('Sign in to Audiobookshelf'),
+                    subtitle: const Text('Your audiobooks in an Audiobooks tab, with your place kept on the server'),
+                    onTap: () => showAbsSignIn(context, ref),
+                  )
+                : ListTile(
+                    leading: const Icon(Icons.headphones_rounded),
+                    title: Text('Audiobookshelf · ${abs.user}'),
+                    subtitle: Text(abs.base),
+                    trailing: TextButton(
+                      onPressed: () => ref.read(absAccountProvider.notifier).signOut(),
+                      child: const Text('Sign out'),
+                    ),
+                  );
+          }),
           const SectionTitle('Your devices'),
           const _DevicesSettings(),
           if (isDesktop) ...[

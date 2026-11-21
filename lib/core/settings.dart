@@ -259,7 +259,8 @@ class Settings {
   static List<String> _cleanTabs(dynamic raw) {
     final tabs = <String>[];
     for (final t in (raw as List?) ?? defaultNavTabs) {
-      if (defaultNavTabs.contains(t) && !tabs.contains(t)) tabs.add('$t');
+      // 'audiobooks': a tab that comes with signing in to Audiobookshelf
+      if ((defaultNavTabs.contains(t) || t == 'audiobooks') && !tabs.contains(t)) tabs.add('$t');
     }
     if (!tabs.contains('home')) tabs.insert(0, 'home');
     if (tabs.length < 2) tabs.add(defaultNavTabs.firstWhere((t) => !tabs.contains(t)));

@@ -35,6 +35,7 @@ import 'data/updates.dart';
 import 'ui/state.dart';
 import 'ui/screens/review.dart';
 import 'ui/screens/concerts.dart';
+import 'ui/screens/audiobooks.dart';
 import 'ui/screens/stats.dart';
 import 'ui/update.dart';
 import 'ui/widgets.dart';
@@ -103,6 +104,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/discover',
             pageBuilder: (_, _) => const NoTransitionPage(child: DiscoverScreen()),
           ),
+          GoRoute(
+            path: '/audiobooks',
+            pageBuilder: (_, _) => const NoTransitionPage(child: AudiobooksScreen()),
+          ),
+          GoRoute(path: '/audiobook/:id', builder: (_, s) => AudiobookScreen(id: s.pathParameters['id']!)),
           GoRoute(
             path: '/library',
             pageBuilder: (_, s) {
