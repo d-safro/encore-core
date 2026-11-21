@@ -171,6 +171,17 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           SwitchListTile(
+            secondary: const Icon(Icons.stadium_outlined),
+            title: const Text('Concerts near you'),
+            subtitle: const Text('A notification when an artist you play or follow announces a show near you'),
+            value: prefs.getBool('concertAlerts') ?? true,
+            onChanged: (v) async {
+              await prefs.setBool('concertAlerts', v);
+              if (v) await askNotificationPermission(prefs);
+              ref.invalidate(settingsProvider); // redraw
+            },
+          ),
+          SwitchListTile(
             secondary: const Icon(Icons.podcasts_rounded),
             title: const Text('New podcast episodes'),
             subtitle: const Text('A notification when a show you follow has a new episode'),

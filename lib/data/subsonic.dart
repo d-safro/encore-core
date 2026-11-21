@@ -8,6 +8,7 @@ import 'package:http/io_client.dart';
 
 import '../core/platform.dart';
 import 'lyrics_translation.dart' show LyricsTranslation;
+import 'concerts.dart' show Concerts;
 import 'models.dart';
 import 'review.dart';
 
@@ -586,6 +587,9 @@ class SubsonicClient {
     final r = await call('getListeningReview', {'period': period, 'offset': offset}, null, const Duration(seconds: 60));
     return ListeningReview.fromJson(_m(r['listeningReview']));
   }
+
+  /// Concerts near you (music-lookup's concerts.py).
+  Future<Concerts> concerts() async => Concerts.fromJson(_m((await call('getConcerts'))['concerts']));
 
   Future<List<Song>> songDiscoveries(String id, {int count = 30}) async {
     try {

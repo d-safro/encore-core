@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../core/platform.dart';
+import 'concerts.dart';
 import 'follows.dart';
 import 'models.dart';
 import 'subsonic.dart';
@@ -167,6 +168,46 @@ Future<void> announceYearReview({SharedPreferences? p, DateTime? now}) async {
       android: _reviewChannel);
 }
 
+// ── Concerts near you: a new show announced ──
+const _concertChannel = AndroidNotificationDetails(
+  'concerts',
+  'Concerts near you',
+  channelDescription: 'When an artist you play or follow announces a show near you',
+  importance: Importance.defaultImportance,
+  icon: 'drawable/ic_stat_encore',
+);
+
+/// Tell you about shows the server found since the last look (the first look only remembers where it is).
+Future<void> checkNewConcerts({SharedPreferences? p}) async {
+  p ??= await SharedPreferences.getInstance();
+  if (!(p.getBool('concertAlerts') ?? true)) return;
+  const storage = FlutterSecureStorage();
+  final server = await storage.read(key: 'server');
+  final user = await storage.read(key: 'user');
+  final pass = await storage.read(key: 'pass');
+  if (server == null || user == null || pass == null) return;
+  final c = SubsonicClient(Credentials(server, user, pass));
+  try {
+    final all = await c.concerts();
+    final since = p.getInt('concertsNotified');
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await p.setInt('concertsNotified', now);
+    if (since == null) return;
+    final fresh = newShows(all, since);
+    if (fresh.length == 1) {
+      final s = fresh.first;
+      await _show(4, '${s.artist} is playing near you', '${showDate(s.date)} · ${s.place}', 'concerts',
+          android: _concertChannel);
+    } else if (fresh.length > 1) {
+      await _show(4, '${fresh.length} new concerts near you', fresh.map((s) => s.artist).toSet().take(4).join(', '),
+          'concerts', android: _concertChannel);
+    }
+  } catch (_) {
+  } finally {
+    c.close();
+  }
+}
+
 // ── Background check ──
 @pragma('vm:entry-point')
 void episodeCheckDispatcher() {
@@ -178,6 +219,7 @@ void episodeCheckDispatcher() {
       await checkNewEpisodes();
       await checkNewReleases();
       await announceYearReview();
+      await checkNewConcerts();
     } catch (_) {}
     return true;
   });
@@ -192,6 +234,7 @@ Future<void> startEpisodeChecks() async {
       await checkNewEpisodes();
       await checkNewReleases();
       await announceYearReview();
+      await checkNewConcerts();
     });
     return;
   }
