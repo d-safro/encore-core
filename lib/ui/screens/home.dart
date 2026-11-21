@@ -15,6 +15,7 @@ import '../state.dart';
 import '../widgets.dart';
 import 'podcasts.dart';
 import 'following.dart';
+import '../../data/mixes.dart';
 import 'jam.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -43,6 +44,7 @@ class HomeScreen extends ConsumerWidget {
             ref.invalidate(albumListProvider(k));
           }
           ref.invalidate(playlistsProvider);
+          ref.invalidate(mixesProvider);
         },
         child: SafeArea(
           bottom: false,
@@ -88,6 +90,7 @@ class HomeScreen extends ConsumerWidget {
                 SliverToBoxAdapter(
                   child: switch (s) {
                     'playlists' => const _PlaylistShelf(),
+                    'yourMixes' => const MixesShelf(),
                     'recent' => const SizedBox.shrink(), // shown as "Jump back in" above
                     _ when titles.containsKey(s) => _AlbumShelf(type: s, title: titles[s]!),
                     _ => const SizedBox.shrink(),
@@ -256,6 +259,93 @@ class _AlbumShelf extends ConsumerWidget {
       ),
       loading: () => const SizedBox(height: 60),
       error: (_, _) => const SizedBox.shrink(),
+    );
+  }
+}
+
+/// Your mixes (made by the server): Discover Weekly, Release Radar, Daily Mix 1–6, Daylist.
+class MixesShelf extends ConsumerWidget {
+  const MixesShelf({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final m = ref.watch(mixesProvider).value;
+    if (m == null || !m.supported || m.mixes.isEmpty) return const SizedBox.shrink();
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return Shelf(
+      title: 'Your mixes',
+      children: [
+        for (final x in m.mixes)
+          SizedBox(
+            width: AppLook.of(context).cardWidth,
+            child: Tappable(
+              onTap: () => context.push('/playlist/${x.playlistId}'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AspectRatio(aspectRatio: 1, child: MixCover(x)),
+                  const SizedBox(height: 8),
+                  Text(x.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
+                  Text(
+                    x.comment.isEmpty ? nSongs(x.songCount) : x.comment,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A mix's picture: the playlist's covers with its name over a band of colour (each kind its own colour).
+class MixCover extends StatelessWidget {
+  const MixCover(this.mix, {super.key});
+  final Mix mix;
+
+  static Color colorOf(String kind, String name) => switch (kind) {
+    'discover' => const Color(0xFF3D5AFE),
+    'radar' => const Color(0xFF00BFA5),
+    'daylist' => const Color(0xFFFF6E40),
+    _ => HSVColor.fromAHSV(1, (name.hashCode % 360).toDouble().abs(), 0.6, 0.75).toColor(),
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colorOf(mix.kind, mix.name);
+    final title = mix.kind == 'daylist' ? 'daylist' : mix.name;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Cover('pl-${mix.playlistId}', size: double.infinity, radius: 0, icon: Icons.queue_music_rounded),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [c.withValues(alpha: 0.15), c.withValues(alpha: 0.95)],
+                stops: const [0.35, 1],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 10,
+            right: 10,
+            bottom: 10,
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18, height: 1.05),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

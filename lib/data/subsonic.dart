@@ -8,6 +8,7 @@ import 'package:http/io_client.dart';
 
 import '../core/platform.dart';
 import 'lyrics_translation.dart' show LyricsTranslation;
+import 'mixes.dart' show Mixes;
 import 'models.dart';
 import 'review.dart';
 
@@ -586,6 +587,13 @@ class SubsonicClient {
     final r = await call('getListeningReview', {'period': period, 'offset': offset}, null, const Duration(seconds: 60));
     return ListeningReview.fromJson(_m(r['listeningReview']));
   }
+
+  /// Your mixes (music-lookup's mixes.py): Discover Weekly, Release Radar, Daily mixes, Daylist.
+  Future<Mixes> mixes() async => Mixes.fromJson(_m((await call('getMixes'))['mixes']));
+
+  Future<void> setMix(String kind, bool on) => call('setMix', {'kind': kind, 'enabled': on});
+
+  Future<void> refreshMix(String kind) => call('refreshMix', {'kind': kind});
 
   Future<List<Song>> songDiscoveries(String id, {int count = 30}) async {
     try {
