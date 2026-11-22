@@ -264,6 +264,17 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
                 child: Center(child: CircularProgressIndicator()),
               ),
             ),
+          if (!_loading && _done && _albums.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: EmptyState(
+                Icons.album_outlined,
+                _type == 'starred' ? 'No liked albums yet' : 'No albums yet',
+                hint: _type == 'starred'
+                    ? 'Like an album and it shows up here.'
+                    : 'They show up here once your server has scanned your music.',
+              ),
+            ),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
       ),
@@ -756,9 +767,12 @@ class _FavouritesTab extends ConsumerWidget {
           itemBuilder: (_, i) => SongTile(songs[i], list: songs, index: i, playContext: const PlayContext.liked()),
           footer: [
             if (r.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: Text('Nothing hearted yet')),
+              EmptyState(
+                Icons.favorite_border_rounded,
+                'No liked songs yet',
+                hint: isDesktop
+                    ? 'Click the heart on a song, or press Ctrl+L while it plays, and it lands here.'
+                    : 'Tap the heart on a song and it lands here.',
               ),
           ],
           header: [

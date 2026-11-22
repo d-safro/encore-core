@@ -233,6 +233,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     if (r == null) {
       final recents = recentSearches();
       final cs = Theme.of(context).colorScheme;
+      if (recents.isEmpty) {
+        return const EmptyState(
+          Icons.search_rounded,
+          'Search your library',
+          hint: 'Songs, albums and artists. What you open from here is kept as your recent searches.',
+        );
+      }
       return ListView(
         children: [
           if (recents.isNotEmpty)
@@ -294,7 +301,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     // files on this device that match (local_files.dart): searched here, never sent to the server
     final local = ref.watch(localLibraryProvider).search(_query);
-    if (r.isEmpty && local.isEmpty && !_loading) return Center(child: Text('Nothing found for "$_query"'));
+    if (r.isEmpty && local.isEmpty && !_loading) {
+      return EmptyState(
+        Icons.search_off_rounded,
+        'Nothing found for "$_query"',
+        hint: 'Check the spelling, or try fewer words.',
+      );
+    }
     final songs = r.songs.where((s) => !s.isLookup).toList();
     final lookupSongs = showLookup ? r.songs.where((s) => s.isLookup).toList() : const <Song>[];
     final albums = r.albums.where((a) => !a.isLookup).toList();

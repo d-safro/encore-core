@@ -669,9 +669,49 @@ class AddButton extends StatelessWidget {
     padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
     child: Align(
       alignment: Alignment.centerRight,
-      child: FilledButton.tonalIcon(icon: const Icon(Icons.add_rounded, size: 20), label: Text(label), onPressed: onPressed),
+      child: FilledButton.tonalIcon(
+        icon: const Icon(Icons.add_rounded, size: 20),
+        label: Text(label),
+        onPressed: onPressed,
+      ),
     ),
   );
+}
+
+/// A page with nothing to show yet: an icon, what's missing and how to get some, the same everywhere
+/// (some pages were blank, others had one small line of text).
+class EmptyState extends StatelessWidget {
+  const EmptyState(this.icon, this.title, {super.key, this.hint, this.action});
+  final IconData icon;
+  final String title;
+  final String? hint;
+  final Widget? action;
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 48, color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+              const SizedBox(height: 12),
+              Text(title, style: t.titleMedium, textAlign: TextAlign.center),
+              if (hint != null) ...[
+                const SizedBox(height: 6),
+                Text(hint!, style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant), textAlign: TextAlign.center),
+              ],
+              if (action != null) ...[const SizedBox(height: 16), action!],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// A titled horizontal row (home, artist pages, discover).
