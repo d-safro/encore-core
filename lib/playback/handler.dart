@@ -24,6 +24,7 @@ import '../core/settings.dart';
 import '../data/account.dart';
 import '../data/ai.dart';
 import '../data/audiobooks.dart';
+import '../data/book_downloads.dart';
 import '../data/library.dart';
 import '../data/models.dart';
 import '../data/saved_covers.dart';
@@ -2108,7 +2109,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (songs.isEmpty) return;
       final index = ((j['index'] as num?)?.toInt() ?? 0).clamp(0, songs.length - 1);
       // an audiobook from before: a new Audiobookshelf session gives its files' addresses again
-      if (songs.any((s) => isAudiobookId(s.id))) await reopenBooks([for (final s in songs) s.id]);
+      if (songs.any((s) => isAudiobookId(s.id))) {
+        // a downloaded book plays from its files here (offline too)
+        final kept = container.read(bookDownloadsProvider).kept;
+        await reopenBooks([for (final s in songs) s.id], local: {for (final e in kept.entries) e.key: e.value.tracks});
+      }
       _restoredIndex = index;
       _songs.addAll(songs);
       final byId = {for (final s in songs) s.id: s};

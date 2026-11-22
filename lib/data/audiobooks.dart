@@ -311,9 +311,16 @@ String? bookIdOf(String songId) =>
 
 /// After a restart: the queue still has a book's files, but their addresses (and the session) are gone.
 /// Opens a new session for the book so they play again (nothing when you're signed out or it fails).
-Future<void> reopenBooks(List<String> songIds) async {
+/// [local]: the files of books downloaded to this device (book_downloads.dart), by book id: those play
+/// from here, with the server or without it.
+Future<void> reopenBooks(List<String> songIds, {Map<String, List<BookTrack>> local = const {}}) async {
   final ids = {for (final id in songIds) ?bookIdOf(id)};
   if (ids.isEmpty) return;
+  for (final id in ids) {
+    for (final (i, t) in (local[id] ?? const <BookTrack>[]).indexed) {
+      _urls[_trackId(id, i)] = Uri.file(t.url).toString();
+    }
+  }
   final b = await _store.read(key: 'absServer'), t = await _store.read(key: 'absToken');
   if (b == null || t == null) return;
   final a = AbsAccount(b, t);
@@ -321,11 +328,14 @@ Future<void> reopenBooks(List<String> songIds) async {
     final c = absClientFor(a);
     try {
       final (session, tracks, at) = await c.play(id);
-      for (final (i, tr) in tracks.indexed) {
-        _urls[_trackId(id, i)] = tr.url;
+      final mine = local[id];
+      if (mine == null) {
+        for (final (i, tr) in tracks.indexed) {
+          _urls[_trackId(id, i)] = tr.url;
+        }
       }
       // where you are: closing the session (another book, or this one from its page) saves this as your place
-      _now = _Listening(c, await c.book(id), session, tracks)..lastAt = at;
+      _now = _Listening(c, await c.book(id), session, mine ?? tracks)..lastAt = at;
     } catch (_) {
       c.dispose();
     }

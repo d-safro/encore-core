@@ -137,4 +137,12 @@ void main() {
     await listen(_a, b, play: (songs, i, pos) async {}); // tapped on its page before playing the queue
     expect(closed, [4000]); // the reopened session closed where you were, not at 0
   });
+
+  test('after a restart, a downloaded book in the queue plays from its files (no server needed)', () async {
+    FlutterSecureStorage.setMockInitialValues({}); // signed out, or Audiobookshelf can't be reached
+    await reopenBooks(['ab-kept-0', 'ab-kept-1'], local: {
+      'kept': const [BookTrack(0, 600, '/books/kept/000.mp3', 'audio/mpeg'), BookTrack(600, 900, '/books/kept/001.mp3', 'audio/mpeg')],
+    });
+    expect(audiobookUrl('ab-kept-1'), Uri.file('/books/kept/001.mp3').toString());
+  });
 }
