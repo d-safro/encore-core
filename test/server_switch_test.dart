@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/db.dart';
-import 'package:encore/data/library.dart';
-import 'package:encore/data/models.dart';
-import 'package:encore/data/subsonic.dart';
-import 'package:encore/data/account.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/db.dart';
+import 'package:encore_core/data/library.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/data/subsonic.dart';
+import 'package:encore_core/data/account.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

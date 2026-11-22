@@ -1,7 +1,7 @@
-import 'package:encore/core/appearance.dart';
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/concerts.dart';
-import 'package:encore/ui/screens/concerts.dart';
+import 'package:encore_core/core/appearance.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/concerts.dart';
+import 'package:encore_core/ui/screens/concerts.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

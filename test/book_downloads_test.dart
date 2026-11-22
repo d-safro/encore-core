@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/audiobooks.dart';
-import 'package:encore/data/book_downloads.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/audiobooks.dart';
+import 'package:encore_core/data/book_downloads.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

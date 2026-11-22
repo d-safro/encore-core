@@ -1,4 +1,4 @@
-import 'package:encore/playback/private_session.dart';
+import 'package:encore_core/playback/private_session.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 

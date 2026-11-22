@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:encore/playback/cast.dart';
+import 'package:encore_core/playback/cast.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A pretend Cast speaker: answers LAUNCH, LOAD, PAUSE, PLAY like Google's media receiver does.

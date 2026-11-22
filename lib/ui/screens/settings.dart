@@ -23,7 +23,7 @@ import '../../data/updates.dart';
 import '../../data/library.dart';
 import '../../data/models.dart';
 import '../../data/online_lyrics.dart';
-import '../../playback/desktop_audio.dart';
+import '../../playback/sound.dart';
 import '../../playback/fetching.dart';
 import '../../playback/dj.dart' show djChoices, djLanguage, djLanguages;
 import '../../playback/handler.dart';
@@ -32,7 +32,7 @@ import '../../playback/private_session.dart';
 import '../actions.dart';
 import '../update.dart';
 import '../download_quality.dart';
-import '../usb_card.dart';
+import '../../core/host.dart';
 import '../../data/local_link.dart';
 import '../../data/usb_link.dart';
 import 'audiobooks.dart' show showAbsSignIn;
@@ -41,7 +41,6 @@ import 'login.dart';
 import '../../data/devices.dart';
 import '../../data/pairing.dart';
 import '../../data/subsonic.dart';
-import '../../desktop/desktop_settings.dart';
 import '../sheets.dart';
 
 const _formats = {'raw': 'Original', 'opus': 'Opus', 'mp3': 'MP3', 'aac': 'AAC'};
@@ -428,7 +427,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
 
           _Section('About'),
-          const ListTile(
+          ListTile(
             leading: EncoreLogo(size: 28),
             title: Text('Encore $appVersion'),
             subtitle: Text('A music player for Navidrome and other Subsonic servers'),

@@ -66,7 +66,7 @@ final followsProvider = NotifierProvider<FollowsNotifier, List<FollowedArtist>>(
 
 /// MusicBrainz asks for at most one request a second from an app, and a User-Agent that names the app and a
 /// way to reach its makers (not the person using it).
-const mbUserAgent = 'Encore/$appVersion ( https://github.com/d-safro/encore )';
+String get mbUserAgent => 'Encore/$appVersion ( https://github.com/d-safro/encore )';
 const _mbGap = Duration(milliseconds: 1100);
 DateTime _mbNext = DateTime.fromMillisecondsSinceEpoch(0);
 

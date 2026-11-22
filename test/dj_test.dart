@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/subsonic.dart';
-import 'package:encore/playback/dj.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/subsonic.dart';
+import 'package:encore_core/playback/dj.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

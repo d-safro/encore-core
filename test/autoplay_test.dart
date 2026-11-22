@@ -1,8 +1,8 @@
 import 'dart:math';
 
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/models.dart';
-import 'package:encore/playback/autoplay.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/playback/autoplay.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Song song(String id, {String? artist, String title = '', String genre = '', bool starred = false, int? rating}) =>

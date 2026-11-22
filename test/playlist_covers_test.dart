@@ -3,11 +3,11 @@ import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:crypto/crypto.dart';
-import 'package:encore/data/cover_cache.dart';
-import 'package:encore/data/cover_crop.dart';
-import 'package:encore/data/models.dart';
-import 'package:encore/data/playlist_covers.dart';
-import 'package:encore/data/subsonic.dart';
+import 'package:encore_core/data/cover_cache.dart';
+import 'package:encore_core/data/cover_crop.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/data/playlist_covers.dart';
+import 'package:encore_core/data/subsonic.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:encore/playback/cast.dart';
-import 'package:encore/playback/upnp.dart';
+import 'package:encore_core/playback/cast.dart';
+import 'package:encore_core/playback/upnp.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _desc = '''<?xml version="1.0"?>

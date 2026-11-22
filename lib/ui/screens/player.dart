@@ -18,7 +18,7 @@ import '../../data/jam.dart';
 import '../../data/online_lyrics.dart';
 import '../../core/platform.dart';
 import '../../playback/audio_device.dart';
-import '../../playback/desktop_audio.dart';
+import '../../playback/sound.dart';
 import '../../playback/handler.dart';
 import '../../playback/private_session.dart';
 import '../actions.dart';

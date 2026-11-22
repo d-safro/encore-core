@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/account.dart';
-import 'package:encore/data/library.dart';
-import 'package:encore/data/local_link.dart';
-import 'package:encore/data/subsonic.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/account.dart';
+import 'package:encore_core/data/library.dart';
+import 'package:encore_core/data/local_link.dart';
+import 'package:encore_core/data/subsonic.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';

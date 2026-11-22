@@ -1,6 +1,6 @@
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/song_id.dart';
-import 'package:encore/ui/whats_playing.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/song_id.dart';
+import 'package:encore_core/ui/whats_playing.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

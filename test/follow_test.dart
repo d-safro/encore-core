@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:encore/data/follows.dart';
-import 'package:encore/data/playlist_add.dart';
-import 'package:encore/data/shows.dart';
-import 'package:encore/ui/screens/following.dart' show niceDate;
+import 'package:encore_core/data/follows.dart';
+import 'package:encore_core/data/playlist_add.dart';
+import 'package:encore_core/data/shows.dart';
+import 'package:encore_core/ui/screens/following.dart' show niceDate;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

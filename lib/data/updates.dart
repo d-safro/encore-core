@@ -9,9 +9,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/platform.dart';
 import '../core/settings.dart';
+import '../core/host.dart';
 
-/// Updates come from the app's GitHub releases. Only GitHub is asked (no account, nothing about you is sent).
-const updateRepo = 'd-safro/encore';
+/// Updates come from the app's GitHub releases (EncoreHost.updateRepo: d-safro/encore for the phone,
+/// d-safro/encore-desktop for the desktop). Only GitHub is asked (no account, nothing about you is sent).
+String get updateRepo => encoreHost.updateRepo;
 const _system = MethodChannel('encore/system');
 
 class UpdateInfo {
@@ -205,26 +207,15 @@ Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress) asyn
   }
 }
 
-Future<bool> canInstallUpdates() async {
-  if (isDesktop && Platform.isWindows) return windowsInstalledBySetup();
-  if (isDesktop) return desktopInstallDir() != null;
-  try {
-    return await _system.invokeMethod<bool>('canInstall') ?? false;
-  } catch (_) {
-    return false;
-  }
-}
+/// Whether this copy can install an update itself (see EncoreHost.updates).
+Future<bool> canInstallUpdates() => encoreHost.updates.canInstall();
 
 /// Android's "Install unknown apps" page for Encore.
-Future<void> allowInstalls() => _system.invokeMethod('allowInstalls');
+Future<void> allowInstalls() => encoreHost.updates.allowInstalls();
 
-/// Opens Android's installer for the downloaded file (it asks you to confirm). On the desktop: puts the new
-/// version in place of this one (see [installDesktopUpdate]); the app then restarts.
-Future<void> installUpdate(File f) => !isDesktop
-    ? _system.invokeMethod('install', {'path': f.path})
-    : Platform.isWindows
-    ? installWindowsUpdate(f)
-    : installDesktopUpdate(f);
+/// Installs the downloaded file: Android's installer (it asks you to confirm), or on the desktop the new
+/// version in place of this one; the app then restarts (see EncoreHost.updates).
+Future<void> installUpdate(File f) => encoreHost.updates.install(f);
 
 /// Opens a web page in the browser.
 Future<void> openUrl(String url) async {
@@ -235,44 +226,6 @@ Future<void> openUrl(String url) async {
   } else {
     await _system.invokeMethod('openUrl', {'url': url});
   }
-}
-
-// ── The desktop app updating itself ──
-
-/// The folder this desktop app runs from, when Encore may replace it itself: installed in your home folder
-/// (tools/linux/install.sh). null for an RPM (dnf updates it) or a build run from the source folder.
-Directory? desktopInstallDir() {
-  final dir = File(Platform.resolvedExecutable).parent;
-  final home = Platform.environment['HOME'] ?? '';
-  if (home.isEmpty || !dir.path.startsWith('$home/')) return null;
-  if (!File('${dir.path}/.encore-install').existsSync()) return null; // put there by install.sh
-  return dir;
-}
-
-/// Unpacks the downloaded .tar.gz next to the running app and swaps the folders; the new version starts a
-/// moment after this one quits.
-Future<void> installDesktopUpdate(File tarball) async {
-  final dir = desktopInstallDir();
-  if (dir == null) throw const FileSystemException('Encore is installed by the system here: update it with its package manager');
-  final staging = Directory('${dir.path}.new');
-  if (await staging.exists()) await staging.delete(recursive: true);
-  await staging.create(recursive: true);
-  final r = await Process.run('tar', ['-xzf', tarball.path, '-C', staging.path]);
-  if (r.exitCode != 0) throw FileSystemException("Couldn't unpack the update: ${r.stderr}");
-  // the archive holds encore-<version>-linux-<arch>/app/…
-  final app = (await staging.list(recursive: true).toList())
-      .whereType<File>()
-      .where((e) => e.path.endsWith('/app/encore'))
-      .firstOrNull;
-  if (app == null) throw const FormatException("The update doesn't contain the app");
-  await File('${app.parent.path}/.encore-install').writeAsString('$appVersion\n');
-  final old = Directory('${dir.path}.old');
-  if (await old.exists()) await old.delete(recursive: true);
-  await dir.rename(old.path); // the running app keeps its open files
-  await app.parent.rename(dir.path);
-  await staging.delete(recursive: true);
-  // the new version starts once this one has quit (only one Encore runs at a time); the caller quits
-  await Process.start('sh', ['-c', 'sleep 2; exec "\$0"', '${dir.path}/encore'], mode: ProcessStartMode.detached);
 }
 
 // ── Copies installed by the system's package manager ──
@@ -310,20 +263,3 @@ String packageManagerName(String kind) => switch (kind) {
   'arch' => 'pacman',
   _ => 'dnf',
 };
-
-// ── Windows ──
-
-/// Installed by the setup program (it leaves its uninstaller next to encore.exe), so a new setup program
-/// can update it. The portable .zip has none: that copy is updated by hand.
-bool windowsInstalledBySetup() =>
-    File('${File(Platform.resolvedExecutable).parent.path}\\unins000.exe').existsSync();
-
-/// Runs the downloaded setup program quietly: it closes this copy, puts the new version in place and
-/// starts it again (/launch=1, see tools/windows/encore.iss). The caller then quits.
-Future<void> installWindowsUpdate(File setup) async {
-  await Process.start(
-    setup.path,
-    ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/launch=1'],
-    mode: ProcessStartMode.detached,
-  );
-}

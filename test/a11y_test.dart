@@ -1,10 +1,10 @@
 import 'dart:io';
 
-import 'package:encore/core/appearance.dart';
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/models.dart';
-import 'package:encore/ui/screens/appearance.dart';
-import 'package:encore/ui/widgets.dart';
+import 'package:encore_core/core/appearance.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/ui/screens/appearance.dart';
+import 'package:encore_core/ui/widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

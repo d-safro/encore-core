@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/account.dart';
-import 'package:encore/data/lyrics_translation.dart';
-import 'package:encore/data/subsonic.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/account.dart';
+import 'package:encore_core/data/lyrics_translation.dart';
+import 'package:encore_core/data/subsonic.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;

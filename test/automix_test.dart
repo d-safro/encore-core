@@ -1,5 +1,5 @@
-import 'package:encore/core/settings.dart';
-import 'package:encore/playback/automix.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/playback/automix.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Duration s(num x) => Duration(milliseconds: (x * 1000).round());

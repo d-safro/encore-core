@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
-import 'package:flutter/services.dart' show MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -23,6 +22,7 @@ import 'song_download.dart';
 import 'local_link.dart';
 import 'usb_link.dart';
 import 'subsonic.dart';
+import '../core/host.dart';
 
 late LibraryDb libraryDb; // opened in main() before runApp
 
@@ -461,7 +461,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
       _lyricsSoon?.cancel();
       _net?.close(force: true);
       _net = null; // closed: the next server's downloads get a new one
-      _system.invokeMethod('downloading', {'count': 0}).catchError((_) => null);
+      encoreHost.downloading(0);
     });
     // carry on when downloading becomes possible again, and stop (keeping what has arrived) when it isn't
     ref.listen(offlineProvider, (a, b) => b ? _pump() : resume());
@@ -550,7 +550,6 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   int _gen = 0; // goes up with each build (a server switch): downloads started before it stop
   static const _parallel = 3;
   static const _parallelCable = 6; // the server converting songs to Opus is what limits it then
-  static const _system = MethodChannel('encore/system');
 
   static Future<Directory> musicDir() async => Directory(p.join((await getApplicationSupportDirectory()).path, 'music'));
 
@@ -781,7 +780,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   /// like Spotify. Without it Android pauses the app soon after you leave it.
   void _keepAwake() {
     final n = _running.isNotEmpty ? _queue.length : 0;
-    _system.invokeMethod('downloading', {'count': n}).catchError((_) => null);
+    encoreHost.downloading(n);
   }
 
   Future<void> _run(_Queued q) async {

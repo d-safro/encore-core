@@ -1,11 +1,11 @@
 import 'dart:convert';
 
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/library.dart';
-import 'package:encore/data/models.dart';
-import 'package:encore/data/subsonic.dart';
-import 'package:encore/data/updates.dart';
-import 'package:encore/playback/handler.dart' show stillPending;
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/library.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/data/subsonic.dart';
+import 'package:encore_core/data/updates.dart';
+import 'package:encore_core/playback/handler.dart' show stillPending;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

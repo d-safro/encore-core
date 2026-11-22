@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 
 import '../core/platform.dart';
-import 'desktop_audio.dart';
+import 'sound.dart';
 
 /// System sound controls: media volume, where the sound plays, the output switcher. Android's, or on the
 /// desktop Encore's own volume and the sound server's devices (desktop_audio.dart).

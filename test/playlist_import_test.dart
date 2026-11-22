@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:encore/data/models.dart';
-import 'package:encore/data/subsonic.dart';
-import 'package:encore/data/playlist_import.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/data/subsonic.dart';
+import 'package:encore_core/data/playlist_import.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

@@ -1,9 +1,9 @@
 import 'dart:math';
 
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/models.dart';
-import 'package:encore/playback/autoplay.dart';
-import 'package:encore/playback/not_for_me.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/playback/autoplay.dart';
+import 'package:encore_core/playback/not_for_me.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

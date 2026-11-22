@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/settings.dart';
-import '../desktop/desktop.dart' show quitApp;
+import '../core/host.dart' show quitApp;
 import '../data/updates.dart';
 import 'actions.dart';
 import 'sheets.dart';

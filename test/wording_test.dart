@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:encore/ui/widgets.dart';
+import 'package:encore_core/ui/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

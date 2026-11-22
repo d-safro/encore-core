@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'host.dart';
+
 enum ThemeSource { wallpaper, albumArt, fixed }
 
 /// Dark (the default), light, or whatever the phone / computer is set to.
@@ -308,8 +310,8 @@ const downloadLevels = [
   return null;
 }
 
-/// Shown in Settings. Keep in step with `version:` in pubspec.yaml.
-const appVersion = '1.9.0';
+/// This app's version (each app gives its own: EncoreHost.appVersion).
+String get appVersion => encoreHost.appVersion;
 
 class SettingsNotifier extends Notifier<Settings> {
   static const _key = 'settings';

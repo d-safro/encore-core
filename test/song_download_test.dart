@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:encore/data/song_download.dart';
+import 'package:encore_core/data/song_download.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A pretend Navidrome. [ranges]: answers "bytes=N-" with 206 (a song it has converted before); otherwise

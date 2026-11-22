@@ -1,10 +1,10 @@
 import 'dart:math';
 
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/models.dart';
-import 'package:encore/data/subsonic.dart';
-import 'package:encore/playback/autoplay.dart';
-import 'package:encore/playback/fetching.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/data/subsonic.dart';
+import 'package:encore_core/playback/autoplay.dart';
+import 'package:encore_core/playback/fetching.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// A pretend music-lookup: answers with whatever [status] says for each song, and remembers what it was asked.

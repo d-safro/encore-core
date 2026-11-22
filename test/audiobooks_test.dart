@@ -1,8 +1,8 @@
 import 'dart:convert';
 
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/audiobooks.dart';
-import 'package:encore/data/models.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/audiobooks.dart';
+import 'package:encore_core/data/models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';

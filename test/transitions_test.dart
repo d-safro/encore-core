@@ -1,7 +1,7 @@
-import 'package:encore/core/settings.dart';
-import 'package:encore/data/models.dart';
-import 'package:encore/playback/transitions.dart';
-import 'package:encore/ui/screens/transitions_screen.dart';
+import 'package:encore_core/core/settings.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/playback/transitions.dart';
+import 'package:encore_core/ui/screens/transitions_screen.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

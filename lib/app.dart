@@ -13,9 +13,7 @@ import 'data/follows.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
 import 'data/devices.dart';
-import 'desktop/file_drop.dart';
-import 'desktop/desktop_page.dart';
-import 'desktop/shell.dart';
+import 'core/host.dart';
 import 'data/sync.dart';
 import 'data/library.dart';
 import 'data/local_link.dart';
@@ -199,7 +197,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
 /// Pages inside the window: on the desktop, without a second back arrow (see DesktopPage).
 Page<void> _page(GoRouterState s, Widget child) =>
-    isDesktop ? DesktopPage(key: s.pageKey, child: child) : MaterialPage(key: s.pageKey, child: child);
+    isDesktop ? encoreHost.desktopPage(key: s.pageKey, child: child) : MaterialPage(key: s.pageKey, child: child);
 
 /// A plain-words strip above the player when the server answers but can't play music.
 class _ServerTrouble extends StatelessWidget {

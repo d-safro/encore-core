@@ -1,9 +1,9 @@
 import 'dart:convert';
 
-import 'package:encore/data/account.dart';
-import 'package:encore/data/models.dart';
-import 'package:encore/data/subsonic.dart';
-import 'package:encore/ui/collab_sheet.dart';
+import 'package:encore_core/data/account.dart';
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/data/subsonic.dart';
+import 'package:encore_core/ui/collab_sheet.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

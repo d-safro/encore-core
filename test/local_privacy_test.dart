@@ -1,5 +1,5 @@
-import 'package:encore/data/local_files.dart';
-import 'package:encore/data/models.dart';
+import 'package:encore_core/data/local_files.dart';
+import 'package:encore_core/data/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 (String, int) q((List<String>, int) r) => (r.$1.join(','), r.$2);

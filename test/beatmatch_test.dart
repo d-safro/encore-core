@@ -1,4 +1,4 @@
-import 'package:encore/playback/automix.dart';
+import 'package:encore_core/playback/automix.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 double sec(Duration d) => d.inMicroseconds / 1e6;

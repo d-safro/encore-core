@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:encore/data/library.dart' show coverIdsFor;
-import 'package:encore/data/models.dart';
-import 'package:encore/data/saved_covers.dart';
+import 'package:encore_core/data/library.dart' show coverIdsFor;
+import 'package:encore_core/data/models.dart';
+import 'package:encore_core/data/saved_covers.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const server = 'https://music.example';
