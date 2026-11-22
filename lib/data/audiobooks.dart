@@ -240,6 +240,11 @@ final _urls = <String, String>{};
 /// The address to play an `ab-` song from (the handler asks).
 String? audiobookUrl(String id) => _urls[id];
 
+final _mimes = <String, String>{};
+
+/// What kind of audio an `ab-` song's file is (for a speaker, which must be told), or null when not known.
+String? audiobookMime(String id) => _mimes[id];
+
 String _trackId(String book, int i) => 'ab-$book-$i';
 
 /// Where in the book (s) a place in one of its files is.
@@ -298,6 +303,7 @@ Future<void> listen(
   if (tracks.isEmpty) throw 'This book has no audio files';
   for (final (i, t) in tracks.indexed) {
     _urls[_trackId(b.id, i)] = local != null ? Uri.file(t.url).toString() : t.url;
+    if (t.mime.isNotEmpty) _mimes[_trackId(b.id, i)] = t.mime;
   }
   _now = c != null && session != null ? _Listening(c, b, session, tracks) : null;
   final (index, pos) = trackAt(tracks, at ?? current);
@@ -319,6 +325,7 @@ Future<void> reopenBooks(List<String> songIds, {Map<String, List<BookTrack>> loc
   for (final id in ids) {
     for (final (i, t) in (local[id] ?? const <BookTrack>[]).indexed) {
       _urls[_trackId(id, i)] = Uri.file(t.url).toString();
+      if (t.mime.isNotEmpty) _mimes[_trackId(id, i)] = t.mime;
     }
   }
   final b = await _store.read(key: 'absServer'), t = await _store.read(key: 'absToken');
@@ -332,6 +339,7 @@ Future<void> reopenBooks(List<String> songIds, {Map<String, List<BookTrack>> loc
       if (mine == null) {
         for (final (i, tr) in tracks.indexed) {
           _urls[_trackId(id, i)] = tr.url;
+          if (tr.mime.isNotEmpty) _mimes[_trackId(id, i)] = tr.mime;
         }
       }
       // where you are: closing the session (another book, or this one from its page) saves this as your place

@@ -661,7 +661,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final native = castNative[suffix] != null && !(suffix == 'm4a' && (song.bitRate ?? 0) > 600);
     String src, type;
     final serverNative = castNative[song.suffix.toLowerCase()] != null;
-    if (file != null && native) {
+    if (isAudiobookId(song.id)) {
+      // a file of an audiobook: from Audiobookshelf, or the copy downloaded here (not your music server)
+      final u = audiobookUrl(song.id);
+      if (u == null) return playerNotices.add("This book can't be cast right now");
+      final uri = Uri.parse(u);
+      (src, type) = (uri.scheme == 'file' ? uri.toFilePath() : u, audiobookMime(song.id) ?? 'audio/mpeg');
+    } else if (file != null && native) {
       (src, type) = (file, castNative[suffix]!);
     } else if (c != null && serverNative) {
       (src, type) = (c.streamUrl(song.id).toString(), castNative[song.suffix.toLowerCase()]!);
@@ -670,7 +676,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     } else {
       return playerNotices.add("This song can't be cast without your server");
     }
-    final art = c != null && song.coverArt.isNotEmpty
+    final art = song.coverArt.startsWith('http')
+        ? relay.artUrl('book-${bookIdOf(song.id) ?? song.id}', song.coverArt) // an audiobook's, on Audiobookshelf
+        : c != null && song.coverArt.isNotEmpty
         ? relay.artUrl(song.coverArt, c.coverUrl(song.coverArt, size: 600).toString())
         : null;
     _castCommandAt = DateTime.now();

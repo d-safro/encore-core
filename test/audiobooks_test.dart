@@ -144,5 +144,6 @@ void main() {
       'kept': const [BookTrack(0, 600, '/books/kept/000.mp3', 'audio/mpeg'), BookTrack(600, 900, '/books/kept/001.mp3', 'audio/mpeg')],
     });
     expect(audiobookUrl('ab-kept-1'), Uri.file('/books/kept/001.mp3').toString());
+    expect(audiobookMime('ab-kept-1'), 'audio/mpeg'); // what a speaker is told it gets, when casting
   });
 }
