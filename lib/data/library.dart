@@ -428,13 +428,24 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
 
   @override
   DownloadsState build() {
+    // Built again (the same notifier) when you switch servers: start clean for that server's downloads.
+    // The updates stream can be listened to only once, so that subscription stays for the notifier's life.
     _sub ??= FileDownloader().updates.listen(_onUpdate);
+    _gen++;
+    _disposed = false;
+    _queue.clear();
+    _running.clear();
+    _cancel.clear();
+    _shown.clear();
+    _copies.clear();
+    _inFlight.clear();
+    _waiting.clear();
     ref.onDispose(() {
-      _sub?.cancel();
       _disposed = true; // switched to another server: stop, keeping what has arrived
       _retry?.cancel();
       _coverSoon?.cancel();
       _net?.close(force: true);
+      _net = null; // closed: the next server's downloads get a new one
       _system.invokeMethod('downloading', {'count': 0}).catchError((_) => null);
     });
     // carry on when downloading becomes possible again, and stop (keeping what has arrived) when it isn't
@@ -521,6 +532,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   HttpClient? _net;
   Timer? _retry;
   bool _disposed = false;
+  int _gen = 0; // goes up with each build (a server switch): downloads started before it stop
   static const _parallel = 3;
   static const _parallelCable = 6; // the server converting songs to Opus is what limits it then
   static const _system = MethodChannel('encore/system');
@@ -693,6 +705,8 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     final id = q.song.id;
     final c = ref.read(clientProvider);
     if (c == null) return;
+    final gen = _gen;
+    bool gone() => _disposed || gen != _gen; // the server was switched since this started
     _running.add(id);
     final raw = q.format == 'raw';
     var url = raw ? c.downloadUrl(id) : c.streamUrl(id, format: q.format, maxBitRate: q.kbps);
@@ -708,27 +722,32 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         net,
         url,
         File(p.join(dir.path, '$id.$ext')),
-        onProgress: (got, total) => _progress(id, got, total ?? guess),
-        cancelled: () => _disposed || _cancel.contains(id),
+        onProgress: (got, total) {
+          if (!gone()) _progress(id, got, total ?? guess);
+        },
+        cancelled: () => gone() || _cancel.contains(id),
       );
       q.tries = 0;
-      if (!_disposed) await _done(q, f.path);
+      if (!gone()) await _done(q, f.path);
     } on DownloadCancelled {
       // removed: its partial file goes too; otherwise it carries on later from where it stopped
-      if (!_disposed && !_queue.containsKey(id)) await _deletePart(id);
+      if (!gone() && !_queue.containsKey(id)) await _deletePart(id);
     } on DownloadFailed catch (e) {
+      if (gone()) return;
       if (e.permanent) {
         await _drop(q); // the song is gone from the server
       } else {
         _later(q);
       }
     } catch (_) {
-      _later(q); // no signal, the server went away...: kept, and tried again
+      if (!gone()) _later(q); // no signal, the server went away...: kept, and tried again
     } finally {
-      _running.remove(id);
-      _cancel.remove(id);
-      _shown.remove(id);
-      _pump();
+      if (gen == _gen) {
+        _running.remove(id);
+        _cancel.remove(id);
+        _shown.remove(id);
+        _pump();
+      }
     }
   }
 
