@@ -289,10 +289,11 @@ class ArtBackdrop extends StatelessWidget {
 
 /// Builds the right thing for loading / error / data.
 class AsyncView<T> extends StatelessWidget {
-  const AsyncView(this.value, this.builder, {super.key, this.onRetry});
+  const AsyncView(this.value, this.builder, {super.key, this.onRetry, this.error});
   final AsyncValue<T> value;
   final Widget Function(T data) builder;
   final VoidCallback? onRetry;
+  final Widget Function(Object error)? error; // instead of the usual message and Retry
 
   @override
   Widget build(BuildContext context) => value.when(
@@ -300,7 +301,7 @@ class AsyncView<T> extends StatelessWidget {
     loading: () => const Center(
       child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()),
     ),
-    error: (e, _) => Center(
+    error: (e, _) => error != null ? error!(e) : Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(

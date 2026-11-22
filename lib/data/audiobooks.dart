@@ -268,21 +268,37 @@ List<Song> bookSongs(Book b, List<BookTrack> tracks) => [
 /// Play a book from where you were (or from [at] s, e.g. a chapter). [play]: the handler's playSongs, then
 /// seek to (index, position).
 Future<void> listen(
-  AbsAccount a,
+  AbsAccount? a,
   Book b, {
   double? at,
+  List<BookTrack>? local, // the book's files on this device (book_downloads.dart): played from there
   required Future<void> Function(List<Song> songs, int index, Duration position) play,
 }) async {
   await stopListening();
-  final c = AbsClient(a);
-  final (session, tracks, current) = await c.play(b.id);
+  var tracks = local ?? const <BookTrack>[];
+  String? session;
+  var current = b.position;
+  AbsClient? c;
+  if (a != null) {
+    c = AbsClient(a);
+    try {
+      final r = await c.play(b.id); // a session, so your place is kept on Audiobookshelf
+      session = r.$1;
+      current = r.$3;
+      if (local == null) tracks = r.$2;
+    } catch (e) {
+      c.dispose();
+      c = null;
+      if (local == null) rethrow; // not downloaded and no server: nothing to play
+    }
+  }
   if (tracks.isEmpty) throw 'This book has no audio files';
   for (final (i, t) in tracks.indexed) {
-    _urls[_trackId(b.id, i)] = t.url;
+    _urls[_trackId(b.id, i)] = local != null ? Uri.file(t.url).toString() : t.url;
   }
-  _now = _Listening(c, b, session, tracks);
+  _now = c != null && session != null ? _Listening(c, b, session, tracks) : null;
   final (index, pos) = trackAt(tracks, at ?? current);
-  _now!.lastAt = at ?? current;
+  _now?.lastAt = at ?? current;
   await play(bookSongs(b, tracks), index, Duration(milliseconds: (pos * 1000).round()));
 }
 
