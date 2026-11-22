@@ -19,6 +19,7 @@ import 'data/sync.dart';
 import 'data/library.dart';
 import 'data/local_link.dart';
 import 'data/usb_link.dart';
+import 'data/wear_link.dart';
 import 'playback/handler.dart';
 import 'ui/screens/following.dart';
 import 'ui/screens/appearance.dart';
@@ -311,6 +312,8 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     // your other devices (remote control, moving playback) and small things kept in step with them
     ref.listenManual(devicesProvider, (_, _) {});
     ref.listenManual(syncServiceProvider, (_, _) {});
+    // a paired Wear OS watch signs in to the same server (data/wear_link.dart)
+    ref.listenManual(wearLinkProvider, (_, _) {});
     // when the network comes back: send plays made offline
     ref.listenManual(offlineProvider, (prev, next) {
       if (prev == true && next == false) {
