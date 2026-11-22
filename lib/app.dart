@@ -39,6 +39,7 @@ import 'ui/screens/concerts.dart';
 import 'ui/screens/audiobooks.dart';
 import 'ui/device_playlists_ui.dart';
 import 'ui/screens/local_music.dart';
+import 'ui/screens/import_playlist.dart';
 import 'ui/screens/stats.dart';
 import 'ui/update.dart';
 import 'ui/widgets.dart';
@@ -159,6 +160,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, s) => FollowingScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0),
           ),
           GoRoute(path: '/stats', builder: (_, _) => const StatsScreen()),
+          GoRoute(path: '/import', builder: (_, _) => const ImportPlaylistScreen()),
           GoRoute(path: '/local', builder: (_, _) => const LocalMusicScreen()),
           GoRoute(path: '/local/playlist/:id', builder: (_, s) => DevicePlaylistScreen(id: s.pathParameters['id']!)),
           GoRoute(path: '/concerts', builder: (_, _) => const ConcertsScreen()),

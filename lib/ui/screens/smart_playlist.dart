@@ -145,6 +145,12 @@ Future<void> showNewPlaylistSheet(BuildContext context, WidgetRef ref) async {
               subtitle: const Text('Fills itself from rules you set, and stays up to date'),
               onTap: () => Navigator.pop(ctx, 'smart'),
             ),
+            ListTile(
+              leading: const Icon(Icons.upload_file_rounded),
+              title: const Text('Import from another app'),
+              subtitle: const Text('A playlist exported from Spotify, Apple Music, YouTube… (CSV, JSON, M3U, text)'),
+              onTap: () => Navigator.pop(ctx, 'import'),
+            ),
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
               child: Text('Or start from one of these'),
@@ -171,6 +177,8 @@ Future<void> showNewPlaylistSheet(BuildContext context, WidgetRef ref) async {
     } catch (e) {
       if (context.mounted) toast(context, "Couldn't create the playlist: $e");
     }
+  } else if (pick == 'import') {
+    context.push('/import');
   } else if (pick == 'smart') {
     await Navigator.of(context, rootNavigator: true)
         .push(MaterialPageRoute(builder: (_) => const SmartPlaylistScreen()));
