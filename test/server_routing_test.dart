@@ -62,6 +62,7 @@ void main() {
       'pendingScrobbles': ['s1|1'],
       'jamUrl': 'x',
       'shown:hint': true,
+      'playlistTransitions': '{"p1":{"a>b":"cut"}}',
       'settings': '{}',
     });
     prefs = await SharedPreferences.getInstance();

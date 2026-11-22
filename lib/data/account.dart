@@ -58,6 +58,7 @@ const _perServerKeys = {
   'queue', 'downloadPins', 'downloadQueue', 'localAddress', 'libraryPins', 'manualDownloads', 'pendingScrobbles', 'podcastSeen', 'recentSearch',
   'searchHistory', 'smartShuffle', 'smartShuffleHidden', 'lyricsPicks', 'radioArt', 'jamUrl', 'jamToken', 'podcastDone',
   'playlistCovers', 'followedArtists', 'releaseCache', 'releaseSeen', 'showsCache', 'showsPrefs',
+  'playlistTransitions', // that server's playlists (and synced through it: see data/sync.dart)
 };
 bool _perServer(String k) =>
     !k.contains('@') &&
