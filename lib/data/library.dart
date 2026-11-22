@@ -496,7 +496,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     // it isn't mixed into the new server's downloads
     final gen = _gen;
     bool stale() => _disposed || gen != _gen;
-    final db = ref.read(dbProvider);
+    late final db = ref.read(dbProvider); // first read inside the try below (a test or early start may not have it yet)
     // files replaced by smaller copies while the player was using them
     for (final p in prefs.getStringList('deleteLater') ?? const <String>[]) {
       try {
