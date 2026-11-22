@@ -44,7 +44,7 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
       _left = recordSeconds;
     });
     try {
-      final r = await whatsPlaying(c, onTick: (l) {
+      final r = await whatsPlaying(c, cancelled: () => !mounted, onTick: (l) {
         if (mounted) setState(() => _left = l);
       });
       if (!mounted) return;

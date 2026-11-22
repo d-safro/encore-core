@@ -40,8 +40,9 @@ class Identification {
   );
 }
 
-/// Record [recordSeconds] s; null when the microphone isn't allowed. [onTick] gets the seconds left.
-Future<List<int>?> recordClip({void Function(int left)? onTick}) async {
+/// Record [recordSeconds] s; null when the microphone isn't allowed, or when [cancelled] says so (the sheet
+/// was closed: recording stops then and nothing is sent). [onTick] gets the seconds left.
+Future<List<int>?> recordClip({void Function(int left)? onTick, bool Function()? cancelled}) async {
   final dir = await getTemporaryDirectory();
   final ext = isDesktop ? 'wav' : 'm4a';
   final f = File('${dir.path}/encore-whats-playing.$ext');
@@ -60,6 +61,7 @@ Future<List<int>?> recordClip({void Function(int left)? onTick}) async {
   }
   try {
     for (var left = recordSeconds; left > 0; left--) {
+      if (cancelled?.call() ?? false) break;
       onTick?.call(left);
       await Future.delayed(const Duration(seconds: 1));
     }
@@ -70,6 +72,10 @@ Future<List<int>?> recordClip({void Function(int left)? onTick}) async {
     } else {
       await _system.invokeMethod('recordStop');
     }
+  }
+  if (cancelled?.call() ?? false) {
+    if (await f.exists()) await f.delete();
+    return null;
   }
   final bytes = await f.readAsBytes();
   await f.delete();
@@ -99,8 +105,8 @@ Future<void> rememberIdentified(Map<String, dynamic> songJson) async {
 }
 
 /// Record, send, and remember a find.
-Future<Identification?> whatsPlaying(SubsonicClient c, {void Function(int left)? onTick}) async {
-  final clip = await recordClip(onTick: onTick);
+Future<Identification?> whatsPlaying(SubsonicClient c, {void Function(int left)? onTick, bool Function()? cancelled}) async {
+  final clip = await recordClip(onTick: onTick, cancelled: cancelled);
   if (clip == null) return null;
   final raw = await c.identifySong(clip);
   final r = Identification.fromJson(raw);
