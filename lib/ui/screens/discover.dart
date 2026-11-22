@@ -76,20 +76,71 @@ class DiscoverScreen extends ConsumerWidget {
         ),
       );
     }
+    final title = SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        child: Text('Discover', style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.8)),
+      ),
+    );
+    // new music from the server's extras (not AudioMuse): there without it too
+    final discoveries = switch (ref.watch(discoveriesProvider)) {
+      AsyncData(:final value) when value.isNotEmpty => [
+        for (final (name, songs) in value)
+          SliverToBoxAdapter(
+            child: Shelf(
+              title: name,
+              subtitle: 'Not in your library · tap ▶ to preview, tap the song to get it',
+              height: 200,
+              children: [for (final x in songs) DiscoveryCard(x)],
+            ),
+          ),
+      ],
+      AsyncLoading() => [
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: Text('Finding new music for you…')),
+          ),
+        ),
+      ],
+      _ => const <Widget>[],
+    };
+    if (ref.watch(aiOfferedProvider).value == false) {
+      // no AudioMuse-AI on the server: every mix below would only say so when tapped
+      return Scaffold(
+        body: SafeArea(
+          bottom: false,
+          child: CustomScrollView(
+            slivers: [
+              title,
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Card(
+                    child: ListTile(
+                      leading: Icon(Icons.auto_awesome_outlined),
+                      title: Text('Sound-based mixes need AudioMuse-AI on your server'),
+                      subtitle: Text(
+                        'Made for you, Moods, Describe a sound, Songs about… and Song alchemy come from AudioMuse-AI, '
+                        'which listens to your music. Your server doesn\'t have it.',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              ...discoveries,
+              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       body: SafeArea(
         bottom: false,
         child: CustomScrollView(
           slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-                child: Text(
-                  'Discover',
-                  style: t.headlineMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.8),
-                ),
-              ),
-            ),
+            title,
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -161,28 +212,7 @@ class DiscoverScreen extends ConsumerWidget {
                 _ => const SizedBox.shrink(),
               },
             ),
-            ...switch (ref.watch(discoveriesProvider)) {
-              AsyncData(:final value) when value.isNotEmpty => [
-                for (final (name, songs) in value)
-                  SliverToBoxAdapter(
-                    child: Shelf(
-                      title: name,
-                      subtitle: 'Not in your library · tap ▶ to preview, tap the song to get it',
-                      height: 200,
-                      children: [for (final x in songs) DiscoveryCard(x)],
-                    ),
-                  ),
-              ],
-              AsyncLoading() => [
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: Text('Finding new music for you…')),
-                  ),
-                ),
-              ],
-              _ => const <Widget>[],
-            },
+            ...discoveries,
             const SliverToBoxAdapter(child: SectionTitle('Moods')),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 12),

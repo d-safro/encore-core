@@ -691,6 +691,20 @@ class SubsonicClient {
     return data;
   }
 
+  /// Whether the server offers AudioMuse-AI's recommendations: one without them (Navidrome, Conductor with no
+  /// audiomuse_url) answers 404, which [audiomuse] turns into "doesn't offer AI recommendations". Can't tell
+  /// (no answer, another error): true, so a passing problem hides nothing.
+  Future<bool> offersAudiomuse() async {
+    try {
+      await audiomuse('sonic_fingerprint/generate', query: {'n': 1});
+      return true;
+    } on SubsonicException catch (e) {
+      return e.code != 404;
+    } catch (_) {
+      return true;
+    }
+  }
+
   // ── Media URLs ──
   /// Why a song won't stream: the server's error message, or null when it does stream.
   Future<String?> streamProblem(String id) async {
