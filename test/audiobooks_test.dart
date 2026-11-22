@@ -110,4 +110,31 @@ void main() {
     expect(c.read(settingsProvider).navTabs, isNot(contains('audiobooks')));
     expect(c.read(absAccountProvider), isNull);
   });
+
+  test("after a restart, opening the book again doesn't send your place back to the start", () async {
+    final closed = <Object?>[];
+    final mock = MockClient((req) async {
+      final p = req.url.path;
+      if (p.endsWith('/close')) closed.add((jsonDecode(req.body) as Map)['currentTime']);
+      final body = switch (p) {
+        '/api/items/$_id/play' => {
+            'id': 'sess1',
+            'currentTime': 4000,
+            'audioTracks': [{'startOffset': 0, 'duration': 7200, 'contentUrl': '/api/items/$_id/file/1'}],
+          },
+        '/api/items/$_id' => _item,
+        _ => <String, Object>{},
+      };
+      return http.Response(jsonEncode(body), 200);
+    });
+    final was = absClientFor;
+    absClientFor = (a) => AbsClient(a, client: mock);
+    addTearDown(() => absClientFor = was);
+    addTearDown(stopListening);
+    FlutterSecureStorage.setMockInitialValues({'absServer': _a.base, 'absToken': _a.token});
+    await reopenBooks(['ab-$_id-0']); // the queue the app came back with
+    final b = Book.fromItem(_item, _a);
+    await listen(_a, b, play: (songs, i, pos) async {}); // tapped on its page before playing the queue
+    expect(closed, [4000]); // the reopened session closed where you were, not at 0
+  });
 }

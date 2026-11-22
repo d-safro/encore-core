@@ -232,6 +232,9 @@ class _Listening {
 }
 
 _Listening? _now;
+
+/// The client the player's sessions use (tests swap in one with a mocked server).
+AbsClient Function(AbsAccount a) absClientFor = AbsClient.new;
 final _urls = <String, String>{};
 
 /// The address to play an `ab-` song from (the handler asks).
@@ -280,7 +283,7 @@ Future<void> listen(
   var current = b.position;
   AbsClient? c;
   if (a != null) {
-    c = AbsClient(a);
+    c = absClientFor(a);
     try {
       final r = await c.play(b.id); // a session, so your place is kept on Audiobookshelf
       session = r.$1;
@@ -315,13 +318,14 @@ Future<void> reopenBooks(List<String> songIds) async {
   if (b == null || t == null) return;
   final a = AbsAccount(b, t);
   for (final id in ids.take(1)) { // one book at a time is what a queue holds
-    final c = AbsClient(a);
+    final c = absClientFor(a);
     try {
-      final (session, tracks, _) = await c.play(id);
+      final (session, tracks, at) = await c.play(id);
       for (final (i, tr) in tracks.indexed) {
         _urls[_trackId(id, i)] = tr.url;
       }
-      _now = _Listening(c, await c.book(id), session, tracks);
+      // where you are: closing the session (another book, or this one from its page) saves this as your place
+      _now = _Listening(c, await c.book(id), session, tracks)..lastAt = at;
     } catch (_) {
       c.dispose();
     }
