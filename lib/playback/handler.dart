@@ -1265,11 +1265,15 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   Future<void> _savePodcast() async {
     final s = currentSong;
+    if (s == null || !isPodcastId(s.id) || _podActive != s.id) return; // not played here yet: leave it alone
+    if (isAudiobookId(s.id)) {
+      // kept on Audiobookshelf, which doesn't need your music server (offline here means that one is away)
+      _podSavedAt = DateTime.now();
+      return saveBookPlace(s.id, player.position);
+    }
     final c = container.read(clientProvider);
-    if (s == null || !isPodcastId(s.id) || c == null || container.read(offlineProvider)) return;
-    if (_podActive != s.id) return; // not played here yet: leave the server's position alone
+    if (c == null || container.read(offlineProvider)) return;
     _podSavedAt = DateTime.now();
-    if (isAudiobookId(s.id)) return saveBookPlace(s.id, player.position); // kept on Audiobookshelf
     final pos = player.position.inMilliseconds;
     final len = (player.duration ?? Duration(seconds: s.duration ?? 0)).inMilliseconds;
     try {
