@@ -1,6 +1,14 @@
+import 'dart:convert';
+
 import 'package:encore/core/settings.dart';
+import 'package:encore/data/account.dart';
 import 'package:encore/data/lyrics_translation.dart';
+import 'package:encore/data/subsonic.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   test('reads the server answer and puts each line under its own', () {
@@ -35,5 +43,24 @@ void main() {
 
   test('the language setting is saved', () {
     expect(Settings.fromJson(const Settings(lyricsLanguage: 'ja').toJson()).lyricsLanguage, 'ja');
+  });
+
+  test("a file on this device: its lyrics never go to the server", () async {
+    SharedPreferences.setMockInitialValues({});
+    prefs = await SharedPreferences.getInstance();
+    final sent = <String>[];
+    final client = SubsonicClient(const Credentials('http://server', 'me', 'pw'), httpClient: MockClient((req) async {
+      if (req.url.path.endsWith('translateLyrics') || req.url.path.endsWith('translateLyrics.view')) sent.add(req.url.path);
+      return http.Response(jsonEncode({'subsonic-response': {'status': 'ok', 'lyricsTranslation': {'lines': ['Hi']}}}), 200);
+    }));
+    final c = ProviderContainer(overrides: [clientProvider.overrideWithValue(client)]);
+    addTearDown(c.dispose);
+    final local = await c.read(lyricsTranslationProvider((id: 'lf-0123456789abcdef0123', romanize: false, text: 'Hola')).future);
+    expect(local.error, 'private');
+    expect(sent, isEmpty);
+    expect(lyricsTranslationProblem('private'), contains('stay private'));
+    final server = await c.read(lyricsTranslationProvider((id: 'mf-1', romanize: false, text: 'Hola')).future);
+    expect(server.lines, ['Hi']); // the server's own songs still are
+    expect(sent, hasLength(1));
   });
 }

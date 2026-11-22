@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import 'library.dart';
+import 'local_files.dart' show isLocalFileId;
 import 'saved_lyrics.dart';
 import 'song_lyrics.dart' show lyricsServer;
 import 'account.dart';
@@ -66,6 +67,7 @@ String lyricsTranslationProblem(String? error) => switch (error) {
   'ai-off' => 'Your server\'s AI is off. Turn it on (homelab ai on) for Libretto to translate lyrics',
   'no-server' => 'Your server can\'t translate lyrics (Libretto needs Conductor or music-lookup)',
   'offline' => 'Libretto needs your server to translate these lyrics; they weren\'t translated before',
+  'private' => 'Libretto doesn\'t translate files on this device: they stay private',
   _ => 'Couldn\'t translate these lyrics. Try again later',
 };
 
@@ -79,6 +81,8 @@ final lyricsTranslationProvider = FutureProvider.autoDispose.family<LyricsTransl
   k,
 ) async {
   ref.cacheFor(const Duration(hours: 1));
+  // a file on this device stays private: its lyrics never go to the server to be translated
+  if (isLocalFileId(k.id)) return const LyricsTranslation(error: 'private');
   final c = ref.watch(clientProvider);
   final lang = lyricsTargetLanguage(ref.watch(settingsProvider.select((s) => s.lyricsLanguage)));
   final offline = ref.watch(offlineProvider);

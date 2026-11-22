@@ -12,6 +12,7 @@ import '../../core/settings.dart';
 import '../../data/account.dart';
 import '../../data/library.dart';
 import '../../data/lyrics_translation.dart';
+import '../../data/local_files.dart' show isLocalFileId;
 import '../../data/models.dart';
 import '../../data/jam.dart';
 import '../../data/online_lyrics.dart';
@@ -966,6 +967,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
 
   /// The Translate / Romanize chips over the words, and why there's no translation when there isn't.
   Widget _translateBar(Lyrics l, AsyncValue<LyricsTranslation>? tr) {
+    if (isLocalFileId(widget.song.id)) return const SizedBox.shrink(); // private: Libretto would send them to the server
     final cs = Theme.of(context).colorScheme;
     final t = Theme.of(context).textTheme;
     final busy = tr?.isLoading ?? false;
@@ -1039,7 +1041,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             ),
           );
         }
-        final tr = _mode == 'off'
+        final tr = _mode == 'off' || isLocalFileId(widget.song.id)
             ? null
             : ref.watch(lyricsTranslationProvider(
                 (id: widget.song.id, romanize: _mode == 'romanize', text: l.lines.map((e) => e.text).join('\n')),
