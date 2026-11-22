@@ -628,8 +628,8 @@ class SubsonicClient {
   }
 
   /// The DJ's line before [next] (music-lookup's getDjLine); null when the server's AI is off.
-  Future<DjLine?> djLine({String? prev, required String next}) async {
-    final r = await call('getDjLine', {'next': next, 'prev': ?prev}, null, const Duration(seconds: 45));
+  Future<DjLine?> djLine({String? prev, required String next, String lang = 'en'}) async {
+    final r = await call('getDjLine', {'next': next, 'prev': ?prev, 'lang': lang}, null, const Duration(seconds: 45));
     return DjLine.fromJson(_m(r['djLine']));
   }
 

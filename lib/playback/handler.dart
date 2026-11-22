@@ -334,7 +334,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _djFor = b.id;
     _djLine = null;
     _djAsking = true;
-    c.djLine(prev: a.id, next: b.id).then((l) {
+    c.djLine(prev: a.id, next: b.id, lang: djLanguage(_settings.djLanguage)).then((l) {
       if (_djFor == b.id) _djLine = l;
     }).catchError((_) {}).whenComplete(() => _djAsking = false);
   }

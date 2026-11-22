@@ -24,7 +24,7 @@ import '../../data/models.dart';
 import '../../data/online_lyrics.dart';
 import '../../playback/desktop_audio.dart';
 import '../../playback/fetching.dart';
-import '../../playback/dj.dart' show djChoices;
+import '../../playback/dj.dart' show djChoices, djLanguage, djLanguages;
 import '../../playback/handler.dart';
 import '../../playback/private_session.dart';
 import '../actions.dart';
@@ -312,6 +312,31 @@ class SettingsScreen extends ConsumerWidget {
                 showSelectedIcon: false,
                 onSelectionChanged: (v) => set('djEvery', v.first),
               ),
+            ),
+          if (s.dj)
+            ListTile(
+              leading: const SizedBox(width: 24),
+              title: const Text('The DJ speaks'),
+              subtitle: Text(s.djLanguage.isEmpty
+                  ? 'Your phone\'s language (${djLanguages[djLanguage('')]})'
+                  : djLanguages[s.djLanguage] ?? s.djLanguage),
+              onTap: () async {
+                final v = await showDialog<String>(
+                  context: context,
+                  builder: (ctx) => SimpleDialog(
+                    title: const Text('The DJ speaks'),
+                    children: [
+                      for (final e in {'': 'Your phone\'s language', ...djLanguages}.entries)
+                        ListTile(
+                          title: Text(e.value),
+                          trailing: e.key == s.djLanguage ? const Icon(Icons.check_rounded) : null,
+                          onTap: () => Navigator.pop(ctx, e.key),
+                        ),
+                    ],
+                  ),
+                );
+                if (v != null) set('djLanguage', v);
+              },
             ),
           SwitchListTile(
             secondary: const Icon(Icons.auto_fix_high_outlined),

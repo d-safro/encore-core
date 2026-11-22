@@ -50,6 +50,7 @@ class Settings {
   final bool automix; // smart transitions from the server's analysis (see playback/automix.dart)
   final bool dj; // a DJ line before every few songs (playback/dj.dart)
   final int djEvery; // 1, 3 or 5 songs
+  final String djLanguage; // '' = the phone's (playback/dj.dart)
   final double speed;
   final bool autoplay; // when what you play runs out, keep going with songs like it (see playback/autoplay.dart)
   final bool scrobble;
@@ -105,6 +106,7 @@ class Settings {
     this.automix = false,
     this.dj = false,
     this.djEvery = 3,
+    this.djLanguage = '',
     this.speed = 1.0,
     this.autoplay = true,
     this.scrobble = true,
@@ -163,6 +165,7 @@ class Settings {
     'automix': automix,
     'dj': dj,
     'djEvery': djEvery,
+    'djLanguage': djLanguage,
     'speed': speed,
     'autoplay': autoplay,
     'scrobble': scrobble,
@@ -223,6 +226,7 @@ class Settings {
       automix: j['automix'] ?? d.automix,
       dj: j['dj'] ?? d.dj,
       djEvery: (j['djEvery'] as num?)?.toInt() ?? d.djEvery,
+      djLanguage: j['djLanguage'] ?? d.djLanguage,
       speed: (j['speed'] as num?)?.toDouble() ?? d.speed,
       autoplay: j['autoplay'] ?? d.autoplay,
       scrobble: j['scrobble'] ?? d.scrobble,

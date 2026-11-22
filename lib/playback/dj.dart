@@ -3,6 +3,8 @@
 /// at the server; otherwise the songs just follow each other. The music dips while the DJ talks.
 library;
 
+import 'dart:ui' show PlatformDispatcher;
+
 class DjLine {
   const DjLine(this.id, this.text, this.duration);
   final String id, text;
@@ -18,3 +20,16 @@ class DjLine {
 
 /// How often the DJ speaks (Settings): before every song, every 3rd or every 5th.
 const djChoices = [1, 3, 5];
+
+/// The languages the DJ can speak (the server has a voice for each).
+const djLanguages = {
+  'en': 'English', 'de': 'German', 'es': 'Spanish', 'fr': 'French', 'it': 'Italian', 'pt': 'Portuguese',
+  'ru': 'Russian', 'uk': 'Ukrainian', 'pl': 'Polish', 'nl': 'Dutch', 'sv': 'Swedish', 'tr': 'Turkish', 'zh': 'Chinese',
+};
+
+/// The DJ's language: the one picked in Settings, else the phone's, else English.
+String djLanguage(String picked, [String? device]) {
+  if (djLanguages.containsKey(picked)) return picked;
+  final d = device ?? PlatformDispatcher.instance.locale.languageCode;
+  return djLanguages.containsKey(d) ? d : 'en';
+}

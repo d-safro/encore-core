@@ -21,14 +21,21 @@ void main() {
       asked.add(req.url);
       return http.Response(jsonEncode({'subsonic-response': {'status': 'ok', 'djLine': {'id': 'abc', 'text': 'Hi', 'duration': 2}}}), 200);
     }));
-    final l = await c.djLine(prev: 'a', next: 'b');
+    final l = await c.djLine(prev: 'a', next: 'b', lang: 'ru');
     expect(l!.id, 'abc');
     expect(asked.single.queryParameters['prev'], 'a');
     expect(asked.single.queryParameters['next'], 'b');
+    expect(asked.single.queryParameters['lang'], 'ru');
     expect(c.djAudioUrl('abc').path, '/rest/djAudio');
     expect(c.djAudioUrl('abc').queryParameters['id'], 'abc');
     await c.djLine(next: 'b');
     expect(asked.last.queryParameters.containsKey('prev'), isFalse);
+  });
+
+  test('the language: picked, else the phone\'s, else English', () {
+    expect(djLanguage('ru', 'de'), 'ru');
+    expect(djLanguage('', 'de'), 'de');
+    expect(djLanguage('', 'xx'), 'en');
   });
 
   test('off by default, every 3 songs', () {
