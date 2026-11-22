@@ -64,7 +64,7 @@ bool needsRomanizing(Iterable<String> lines) {
 
 /// What to tell you when there's no translation.
 String lyricsTranslationProblem(String? error) => switch (error) {
-  'ai-off' => 'Your server\'s AI is off. Turn it on (homelab ai on) for Libretto to translate lyrics',
+  'ai-off' => 'Your server\'s AI is off. Turn it on there for Libretto to translate lyrics',
   'no-server' => 'Your server can\'t translate lyrics (Libretto needs Conductor or music-lookup)',
   'offline' => 'Libretto needs your server to translate these lyrics; they weren\'t translated before',
   'private' => 'Libretto doesn\'t translate files on this device: they stay private',

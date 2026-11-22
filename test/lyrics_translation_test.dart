@@ -37,7 +37,7 @@ void main() {
   });
 
   test('problems say what to do', () {
-    expect(lyricsTranslationProblem('ai-off'), contains('homelab ai on'));
+    expect(lyricsTranslationProblem('ai-off'), contains('Turn it on there'));
     expect(lyricsTranslationProblem('no-server'), contains('music-lookup'));
   });
 
