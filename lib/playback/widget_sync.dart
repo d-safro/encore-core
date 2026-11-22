@@ -18,8 +18,10 @@ void startWidgetSync(AudioHandler handler) {
   }
 
   handler.mediaItem.listen((item) async {
-    if (item == null || item.id == lastId) return;
-    lastId = item.id;
+    // the same song again with its cover (fetched onto the phone a moment later) counts as new
+    final key = item == null ? null : '${item.id}|${item.artUri}';
+    if (item == null || key == lastId) return;
+    lastId = key;
     try {
       await HomeWidget.saveWidgetData<String>('title', item.title);
       await HomeWidget.saveWidgetData<String>('artist', item.artist ?? '');
@@ -37,7 +39,7 @@ void startWidgetSync(AudioHandler handler) {
           if (res.statusCode == 200) bytes = res.bodyBytes;
         }
         // skipped on meanwhile (a slow server cover): the newer song's cover is already there
-        if (lastId != item.id) return;
+        if (lastId != key) return;
         if (bytes != null) {
           final dir = await getApplicationSupportDirectory();
           final f = File(p.join(dir.path, 'widget_cover.jpg'));
@@ -46,7 +48,7 @@ void startWidgetSync(AudioHandler handler) {
         }
       } catch (_) {}
     }
-    if (lastId != item.id) return;
+    if (lastId != key) return;
     try {
       await HomeWidget.saveWidgetData<String>('cover', coverPath, deleteFile: false);
     } catch (_) {}

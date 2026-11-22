@@ -332,7 +332,10 @@ class _ArtistScreenState extends ConsumerState<ArtistScreen> with _PollWhileDown
     return [
       const SectionTitle('Popular'),
       for (var i = 0; i < shown.length; i++)
-        shown[i].isLookup ? SongTile(shown[i]) : SongTile(shown[i], list: playable, index: playable.indexOf(shown[i])),
+        shown[i].isLookup
+            ? SongTile(shown[i])
+            // its own place (a song can be in the list twice: the one tapped plays)
+            : SongTile(shown[i], list: playable, index: shown.take(i).where((s) => !s.isLookup).length),
       if (list.length > 5)
         Padding(
           padding: const EdgeInsets.only(left: 8),

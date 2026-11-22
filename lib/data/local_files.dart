@@ -177,6 +177,14 @@ String shareableCover(String coverArt) => coverArt.startsWith('file:') ? '' : co
   return (ids, at < 0 ? 0 : at);
 }
 
+/// [serverQueue], at most [limit] songs of it: the ones around where it is (a few before, the rest after).
+(List<String>, int) serverQueueAround(List<Song> songs, int index, {int limit = 500}) {
+  final (ids, at) = serverQueue(songs, index);
+  if (ids.length <= limit) return (ids, at);
+  final start = (at - 50).clamp(0, ids.length - limit);
+  return (ids.sublist(start, start + limit), at - start);
+}
+
 // ── Opening a file that isn't in the list ("Open with Encore", a file dropped on the window) ──
 final _opened = <String, LocalTrack>{};
 
