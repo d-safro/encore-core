@@ -1992,7 +1992,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _submitted = s.id;
       final c = container.read(clientProvider);
       if (c != null && !container.read(offlineProvider)) {
-        c.scrobble(s.id, submission: true, time: now).catchError((_) {});
+        c.scrobble(s.id, submission: true, time: now).catchError((Object e) {
+          // no answer (the network dropped before the app noticed): kept and sent later, like an offline play
+          if (e is! SubsonicException || e.code == 0) _queueOfflineScrobble(s.id, now);
+        });
       } else {
         _queueOfflineScrobble(s.id, now);
       }
