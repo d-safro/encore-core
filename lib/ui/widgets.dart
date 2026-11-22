@@ -728,13 +728,13 @@ class _ShelfState extends State<Shelf> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      tooltip: 'Back',
+                      tooltip: 'Scroll ${widget.title} back',
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.chevron_left_rounded),
                       onPressed: () => _page(-1),
                     ),
                     IconButton(
-                      tooltip: 'More',
+                      tooltip: 'Scroll ${widget.title} on',
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.chevron_right_rounded),
                       onPressed: () => _page(1),
