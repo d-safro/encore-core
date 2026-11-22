@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import 'library.dart';
+import 'saved_lyrics.dart';
+import 'song_lyrics.dart' show lyricsServer;
 import 'account.dart';
 import 'subsonic.dart';
 
@@ -62,6 +65,7 @@ bool needsRomanizing(Iterable<String> lines) {
 String lyricsTranslationProblem(String? error) => switch (error) {
   'ai-off' => 'Your server\'s AI is off. Turn it on (homelab ai on) for Libretto to translate lyrics',
   'no-server' => 'Your server can\'t translate lyrics (Libretto needs Conductor or music-lookup)',
+  'offline' => 'Libretto needs your server to translate these lyrics; they weren\'t translated before',
   _ => 'Couldn\'t translate these lyrics. Try again later',
 };
 
@@ -76,10 +80,18 @@ final lyricsTranslationProvider = FutureProvider.autoDispose.family<LyricsTransl
 ) async {
   ref.cacheFor(const Duration(hours: 1));
   final c = ref.watch(clientProvider);
-  if (c == null) return const LyricsTranslation(error: 'failed');
   final lang = lyricsTargetLanguage(ref.watch(settingsProvider.select((s) => s.lyricsLanguage)));
+  final offline = ref.watch(offlineProvider);
+  // kept with the lyrics of a downloaded song (or a file on this device): shown offline too, and not asked again
+  final server = lyricsServer(k.id, c), key = translationKey(lang, k.romanize, k.text);
+  final kept = (await savedLyrics?.read(server, k.id))?.translations[key];
+  if (kept != null) return kept;
+  if (c == null) return const LyricsTranslation(error: 'failed');
+  if (offline) return const LyricsTranslation(error: 'offline');
   try {
-    return await c.translateLyrics(k.id, k.text.split('\n'), lang: lang, romanize: k.romanize);
+    final t = await c.translateLyrics(k.id, k.text.split('\n'), lang: lang, romanize: k.romanize);
+    if (t.error == null) unawaited(savedLyrics?.addTranslation(server, k.id, key, t).catchError((_) {}));
+    return t;
   } on SubsonicException catch (e) {
     // Navidrome on its own doesn't know the call
     return LyricsTranslation(error: e.code == 70 || e.message.contains(' 404') ? 'no-server' : 'failed');

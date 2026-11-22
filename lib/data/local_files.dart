@@ -151,6 +151,10 @@ abstract class LocalSource {
 
   /// Fires when something may have changed (a watched folder), so the list is scanned again.
   Stream<void> get changes => const Stream.empty();
+
+  /// A file dart:io can read for an address that isn't a path (Android's content://), for reading its lyrics,
+  /// and the text of a .lrc beside it when that was found another way. [temporary]: a copy to delete after.
+  Future<({String path, String? lrc, bool temporary})?> readable(String uri) async => null;
 }
 
 /// Set at start-up by the platform (Android: MediaStoreSource below; desktop: lib/desktop/local_folders.dart).
