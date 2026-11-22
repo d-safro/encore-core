@@ -157,6 +157,13 @@ Future<void> addToPlaylist(BuildContext context, WidgetRef ref, List<Song> songs
       builder: (ctx, scroll) => ListView(
         controller: scroll,
         children: [
+          // the desktop shows this as a dialog: it says what it's for, like the other dialogs (Your devices,
+          // Sound…); the phone's sheet comes from the button that says so
+          if (isDesktop)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('Add to playlist', style: Theme.of(ctx).textTheme.titleLarge),
+            ),
           ListTile(
             leading: const Icon(Icons.add),
             title: const Text('New playlist'),
