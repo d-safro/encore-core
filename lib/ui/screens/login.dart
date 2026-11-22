@@ -172,7 +172,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         'Type the server address, then get a code to type on a device that\'s signed in '
-                        '(Settings › Sign in another device). Needs the server extras.',
+                        '(Settings › Sign in another device). Needs Conductor or music-lookup.',
                         textAlign: TextAlign.center,
                         style: t.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),

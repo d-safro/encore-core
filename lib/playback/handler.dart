@@ -873,7 +873,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _ =>
         fetcher.unreachable
             ? "your server's song finder isn't answering"
-            : "it's taking a while (it goes in your On trial playlist if it comes)",
+            : "it's taking a while (Audition puts it in your On trial playlist if it comes)",
     };
     playerNotices.add('Skipped "${s.title}": $why');
     final i = player.currentIndex;

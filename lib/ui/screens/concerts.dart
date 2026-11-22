@@ -17,8 +17,8 @@ class ConcertsShelf extends ConsumerWidget {
     final c = ref.watch(concertsProvider).value;
     if (c == null || !c.supported || c.shows.isEmpty) return const SizedBox.shrink();
     return Shelf(
-      title: 'Concerts near you',
-      subtitle: c.city.isEmpty ? 'Set your town under Following › Shows' : 'In ${c.city}, from artists you play',
+      title: 'Marquee',
+      subtitle: c.city.isEmpty ? 'Concerts near you · set your town under Following › Shows' : 'Concerts in ${c.city}, from artists you play',
       textHeight: 76,
       onMore: () => context.push('/concerts'),
       children: [for (final (s, _) in c.shows.take(12)) ConcertCard(s)],
@@ -141,12 +141,12 @@ class ConcertsScreen extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Concerts near you')),
+      appBar: AppBar(title: const Text('Marquee · Concerts near you')),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(concertsProvider),
         child: AsyncView(r, (Concerts c) {
           if (!c.supported) {
-            return const Center(child: Text('Your server can\'t look for concerts (it needs music-lookup)'));
+            return const Center(child: Text('Your server can\'t look for concerts (it needs Conductor or music-lookup)'));
           }
           String? month;
           return ListView(

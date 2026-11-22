@@ -84,13 +84,13 @@ class _InviteSheetState extends ConsumerState<_InviteSheet> {
             final s = snap.data;
             final problem = snap.hasError
                 ? '${snap.error}'.contains('70') || '${snap.error}'.contains('404')
-                    ? 'Your server can\'t share playlists for editing (it needs music-lookup)'
+                    ? 'Your server can\'t share playlists for editing (it needs Conductor or music-lookup)'
                     : 'Couldn\'t make a link: ${snap.error}'
                 : s?.error ?? (s!.url.isEmpty ? 'Your server has no public address for links (JAM_PUBLIC_URL)' : null);
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Invite to edit', style: t.titleLarge),
+                Text('Chorus · Invite to edit', style: t.titleLarge),
                 const SizedBox(height: 4),
                 Text(
                   'Anyone with this link can add songs from your library to "${widget.p.name}", and take out the ones '

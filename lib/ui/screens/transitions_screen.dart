@@ -74,7 +74,7 @@ class _TransitionsScreenState extends ConsumerState<TransitionsScreen> {
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Text(
-            'Smart: the next song comes in at the fade, beat on beat (Automix). Fade: the crossfade. Cut: straight on, no gap.',
+            'Smart: the next song comes in at the fade, beat on beat (Metronome). Fade: the crossfade. Cut: straight on, no gap.',
             style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
         ),

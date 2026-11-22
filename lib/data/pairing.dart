@@ -35,7 +35,7 @@ String serverBase(String typed) {
   return s;
 }
 
-const _noExtras = "This server can't do phone sign-in (it needs the server extras). Sign in with your password.";
+const _noExtras = "This server can't do phone sign-in (it needs Conductor or music-lookup). Sign in with your password.";
 
 http.Client _http() => IOClient(HttpClient()..connectionTimeout = const Duration(seconds: 10));
 

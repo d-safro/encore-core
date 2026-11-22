@@ -152,7 +152,7 @@ Future<void> checkNewReleases({SharedPreferences? p}) async {
 // ── Your year in review (1 December) ──
 const _reviewChannel = AndroidNotificationDetails(
   'year_review',
-  'Your year in review',
+  'Curtain Call · Your year in review',
   channelDescription: 'Once a year, on 1 December: your year in music is ready',
   importance: Importance.defaultImportance,
   icon: 'drawable/ic_stat_encore',
@@ -164,14 +164,14 @@ Future<void> announceYearReview({SharedPreferences? p, DateTime? now}) async {
   final n = now ?? DateTime.now();
   if (n.month != 12 || p.getInt('reviewAnnounced') == n.year || !(p.getBool('reviewAlerts') ?? true)) return;
   await p.setInt('reviewAnnounced', n.year);
-  await _show(3, 'Your ${n.year} in music is ready', 'Your top artists, songs, streaks and finds', 'review',
+  await _show(3, 'Curtain Call: your ${n.year} in music is ready', 'Your top artists, songs, streaks and finds', 'review',
       android: _reviewChannel);
 }
 
 // ── Concerts near you: a new show announced ──
 const _concertChannel = AndroidNotificationDetails(
   'concerts',
-  'Concerts near you',
+  'Marquee · Concerts near you',
   channelDescription: 'When an artist you play or follow announces a show near you',
   importance: Importance.defaultImportance,
   icon: 'drawable/ic_stat_encore',
@@ -196,10 +196,10 @@ Future<void> checkNewConcerts({SharedPreferences? p}) async {
     final fresh = newShows(all, since);
     if (fresh.length == 1) {
       final s = fresh.first;
-      await _show(4, '${s.artist} is playing near you', '${showDate(s.date)} · ${s.place}', 'concerts',
+      await _show(4, 'Marquee: ${s.artist} is playing near you', '${showDate(s.date)} · ${s.place}', 'concerts',
           android: _concertChannel);
     } else if (fresh.length > 1) {
-      await _show(4, '${fresh.length} new concerts near you', fresh.map((s) => s.artist).toSet().take(4).join(', '),
+      await _show(4, 'Marquee: ${fresh.length} new concerts near you', fresh.map((s) => s.artist).toSet().take(4).join(', '),
           'concerts', android: _concertChannel);
     }
   } catch (_) {

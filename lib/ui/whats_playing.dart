@@ -61,7 +61,7 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
       if (mounted) {
         setState(() {
           _left = null;
-          _problem = e.code == 70 ? 'Your server can\'t recognise songs (it needs music-lookup and song-id)' : '$e';
+          _problem = e.code == 70 ? 'Your server can\'t recognise songs (Pitch needs Conductor or music-lookup with song-id)' : '$e';
         });
       }
     } catch (e) {
@@ -87,7 +87,7 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('What\'s playing?', style: t.titleLarge),
+            Text('Pitch · What\'s playing?', style: t.titleLarge),
             const SizedBox(height: 4),
             Text(
               isDesktop ? 'Listens to what this computer is playing' : 'Listens with the microphone, among your songs',

@@ -251,7 +251,7 @@ class _TopBar extends ConsumerWidget {
             ),
           ),
           IconButton(
-            tooltip: 'Jam',
+            tooltip: 'Ensemble · Listen together',
             icon: Icon(
               Icons.groups_rounded,
               color: ref.watch(jamProvider).active ? Theme.of(context).colorScheme.primary : null,
@@ -991,7 +991,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             children: [
               FilterChip(
                 avatar: busy && _mode == 'translate' ? spinner() : const Icon(Icons.translate_rounded, size: 18),
-                label: Text('Translate into $lang'),
+                label: Text('Libretto · Translate into $lang'),
                 selected: _mode == 'translate',
                 showCheckmark: false,
                 onSelected: (_) => _setMode('translate'),
@@ -1007,7 +1007,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             ],
           ),
           if (busy)
-            Text('Translating on your server, the first time takes a moment',
+            Text('Libretto is translating on your server; the first time takes a moment',
                 style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
           if (note != null) Text(note, style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
         ],

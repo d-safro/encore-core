@@ -55,7 +55,7 @@ class JamNotifier extends Notifier<JamState> {
     } on SubsonicException catch (e) {
       state = JamState(error: e.message);
     } catch (e) {
-      state = JamState(error: "Couldn't start the Jam: $e");
+      state = JamState(error: "Couldn't start the Ensemble: $e");
     }
   }
 

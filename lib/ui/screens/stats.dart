@@ -97,7 +97,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: FilledButton.tonalIcon(
                   icon: const Icon(Icons.auto_awesome_rounded),
-                  label: Text('Your ${reviewTitle(_period, _offset)} in review'),
+                  label: Text('Curtain Call · Your ${reviewTitle(_period, _offset)} in review'),
                   onPressed: () => context.push('/review?period=$_period&offset=$_offset'),
                 ),
               ),

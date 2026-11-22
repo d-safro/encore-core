@@ -130,7 +130,7 @@ class SongFetcher {
 String trialRules(LookupReport? r) {
   final h = r?.trialHours ?? 24, n = r?.perDay ?? 40;
   final hours = h == 24 ? 'a day' : (h == 1 ? 'an hour' : '${h == h.roundToDouble() ? h.toInt() : h} hours');
-  return 'Playing or queueing a song you don\'t have gets it into your "On trial" playlist. Heart it (or add it '
+  return 'Audition: playing or queueing a song you don\'t have gets it into your "On trial" playlist. Heart it (or add it '
       'to a playlist) to keep it for good; the rest are deleted $hours after they arrive. Up to $n new songs a '
       'day. Off: you\'re asked first.';
 }
