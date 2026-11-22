@@ -77,10 +77,23 @@ class SubsonicClient {
     Map<String, dynamic> params = const {},
     String? client,
     Duration timeout = const Duration(seconds: 30),
-  ]) async {
+  ]) => _call(method, params, client, timeout, false);
+
+  /// The same as [call], always as a form POST: for a secret (a token), which shouldn't be in a URL that proxies
+  /// and logs keep.
+  Future<Map<String, dynamic>> callPost(String method, Map<String, dynamic> params) =>
+      _call(method, params, null, const Duration(seconds: 30), true);
+
+  Future<Map<String, dynamic>> _call(
+    String method,
+    Map<String, dynamic> params,
+    String? client,
+    Duration timeout,
+    bool post,
+  ) async {
     final u = url(method, params, client);
     // long requests (a big queue or playlist) go as a form POST (OpenSubsonic formPost); URLs have a size limit
-    final res = u.query.length > 1800
+    final res = post || u.query.length > 1800
         ? await _http
               .post(
                 u.replace(query: ''),

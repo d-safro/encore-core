@@ -12,6 +12,7 @@ import '../../core/appearance.dart';
 import '../../core/platform.dart';
 import '../../core/settings.dart';
 import '../../data/mixes.dart';
+import '../../data/scrobbling.dart';
 import '../../data/audiobooks.dart';
 import '../../data/lyrics_translation.dart';
 import '../../data/account.dart';
@@ -211,10 +212,11 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             secondary: const Icon(Icons.history),
             title: const Text('Scrobble plays'),
-            subtitle: const Text('Play counts, Last.fm / ListenBrainz through the server'),
+            subtitle: const Text('Play counts on the server, and your ListenBrainz and Last.fm if linked'),
             value: s.scrobble,
             onChanged: (v) => set('scrobble', v),
           ),
+          const _ScrobblingSettings(),
           SwitchListTile(
             secondary: const Icon(Icons.devices),
             title: const Text('Keep the queue on the server'),
@@ -1417,6 +1419,240 @@ class _MixesSettingsState extends ConsumerState<_MixesSettings> {
       ],
     );
   }
+}
+
+/// Your own ListenBrainz and Last.fm, linked on the server (Conductor), which sends your plays there. Hidden on
+/// servers that can't.
+class _ScrobblingSettings extends ConsumerStatefulWidget {
+  const _ScrobblingSettings();
+  @override
+  ConsumerState<_ScrobblingSettings> createState() => _ScrobblingSettingsState();
+}
+
+class _ScrobblingSettingsState extends ConsumerState<_ScrobblingSettings> {
+  bool _busy = false;
+
+  Future<void> _run(Future<void> Function() f) async {
+    setState(() => _busy = true);
+    try {
+      await f();
+    } catch (e) {
+      if (mounted) toast(context, '$e');
+    } finally {
+      ref.invalidate(scrobblingProvider);
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _status(ScrobbleAccount a, String service) {
+    if (a.broken) return '$service stopped accepting the link: tap to link it again';
+    if (a.fromSettings) return 'Linked${a.name.isEmpty ? '' : ' as ${a.name}'} in the server\'s settings';
+    if (a.linked) return 'Linked as ${a.name}: your plays are sent there';
+    return 'Not linked';
+  }
+
+  Future<void> _listenBrainz(Scrobbling s) async {
+    final c = ref.read(clientProvider);
+    if (c == null) return;
+    final lb = s.listenBrainz;
+    if (lb.linked && !lb.broken && !lb.fromSettings) {
+      final off = await _confirm('Unlink ListenBrainz?', 'Your plays stop going to ${lb.name}. Plays already sent stay there.', 'Unlink');
+      if (off) await _run(() async => c.setListenBrainz(''));
+      return;
+    }
+    final token = await showDialog<String>(context: context, builder: (_) => const _TokenDialog());
+    if (token == null || token.trim().isEmpty) return;
+    await _run(() async {
+      final r = await c.setListenBrainz(token);
+      if (mounted) toast(context, 'ListenBrainz linked as ${r.listenBrainz.name}');
+    });
+  }
+
+  Future<void> _lastfm(Scrobbling s) async {
+    final c = ref.read(clientProvider);
+    if (c == null) return;
+    final lf = s.lastfm;
+    if (lf.linked && !lf.broken) {
+      final off = await _confirm('Unlink Last.fm?', 'Your plays stop going to ${lf.name}. Plays already sent stay there.', 'Unlink');
+      if (off) await _run(() async => c.lastfmUnlink());
+      return;
+    }
+    LastfmLink link;
+    try {
+      setState(() => _busy = true);
+      link = await c.lastfmLinkStart();
+    } catch (e) {
+      if (mounted) toast(context, '$e');
+      return;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    await openUrl(link.url);
+    if (!mounted) return;
+    final status = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _LastfmWaitDialog(client: c, link: link),
+    );
+    ref.invalidate(scrobblingProvider);
+    if (!mounted) return;
+    if (status == 'linked') toast(context, 'Last.fm linked');
+    if (status == 'expired') toast(context, 'That Last.fm link ran out: try again');
+  }
+
+  Future<bool> _confirm(String title, String text, String yes) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(title),
+          content: Text(text),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(yes)),
+          ],
+        ),
+      ) ??
+      false;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = ref.watch(scrobblingProvider).value;
+    if (s == null || !s.supported) return const SizedBox.shrink();
+    final lb = s.listenBrainz, lf = s.lastfm;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          leading: Icon(Icons.graphic_eq_rounded, color: lb.broken ? Theme.of(context).colorScheme.error : null),
+          title: const Text('ListenBrainz'),
+          subtitle: Text(_status(lb, 'ListenBrainz')),
+          trailing: lb.linked && !lb.broken && !lb.fromSettings ? const Text('Unlink') : null,
+          enabled: !_busy && !lb.fromSettings,
+          onTap: () => _listenBrainz(s),
+        ),
+        ListTile(
+          leading: Icon(Icons.radio_rounded, color: lf.broken ? Theme.of(context).colorScheme.error : null),
+          title: const Text('Last.fm'),
+          subtitle: Text(
+            lf.available || lf.linked ? _status(lf, 'Last.fm') : 'Not set up on this server: its admin adds a Last.fm API key and secret',
+          ),
+          trailing: lf.linked && !lf.broken ? const Text('Unlink') : null,
+          enabled: !_busy && (lf.available || lf.linked),
+          onTap: () => _lastfm(s),
+        ),
+      ],
+    );
+  }
+}
+
+/// Paste your ListenBrainz user token (listenbrainz.org/settings).
+class _TokenDialog extends StatefulWidget {
+  const _TokenDialog();
+  @override
+  State<_TokenDialog> createState() => _TokenDialogState();
+}
+
+class _TokenDialogState extends State<_TokenDialog> {
+  final _c = TextEditingController();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Link ListenBrainz'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Paste your user token from ListenBrainz\'s settings page. The server keeps it and sends your plays.'),
+        TextButton.icon(
+          icon: const Icon(Icons.open_in_new_rounded, size: 18),
+          label: const Text('listenbrainz.org/settings'),
+          onPressed: () => openUrl('https://listenbrainz.org/settings/'),
+        ),
+        TextField(
+          controller: _c,
+          autofocus: true,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'User token'),
+          onSubmitted: (v) => Navigator.pop(context, v),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      TextButton(onPressed: () => Navigator.pop(context, _c.text), child: const Text('Link')),
+    ],
+  );
+}
+
+/// While you approve Encore's server on Last.fm's page: it checks every few seconds until it's linked.
+class _LastfmWaitDialog extends StatefulWidget {
+  const _LastfmWaitDialog({required this.client, required this.link});
+  final SubsonicClient client;
+  final LastfmLink link;
+  @override
+  State<_LastfmWaitDialog> createState() => _LastfmWaitDialogState();
+}
+
+class _LastfmWaitDialogState extends State<_LastfmWaitDialog> {
+  bool _done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _poll();
+  }
+
+  @override
+  void dispose() {
+    _done = true;
+    super.dispose();
+  }
+
+  Future<void> _poll() async {
+    final until = DateTime.now().add(const Duration(minutes: 10));
+    while (!_done && DateTime.now().isBefore(until)) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (_done) return;
+      String status;
+      try {
+        status = await widget.client.lastfmLinkFinish(widget.link.token);
+      } catch (_) {
+        continue; // the network hiccups: ask again
+      }
+      if (status != 'waiting') {
+        _done = true;
+        if (mounted) Navigator.pop(context, status);
+        return;
+      }
+    }
+    if (!_done && mounted) Navigator.pop(context, 'expired');
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Link Last.fm'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Last.fm opened in your browser. Allow access there, then come back: this finishes by itself.'),
+        const SizedBox(height: 16),
+        const LinearProgressIndicator(),
+        TextButton.icon(
+          icon: const Icon(Icons.open_in_new_rounded, size: 18),
+          label: const Text('Open Last.fm again'),
+          onPressed: () => openUrl(widget.link.url),
+        ),
+      ],
+    ),
+    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))],
+  );
 }
 
 /// Settings › Not suggested: take songs and artists off the list.
