@@ -302,10 +302,13 @@ class SyncState {
 }
 
 class SyncNotifier extends Notifier<SyncState> {
+  int _gen = 0; // goes up when you switch servers: a sync of the server you left stops
+
   @override
   SyncState build() {
+    final gen = ++_gen;
     ref.read(dbProvider).lastSync().then((d) {
-      if (!state.running) state = SyncState(last: d);
+      if (gen == _gen && !state.running) state = SyncState(last: d);
     });
     return const SyncState();
   }
@@ -316,24 +319,29 @@ class SyncNotifier extends Notifier<SyncState> {
     final c = ref.read(clientProvider);
     if (c == null || state.running) return;
     const who = 'Encore-sync';
+    final gen = _gen;
+    // what this sync says goes to its own server's state only
+    void set(SyncState s) {
+      if (gen == _gen) state = s;
+    }
     try {
-      state = const SyncState(running: true, message: 'Artists…');
+      set(const SyncState(running: true, message: 'Artists…'));
       final artists = (await c.artists()).where((a) => !a.isLookup).toList();
       final albums = <Album>[];
       for (var off = 0; ; off += 500) {
-        state = SyncState(running: true, message: 'Albums… ${albums.length}');
+        set(SyncState(running: true, message: 'Albums… ${albums.length}'));
         final page = await c.albumList('alphabeticalByName', size: 500, offset: off, client: who);
         albums.addAll(page.where((a) => !a.isLookup));
         if (page.length < 500) break;
       }
       final songs = <Song>[];
       for (var off = 0; ; off += 500) {
-        state = SyncState(running: true, message: 'Songs… ${songs.length}');
+        set(SyncState(running: true, message: 'Songs… ${songs.length}'));
         final r = await c.search('', artistCount: 0, albumCount: 0, songCount: 500, offset: off, client: who);
         songs.addAll(r.songs.where((s) => !s.isLookup));
         if (r.songs.length < 500) break;
       }
-      state = const SyncState(running: true, message: 'Playlists…');
+      set(const SyncState(running: true, message: 'Playlists…'));
       final playlists = await c.playlists();
       final plSongs = <String, List<String>>{};
       for (final p in playlists) {
@@ -341,13 +349,15 @@ class SyncNotifier extends Notifier<SyncState> {
           plSongs[p.id] = (await c.playlist(p.id)).songs.map((s) => s.id).toList();
         } catch (_) {} // one playlist that won't load shouldn't stop the whole sync
       }
+      // switched to another server meanwhile: its library copy isn't this one (its own sync fills it)
+      if (gen != _gen) return;
       await ref
           .read(dbProvider)
           .replaceLibrary(artists: artists, albums: albums, songs: songs, playlists: playlists, playlistSongs: plSongs);
-      state = SyncState(message: '${songs.length} ${songs.length == 1 ? 'song' : 'songs'}, ${albums.length} ${albums.length == 1 ? 'album' : 'albums'} saved', last: DateTime.now());
+      set(SyncState(message: '${songs.length} ${songs.length == 1 ? 'song' : 'songs'}, ${albums.length} ${albums.length == 1 ? 'album' : 'albums'} saved', last: DateTime.now()));
       ref.read(downloadsProvider.notifier).refreshPins();
     } catch (e) {
-      state = SyncState(message: 'Sync failed: $e', last: state.last);
+      set(SyncState(message: 'Sync failed: $e', last: state.last));
     }
   }
 }
