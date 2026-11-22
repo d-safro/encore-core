@@ -182,7 +182,9 @@ class UpnpSession implements RemoteSpeaker {
     return body;
   }
 
-  void _quiet(Future<void> Function() f) => f().catchError((_) {});
+  // ignore(), not catchError((_) {}): the future is a Future<String>, and a handler returning nothing for it
+  // throws "must return a value of the future's type" instead of quieting the failure
+  void _quiet(Future<Object?> Function() f) => f().ignore();
 
   Future<void> _status() async {
     if (!isOpen) return;

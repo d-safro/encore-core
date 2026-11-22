@@ -15,7 +15,8 @@ const _desc = '''<?xml version="1.0"?>
 </serviceList></device></root>''';
 
 /// A pretend TV: answers SOAP like a renderer and remembers every action.
-Future<(HttpServer, List<(String, String)>)> fakeRenderer() async {
+/// Actions in [refuse] answer with a SOAP fault (500), like a TV that won't pause an ad or has gone to sleep.
+Future<(HttpServer, List<(String, String)>)> fakeRenderer({Set<String> refuse = const {}}) async {
   final calls = <(String, String)>[];
   var state = 'STOPPED';
   final srv = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -36,6 +37,10 @@ Future<(HttpServer, List<(String, String)>)> fakeRenderer() async {
         'GetPositionInfo' => '<RelTime>0:01:05</RelTime>',
         _ => '',
       };
+    }
+    if (refuse.contains(action)) {
+      req.response.statusCode = 500;
+      out = '<errorDescription>Action failed</errorDescription>';
     }
     req.response.write(out);
     await req.response.close();
@@ -91,5 +96,19 @@ void main() {
     await s.close();
     expect(s.isOpen, isFalse);
     expect(calls.last.$1, 'Stop');
+  });
+
+  test("a renderer refusing play, pause, seek or volume doesn't throw an uncaught error", () async {
+    final (srv, calls) = await fakeRenderer(refuse: {'Play', 'Pause', 'Seek', 'SetVolume'});
+    addTearDown(() => srv.close(force: true));
+    final dev = CastDevice('TV', '127.0.0.1', srv.port, location: 'http://127.0.0.1:${srv.port}/desc.xml');
+    final s = await UpnpSession.connect(dev);
+    s.play();
+    s.pause();
+    s.seek(const Duration(seconds: 30));
+    s.setVolume(0.4);
+    await Future.delayed(const Duration(milliseconds: 300)); // an uncaught error here fails the test
+    expect(calls.map((c) => c.$1), containsAll(['Play', 'Pause', 'Seek', 'SetVolume']));
+    await s.close(stopApp: false);
   });
 }
