@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:encore_core/data/scrobbling.dart';
 import 'package:encore_core/data/subsonic.dart';
@@ -65,4 +66,32 @@ void main() {
     final c = SubsonicClient(const Credentials('http://server', 'me', 'pw'), httpClient: MockClient((req) async => http.Response('', 404)));
     expect(() => c.scrobbling(), throwsA(isA<SubsonicException>().having((e) => e.message, 'message', contains(' 404'))));
   });
+
+  test("a server that can't be reached: the error shown and logged doesn't carry the login", () async {
+    for (final fail in <Exception Function(Uri)>[
+      (u) => http.ClientException('Connection refused', u),
+      (u) => _Refused(u), // how http's IOClient reports it: a SocketException too
+    ]) {
+      final c = SubsonicClient(const Credentials('http://server', 'me', 'pw'), httpClient: MockClient((req) async => throw fail(req.url)));
+      Object? got;
+      try {
+        await c.lastfmLinkStart();
+      } catch (e) {
+        got = e;
+      }
+      expect(got, isA<http.ClientException>());
+      expect('$got', allOf(contains('http://server/rest/lastfmLinkStart'), isNot(contains('t=')), isNot(contains('s='))));
+      if (fail(Uri()) is SocketException) expect(got, isA<SocketException>()); // still counts as no network
+    }
+  });
+}
+
+class _Refused extends http.ClientException implements SocketException {
+  _Refused(Uri u) : super('Connection refused', u);
+  @override
+  InternetAddress? get address => null;
+  @override
+  OSError? get osError => null;
+  @override
+  int? get port => null;
 }
