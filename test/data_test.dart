@@ -5,7 +5,7 @@ import 'package:encore_core/data/library.dart';
 import 'package:encore_core/data/models.dart';
 import 'package:encore_core/data/subsonic.dart';
 import 'package:encore_core/data/updates.dart';
-import 'package:encore_core/playback/handler.dart' show stillPending;
+import 'package:encore_core/playback/handler.dart' show placeAfterMove, placeAfterRemove, stillPending;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -92,6 +92,19 @@ void main() {
     // sent a|1 and b|2 (b failed); c|3 was played offline meanwhile
     expect(stillPending(['a|1', 'b|2'], ['b|2'], ['a|1', 'b|2', 'c|3']), ['b|2', 'c|3']);
     expect(stillPending(['a|1'], [], ['a|1']), isEmpty);
+  });
+
+  test("a held queue (no server at start-up) keeps its song when you change the queue", () {
+    // held at song 5 of 10: one before it goes, it goes (the next takes its place), one after it goes
+    expect(placeAfterRemove(5, 1, 9), 4);
+    expect(placeAfterRemove(5, 5, 9), 5);
+    expect(placeAfterRemove(5, 7, 9), 5);
+    expect(placeAfterRemove(9, 9, 9), 8); // the last one: the one before it is the last now
+    // moved: itself, from before it to after it, from after it to before it, elsewhere
+    expect(placeAfterMove(5, 5, 2), 2);
+    expect(placeAfterMove(5, 1, 7), 4);
+    expect(placeAfterMove(5, 8, 0), 6);
+    expect(placeAfterMove(5, 7, 9), 5);
   });
 
   group('server client', () {

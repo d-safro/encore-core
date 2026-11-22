@@ -1,6 +1,13 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'dart:async';
+
+import 'package:encore_core/data/account.dart';
 import 'package:encore_core/data/scrobbling.dart';
+import 'package:encore_core/ui/screens/settings.dart' show ScrobblingSettings;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:encore_core/data/subsonic.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -65,4 +72,72 @@ void main() {
     final c = SubsonicClient(const Credentials('http://server', 'me', 'pw'), httpClient: MockClient((req) async => http.Response('', 404)));
     expect(() => c.scrobbling(), throwsA(isA<SubsonicException>().having((e) => e.message, 'message', contains(' 404'))));
   });
+
+  test("a server that can't be reached: the error shown and logged doesn't carry the login", () async {
+    for (final fail in <Exception Function(Uri)>[
+      (u) => http.ClientException('Connection refused', u),
+      (u) => _Refused(u), // how http's IOClient reports it: a SocketException too
+    ]) {
+      final c = SubsonicClient(const Credentials('http://server', 'me', 'pw'), httpClient: MockClient((req) async => throw fail(req.url)));
+      Object? got;
+      try {
+        await c.lastfmLinkStart();
+      } catch (e) {
+        got = e;
+      }
+      expect(got, isA<http.ClientException>());
+      expect('$got', allOf(contains('http://server/rest/lastfmLinkStart'), isNot(contains('t=')), isNot(contains('s='))));
+      if (fail(Uri()) is SocketException) expect(got, isA<SocketException>()); // still counts as no network
+    }
+  });
+
+  testWidgets('Settings closed before ListenBrainz answers: no error, and what is linked is asked again', (tester) async {
+    final answer = Completer<http.Response>();
+    var asked = 0;
+    final c = SubsonicClient(const Credentials('http://server', 'me', 'pw'), httpClient: MockClient((req) async {
+      if (req.url.path.endsWith('setListenBrainz')) return answer.future;
+      asked++;
+      return _ok({
+        'scrobbling': {
+          'listenbrainz': {'linked': false},
+          'lastfm': {'available': false},
+        },
+      });
+    }));
+    final container = ProviderContainer(overrides: [clientProvider.overrideWithValue(c)]);
+    addTearDown(container.dispose);
+    container.listen(scrobblingProvider, (_, _) {});
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: ScrobblingSettings())),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('ListenBrainz'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'made-up-token');
+    await tester.tap(find.text('Link'));
+    await tester.pump();
+    // Settings closes while the server is still checking the token
+    await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const SizedBox()));
+    answer.complete(_ok({
+      'scrobbling': {
+        'listenbrainz': {'linked': true, 'name': 'me_lb'},
+        'lastfm': {'available': false},
+      },
+    }));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await container.read(scrobblingProvider.future);
+    expect(asked, 2);
+  });
+}
+
+class _Refused extends http.ClientException implements SocketException {
+  _Refused(Uri u) : super('Connection refused', u);
+  @override
+  InternetAddress? get address => null;
+  @override
+  OSError? get osError => null;
+  @override
+  int? get port => null;
 }

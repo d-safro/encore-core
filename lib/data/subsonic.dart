@@ -31,6 +31,21 @@ class CoverRefused implements Exception {
   String toString() => message;
 }
 
+/// The server couldn't be reached: still a [SocketException] (and so an [IOException]), like http's own, but
+/// with the address and not the login in it (see [SubsonicClient.call]).
+class _NoConnection extends http.ClientException implements SocketException {
+  _NoConnection(this.cause, Uri uri) : super(cause.message, uri);
+  final SocketException cause;
+  @override
+  InternetAddress? get address => cause.address;
+  @override
+  OSError? get osError => cause.osError;
+  @override
+  int? get port => cause.port;
+  @override
+  String toString() => 'ClientException with $cause, uri=$uri';
+}
+
 class Credentials {
   final String server, username, password;
   const Credentials(this.server, this.username, this.password);
@@ -93,15 +108,17 @@ class SubsonicClient {
   ) async {
     final u = url(method, params, client);
     // long requests (a big queue or playlist) go as a form POST (OpenSubsonic formPost); URLs have a size limit
-    final res = post || u.query.length > 1800
-        ? await _http
-              .post(
-                u.replace(query: ''),
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: u.query,
-              )
-              .timeout(timeout)
-        : await _http.get(u).timeout(timeout);
+    final res = await _send(
+      u,
+      () => post || u.query.length > 1800
+          ? _http.post(
+              u.replace(query: ''),
+              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+              body: u.query,
+            )
+          : _http.get(u),
+      timeout,
+    );
     if (res.statusCode == 401 || res.statusCode == 403) {
       throw SubsonicException(40, 'Wrong username or password');
     }
@@ -126,6 +143,21 @@ class SubsonicClient {
       throw SubsonicException((e['code'] as num?)?.toInt() ?? 0, (e['message'] ?? 'Request failed').toString());
     }
     return r;
+  }
+
+  /// Sends a request to [u]. When it fails, the error's text carries the address, and with it your login (a
+  /// token that works again and again): it's shown in messages and written to the log, so it goes without it.
+  Future<http.Response> _send(Uri u, Future<http.Response> Function() send, Duration timeout) async {
+    try {
+      return await send().timeout(timeout);
+    } on http.ClientException catch (e) {
+      final at = u.replace(query: '');
+      if (e is SocketException) {
+        final s = e as SocketException; // (not its own text: http's has the address in it again)
+        throw _NoConnection(SocketException(s.message, osError: s.osError, address: s.address, port: s.port), at);
+      }
+      throw http.ClientException(e.message, at);
+    }
   }
 
   Map<String, dynamic> _m(dynamic v) => v is Map ? v.cast<String, dynamic>() : <String, dynamic>{};
@@ -673,11 +705,13 @@ class SubsonicClient {
     Map<String, dynamic>? body,
   }) async {
     final u = url('audiomuse/$endpoint', query);
-    final res = body == null
-        ? await _http.get(u).timeout(const Duration(seconds: 90))
-        : await _http
-              .post(u, headers: {'Content-Type': 'application/json'}, body: jsonEncode(body))
-              .timeout(const Duration(seconds: 90));
+    final res = await _send(
+      u,
+      () => body == null
+          ? _http.get(u)
+          : _http.post(u, headers: {'Content-Type': 'application/json'}, body: jsonEncode(body)),
+      const Duration(seconds: 90),
+    );
     if (res.statusCode == 404) throw SubsonicException(404, 'Your server doesn\'t offer AI recommendations');
     if (res.statusCode == 401) throw SubsonicException(40, 'Wrong username or password');
     final data = res.bodyBytes.isEmpty ? null : jsonDecode(utf8.decode(res.bodyBytes));
@@ -689,6 +723,20 @@ class SubsonicClient {
       );
     }
     return data;
+  }
+
+  /// Whether the server offers AudioMuse-AI's recommendations: one without them (Navidrome, Conductor with no
+  /// audiomuse_url) answers 404, which [audiomuse] turns into "doesn't offer AI recommendations". Can't tell
+  /// (no answer, another error): true, so a passing problem hides nothing.
+  Future<bool> offersAudiomuse() async {
+    try {
+      await audiomuse('sonic_fingerprint/generate', query: {'n': 1});
+      return true;
+    } on SubsonicException catch (e) {
+      return e.code != 404;
+    } catch (_) {
+      return true;
+    }
   }
 
   // ── Media URLs ──

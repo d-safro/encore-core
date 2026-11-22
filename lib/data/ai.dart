@@ -115,3 +115,11 @@ final aiProvider = Provider<Ai?>((ref) {
   final repo = ref.watch(repoProvider);
   return c == null || !repo.online ? null : Ai(c, repo);
 });
+
+/// Whether the server offers AudioMuse-AI at all (found out once, see [SubsonicClient.offersAudiomuse]):
+/// without it, Discover says so instead of showing mixes that can't be made. False offline.
+final aiOfferedProvider = FutureProvider.autoDispose<bool>((ref) async {
+  ref.cacheFor(const Duration(minutes: 30));
+  final ai = ref.watch(aiProvider);
+  return ai != null && await ai.c.offersAudiomuse();
+});
