@@ -15,6 +15,7 @@ import 'cast.dart';
 import 'upnp.dart';
 import 'desktop_audio.dart';
 import 'fetching.dart';
+import 'transitions.dart';
 import 'private_session.dart';
 import '../core/platform.dart';
 import '../core/settings.dart';
@@ -341,14 +342,22 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   bool _fadeReady = false; // the next song is loaded on the second player
   Timer? _fadeTimer;
 
+  /// The playlist playing, for its hand-picked transitions (transitions.dart).
+  String? get _transitionList => playContext?.kind == 'playlist' ? playContext!.id : null;
+
+  TransitionKind? _chosen(int i) =>
+      i + 1 < _songs.length ? transitionFor(_transitionList, _songs[i].id, _songs[i + 1].id) : null;
+
   bool _fadeAllowed(int i) {
     final cf = _settings.crossfade;
-    if ((cf <= 0 && !_settings.automix) || _cast != null || radioStation != null || i + 1 >= _songs.length || player.loopMode == LoopMode.one) return false;
+    final chosen = _chosen(i);
+    if (chosen == TransitionKind.cut) return false;
+    if ((cf <= 0 && !_settings.automix && chosen == null) || _cast != null || radioStation != null || i + 1 >= _songs.length || player.loopMode == LoopMode.one) return false;
     final a = _songs[i], b = _songs[i + 1];
     if (isPodcastId(a.id) || isPodcastId(b.id) || a.isLookup || b.isLookup) return false;
     if (!canPlay(b)) return false;
-    // an album played in order stays seamless (live records, DJ mixes, concept albums)
-    if (!_settings.crossfadeAlbums && a.albumId.isNotEmpty && a.albumId == b.albumId && (b.track ?? 0) == (a.track ?? 0) + 1) {
+    // an album played in order stays seamless (live records, DJ mixes, concept albums), unless chosen by hand
+    if (chosen == null && !_settings.crossfadeAlbums && a.albumId.isNotEmpty && a.albumId == b.albumId && (b.track ?? 0) == (a.track ?? 0) + 1) {
       return false;
     }
     return true;
@@ -359,7 +368,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   final _mixAsked = <String, DateTime>{};
 
   Future<void> _fetchMixInfo(int i) async {
-    if (!_settings.automix || container.read(offlineProvider)) return;
+    if ((!_settings.automix && !wantsSmart(_transitionList)) || container.read(offlineProvider)) return;
     final c = container.read(clientProvider);
     if (c == null) return;
     final now = DateTime.now();
@@ -381,15 +390,19 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// The tempo the server measured for a song (Automix), for the queue.
   double? bpmOf(String id) => _mixInfo[id]?.bpm;
 
-  Transition? _plan(int i, Duration dur) => i + 1 >= _songs.length
-      ? null
-      : planTransition(
-          length: dur,
-          a: _mixInfo[_songs[i].id],
-          b: _mixInfo[_songs[i + 1].id],
-          automix: _settings.automix,
-          crossfade: _settings.crossfade,
-        );
+  Transition? _plan(int i, Duration dur) {
+    if (i + 1 >= _songs.length) return null;
+    final chosen = _chosen(i);
+    if (chosen == TransitionKind.cut) return null;
+    return planTransition(
+      length: dur,
+      a: _mixInfo[_songs[i].id],
+      b: _mixInfo[_songs[i + 1].id],
+      automix: chosen == null ? _settings.automix : chosen == TransitionKind.smart,
+      // Fade chosen with the crossfade off: 6 s
+      crossfade: chosen == TransitionKind.fade && _settings.crossfade == 0 ? 6 : _settings.crossfade,
+    );
+  }
 
   void _fadeTick(Duration pos) {
     if (!player.playing) return;
@@ -398,7 +411,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final left = dur - pos;
     if (_fadeFrom != null && _fadeFrom != i) _cancelFade(); // moved somewhere else
     // not measured yet (just asked, the server measures it first): ask again before it's time
-    if (_settings.automix && left < const Duration(seconds: 60) && i + 1 < _songs.length &&
+    if ((_settings.automix || _chosen(i) == TransitionKind.smart) && left < const Duration(seconds: 60) && i + 1 < _songs.length &&
         (!_mixInfo.containsKey(_songs[i].id) || !_mixInfo.containsKey(_songs[i + 1].id))) {
       _fetchMixInfo(i);
     }

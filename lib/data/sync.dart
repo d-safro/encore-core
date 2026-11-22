@@ -49,6 +49,7 @@ final syncedValues = <SyncedValue>[
   _pref('podcastDone'),
   _pref('followedArtists', after: (ref) => ref.invalidate(followsProvider)),
   _pref('showsPrefs', after: (ref) => ref.invalidate(showsPrefsProvider)),
+  _pref('playlistTransitions'), // Edit transitions (playback/transitions.dart)
   SyncedValue(
     'homeSections',
     (ref) => ref.read(settingsProvider).homeSections,

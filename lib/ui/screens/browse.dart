@@ -21,6 +21,7 @@ import '../state.dart';
 import '../widgets.dart';
 import '../../data/playlist_covers.dart';
 import 'playlist_edit.dart';
+import 'transitions_screen.dart';
 import '../collab_sheet.dart';
 import 'smart_playlist.dart';
 import 'radio.dart';
@@ -710,6 +711,9 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                       });
                     case 'details':
                       await showPlaylistDetails(context, ref, p);
+                    case 'transitions':
+                      await Navigator.of(context, rootNavigator: true)
+                          .push(MaterialPageRoute(builder: (_) => TransitionsScreen(playlist: p)));
                     case 'invite':
                       await showInviteToEdit(context, p);
                     case 'picture':
@@ -744,6 +748,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                   const PopupMenuItem(value: 'rules', child: Text('Edit rules'))
                 else
                   const PopupMenuItem(value: 'edit', child: Text('Reorder / remove songs')),
+                const PopupMenuItem(value: 'transitions', child: Text('Edit transitions')),
                 const PopupMenuItem(value: 'delete', child: Text('Delete')),
               ],
             ),
