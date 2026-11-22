@@ -6,6 +6,7 @@ import '../../core/appearance.dart';
 import '../../core/platform.dart';
 import '../../core/settings.dart';
 import '../../data/follows.dart';
+import '../../data/models.dart' show LookupState;
 import '../../data/shows.dart';
 import '../../data/updates.dart' show openUrl;
 import '../../data/episode_alerts.dart' show askNotificationPermission, releaseAlertsOn;
@@ -66,17 +67,18 @@ class ReleaseCard extends StatelessWidget {
                   Positioned(
                     right: 6,
                     top: 6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: soon ? cs.primary : cs.surface.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        soon ? 'Soon' : '⬇',
-                        style: t.labelSmall?.copyWith(color: soon ? cs.onPrimary : cs.onSurface),
-                      ),
-                    ),
+                    // not in your library: the same round badge as an album card's (an icon, not a ⬇ character)
+                    child: soon
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(10)),
+                            child: Text('Soon', style: t.labelSmall?.copyWith(color: cs.onPrimary)),
+                          )
+                        : Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(color: cs.surface.withValues(alpha: 0.85), shape: BoxShape.circle),
+                            child: const LookupBadge(LookupState.available),
+                          ),
                   ),
               ],
             ),
@@ -216,7 +218,7 @@ class _ReleasesTabState extends ConsumerState<_ReleasesTab> {
       subtitle: Text('${r.artist} · ${_kind(r.type)} · ${niceDate(r.date)}', maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: r.ownId.isNotEmpty
           ? Icon(Icons.library_music_rounded, size: 18, color: cs.primary)
-          : (r.upcoming(now) ? null : const Text('⬇')),
+          : (r.upcoming(now) ? null : const LookupBadge(LookupState.available, size: 18)),
       onTap: () => context.push(r.route),
     );
     return RefreshIndicator(
