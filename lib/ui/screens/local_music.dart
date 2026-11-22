@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/appearance.dart';
 import '../../core/platform.dart';
 import '../../data/local_files.dart';
 import '../../playback/handler.dart';
@@ -123,7 +124,7 @@ class _LocalMusicScreenState extends ConsumerState<LocalMusicScreen> {
                                       isDense: true,
                                       contentPadding: EdgeInsets.zero,
                                       border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(20),
+                                        borderRadius: BorderRadius.circular(AppLook.of(context).r(12)),
                                         borderSide: BorderSide.none,
                                       ),
                                     ),

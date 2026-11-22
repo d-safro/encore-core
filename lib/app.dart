@@ -426,7 +426,9 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
   }
 
   /// Minimal look: near-black (or, in the light theme, near-white) surfaces tinted by the accent, Inter, soft
-  /// rounded shapes, no borders. Settings → Appearance changes the theme, black, contrast, typeface, roundness
+  /// rounded shapes, no borders. Nothing is a pill: buttons, chips, tabs, search fields and the bar's highlight
+  /// are rounded rectangles whose corners follow the Corners setting (only round things like play buttons are
+  /// circles). Settings → Appearance changes the theme, black, contrast, typeface, roundness
   /// and density. [scheme]'s brightness picks dark or light.
   static ThemeData theme(ColorScheme scheme, Settings s) {
     final look = AppLook.from(s);
@@ -457,6 +459,8 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     final text = (dark ? typography.white : typography.black)
         .apply(fontFamily: font, bodyColor: cs.onSurface, displayColor: cs.onSurface);
     final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(r(16)));
+    final control = RoundedRectangleBorder(borderRadius: BorderRadius.circular(r(10))); // buttons, segments
+    final controlStyle = ButtonStyle(shape: WidgetStatePropertyAll(control));
     return ThemeData(
       useMaterial3: true,
       brightness: scheme.brightness,
@@ -484,29 +488,47 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
         backgroundColor: cs.surface,
         surfaceTintColor: Colors.transparent,
         indicatorColor: cs.primary.withValues(alpha: 0.16),
+        indicatorShape: control,
         elevation: 0,
         iconTheme: WidgetStateProperty.resolveWith(
           (s) => IconThemeData(color: s.contains(WidgetState.selected) ? cs.primary : cs.onSurfaceVariant),
         ),
         labelTextStyle: WidgetStatePropertyAll(text.labelSmall?.copyWith(fontWeight: FontWeight.w600)),
       ),
+      navigationRailTheme: NavigationRailThemeData(
+        indicatorColor: cs.primary.withValues(alpha: 0.16),
+        indicatorShape: control,
+      ),
+      filledButtonTheme: FilledButtonThemeData(style: controlStyle),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: controlStyle),
+      textButtonTheme: TextButtonThemeData(style: controlStyle),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: controlStyle),
+      segmentedButtonTheme: SegmentedButtonThemeData(style: controlStyle),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(r(16))),
+      ),
       cardTheme: CardThemeData(color: cs.surfaceContainerLow, elevation: 0, shape: shape, margin: EdgeInsets.zero),
       listTileTheme: ListTileThemeData(shape: shape, iconColor: cs.onSurfaceVariant, dense: s.compact),
       chipTheme: ChipThemeData(
-        shape: const StadiumBorder(),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(r(8))),
         side: BorderSide.none,
         backgroundColor: cs.surfaceContainerHigh,
         labelStyle: text.labelLarge?.copyWith(fontWeight: FontWeight.w500),
       ),
       tabBarTheme: TabBarThemeData(
-        dividerHeight: 0,
-        indicatorSize: TabBarIndicatorSize.tab,
-        indicator: BoxDecoration(color: cs.primary.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(r(20))),
+        // the open tab: accent text with a line under it, on a hairline
+        dividerHeight: 1,
+        dividerColor: cs.outlineVariant.withValues(alpha: 0.5),
+        indicatorSize: TabBarIndicatorSize.label,
+        indicator: UnderlineTabIndicator(
+          borderSide: BorderSide(color: cs.primary, width: 3),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+        ),
         labelColor: cs.primary,
         unselectedLabelColor: cs.onSurfaceVariant,
         labelStyle: text.labelLarge?.copyWith(fontWeight: FontWeight.w600),
         labelPadding: const EdgeInsets.symmetric(horizontal: 18),
-        splashBorderRadius: BorderRadius.circular(r(20)),
+        splashBorderRadius: BorderRadius.circular(r(8)),
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: cs.surfaceContainer,
@@ -521,12 +543,12 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: cs.surfaceContainerHigh,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(r(14)), borderSide: BorderSide.none),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(r(12)), borderSide: BorderSide.none),
       ),
       searchBarTheme: SearchBarThemeData(
         backgroundColor: WidgetStatePropertyAll(cs.surfaceContainerHigh),
         elevation: const WidgetStatePropertyAll(0),
-        shape: const WidgetStatePropertyAll(StadiumBorder()),
+        shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(r(12)))),
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,

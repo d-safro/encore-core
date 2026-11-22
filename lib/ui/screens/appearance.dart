@@ -539,13 +539,12 @@ class LookPreview extends StatelessWidget {
                           const SizedBox(height: 6),
                         ],
                         if (s.showQuickPills) ...[
-                          Row(
-                            children: [
-                              for (var i = 0; i < 3; i++)
-                                Padding(padding: const EdgeInsets.only(right: 3), child: bar(24, 7, tile, 4)),
-                            ],
-                          ),
-                          const SizedBox(height: 7),
+                          // the shortcut tiles, two across
+                          for (var row = 0; row < 2; row++) ...[
+                            Row(children: [bar(38, 8, tile, 2 * r), const SizedBox(width: 3), bar(38, 8, tile, 2 * r)]),
+                            const SizedBox(height: 3),
+                          ],
+                          const SizedBox(height: 4),
                         ],
                         bar(34, 4, ink),
                         const SizedBox(height: 4),
