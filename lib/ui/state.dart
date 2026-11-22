@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rxdart/rxdart.dart';
 
 import '../core/settings.dart';
+import '../data/local_files.dart' show isLocalFileId;
 import '../data/ai.dart';
 import '../data/library.dart';
 import '../data/online_lyrics.dart';
@@ -170,6 +171,11 @@ final lyricsProvider = FutureProvider.autoDispose.family<Lyrics, String>((ref, i
     orElse: () => Song(id: id, title: ''),
   );
   if (!repo.online) return const Lyrics();
+  if (isLocalFileId(id)) {
+    // a file on this device: the server doesn't know it, so only the online sources (when they're on)
+    final set = ref.read(settingsProvider);
+    return set.onlineLyrics ? onlineLyrics(song, set.lyricsSources) : const Lyrics();
+  }
   final picked = pickedLyrics(id); // chosen by hand: wins over the server's
   if (picked != null) {
     final p = await loadCandidate(picked);

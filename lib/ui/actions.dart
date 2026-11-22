@@ -11,6 +11,9 @@ import '../data/library_pins.dart';
 import '../data/models.dart';
 import '../data/playlist_add.dart';
 import '../data/share_links.dart';
+import '../data/device_playlists.dart';
+import '../data/local_files.dart' show isLocalFileId;
+import 'device_playlists_ui.dart';
 import '../playback/handler.dart';
 import '../playback/not_for_me.dart';
 import 'screens/radio.dart';
@@ -51,6 +54,10 @@ Future<void> shareLink(BuildContext context, String label, Future<String?> Funct
 Future<Song> toggleStarSong(BuildContext context, WidgetRef ref, Song s) async {
   final c = ref.read(clientProvider);
   if (c == null) return s;
+  if (isLocalFileId(s.id)) {
+    toast(context, 'A file on this device can\'t be liked on your server');
+    return s;
+  }
   final next = !(ref.read(heartsProvider)[s.id] ?? s.starred);
   try {
     next ? await c.star(id: s.id) : await c.unstar(id: s.id);
@@ -332,6 +339,7 @@ Future<void> showSongMenu(
   List<Song>? context_,
   int? queueIndex,
 }) async {
+  if (isLocalFileId(song.id)) return showLocalSongMenu(context, ref, song, queueIndex: queueIndex);
   final downloads = ref.read(downloadsProvider);
   final have = downloads.files.containsKey(song.id);
   final online = ref.read(repoProvider).online;
@@ -497,6 +505,16 @@ Future<void> showSongMenu(
                     addToPlaylist(context, ref, [song]);
                   },
                 ),
+                // playlists kept on this device: server songs and local files together
+                if (ref.read(devicePlaylistsProvider).isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.phonelink_rounded),
+                    title: Text('Add to a playlist on this ${isDesktop ? 'computer' : 'device'}'),
+                    onTap: () {
+                      close();
+                      addToDevicePlaylist(context, ref, [song]);
+                    },
+                  ),
               ],
               if (!song.isLookup)
                 ListTile(

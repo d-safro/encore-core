@@ -18,6 +18,7 @@ import '../data/account.dart';
 import '../data/cover_cache.dart';
 import '../data/saved_covers.dart';
 import '../data/library.dart';
+import '../data/local_files.dart' show isLocalFileId;
 import '../data/library_pins.dart';
 import '../data/models.dart';
 import '../data/online_art.dart';
@@ -382,7 +383,7 @@ class SongTile extends ConsumerWidget {
     );
     final hearted = ref.hearted(song);
     final offline = ref.watch(offlineProvider);
-    final available = !offline || onPhone;
+    final available = !offline || onPhone || isLocalFileId(song.id);
     final cs = Theme.of(context).colorScheme;
     final t = Theme.of(context).textTheme;
     final dim = song.isLookup || !available;

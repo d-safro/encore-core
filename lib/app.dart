@@ -13,6 +13,7 @@ import 'data/follows.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
 import 'data/devices.dart';
+import 'desktop/file_drop.dart';
 import 'desktop/shell.dart';
 import 'data/sync.dart';
 import 'data/library.dart';
@@ -36,6 +37,8 @@ import 'ui/state.dart';
 import 'ui/screens/review.dart';
 import 'ui/screens/concerts.dart';
 import 'ui/screens/audiobooks.dart';
+import 'ui/device_playlists_ui.dart';
+import 'ui/screens/local_music.dart';
 import 'ui/screens/stats.dart';
 import 'ui/update.dart';
 import 'ui/widgets.dart';
@@ -93,7 +96,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       ShellRoute(
         builder: (ctx, state, child) => isDesktop
-            ? DesktopShell(location: state.uri.toString(), banner: const _ServerTrouble(), child: child)
+            ? FileDropArea(child: DesktopShell(location: state.uri.toString(), banner: const _ServerTrouble(), child: child))
             : _Shell(location: state.uri.path, child: child),
         routes: [
           GoRoute(
@@ -156,6 +159,8 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, s) => FollowingScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0),
           ),
           GoRoute(path: '/stats', builder: (_, _) => const StatsScreen()),
+          GoRoute(path: '/local', builder: (_, _) => const LocalMusicScreen()),
+          GoRoute(path: '/local/playlist/:id', builder: (_, s) => DevicePlaylistScreen(id: s.pathParameters['id']!)),
           GoRoute(path: '/concerts', builder: (_, _) => const ConcertsScreen()),
           GoRoute(path: '/podcasts/add', builder: (_, _) => const AddPodcastScreen()),
           GoRoute(

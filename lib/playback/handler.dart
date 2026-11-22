@@ -26,6 +26,7 @@ import '../data/ai.dart';
 import '../data/audiobooks.dart';
 import '../data/book_downloads.dart';
 import '../data/library.dart';
+import '../data/local_files.dart';
 import '../data/models.dart';
 import '../data/saved_covers.dart';
 import '../data/subsonic.dart';
@@ -336,7 +337,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (!_settings.dj || c == null || _cast != null || container.read(offlineProvider) || i + 1 >= _songs.length) return;
     if (left > const Duration(seconds: 50) || _djAsking || _sinceDj + 1 < _settings.djEvery) return;
     final a = _songs[i], b = _songs[i + 1];
-    if (_djFor == b.id || isPodcastId(a.id) || isPodcastId(b.id) || b.isLookup) return;
+    if (_djFor == b.id || isPodcastId(a.id) || isPodcastId(b.id) || b.isLookup || isLocalFileId(b.id)) return;
     _djFor = b.id;
     _djLine = null;
     _djAsking = true;
@@ -441,6 +442,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final ids = [
       for (var k = i; k < min(i + 4, _songs.length); k++)
         if (!_mixInfo.containsKey(_songs[k].id) && !isPodcastId(_songs[k].id) && !_songs[k].isLookup &&
+            !isLocalFileId(_songs[k].id) &&
             now.difference(_mixAsked[_songs[k].id] ?? DateTime(0)) > const Duration(seconds: 20))
           _songs[k].id,
     ];
@@ -667,6 +669,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (u == null) return playerNotices.add("This book can't be cast right now");
       final uri = Uri.parse(u);
       (src, type) = (uri.scheme == 'file' ? uri.toFilePath() : u, audiobookMime(song.id) ?? 'audio/mpeg');
+    } else if (isLocalFileId(song.id)) {
+      // a file on this device: the relay serves the file itself (Android's content:// files can't be cast)
+      final path = localUriFor(song.id) ?? song.path;
+      final t = castNative[song.suffix.toLowerCase()];
+      if (path.contains('://') || t == null) return playerNotices.add("This file on your device can't be cast");
+      (src, type) = (path, t);
     } else if (file != null && native) {
       (src, type) = (file, castNative[suffix]!);
     } else if (c != null && serverNative) {
@@ -678,7 +686,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
     final art = song.coverArt.startsWith('http')
         ? relay.artUrl('book-${bookIdOf(song.id) ?? song.id}', song.coverArt) // an audiobook's, on Audiobookshelf
-        : c != null && song.coverArt.isNotEmpty
+        : c != null && song.coverArt.isNotEmpty && !song.coverArt.startsWith('file:') // a local file's: not the server's
         ? relay.artUrl(song.coverArt, c.coverUrl(song.coverArt, size: 600).toString())
         : null;
     _castCommandAt = DateTime.now();
@@ -882,6 +890,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   // ── Sources ──
   /// Downloaded, or the server can be reached (offline, only downloaded songs play).
   bool canPlay(Song s) =>
+      isLocalFileId(s.id) || // a file on this device (local_files.dart): always, also offline
       container.read(downloadsProvider).files.containsKey(s.id) ||
       (container.read(clientProvider) != null && !container.read(offlineProvider));
 
@@ -889,6 +898,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   AudioSource _source(Song s) {
     final item = _mediaItem(s);
+    if (isLocalFileId(s.id)) {
+      // a file on this device: its path, or (Android) its content:// address
+      final u = localUriFor(s.id) ?? s.path;
+      return u.contains('://') ? AudioSource.uri(Uri.parse(u), tag: item) : AudioSource.file(u, tag: item);
+    }
     if (isAudiobookId(s.id)) {
       // a file of an audiobook: from Audiobookshelf (data/audiobooks.dart)
       return AudioSource.uri(Uri.parse(audiobookUrl(s.id) ?? 'file:///missing/${s.id}'), tag: item);
@@ -917,6 +931,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// (shows with no server too), else the server's.
   static Uri? _artUri(SubsonicClient? c, String coverArt) {
     if (coverArt.startsWith('http')) return Uri.parse(coverArt); // an audiobook's cover
+    if (coverArt.startsWith('file:')) return Uri.file(coverArt.substring(5)); // a file on this device: its picture
     if (c == null || coverArt.isEmpty) return null;
     final kept = savedCovers?.file(c.creds.base, coverArt, SavedCovers.large);
     return kept != null ? Uri.file(kept.path) : c.stableCoverUrl(coverArt);
@@ -925,6 +940,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// The same for the car's lists, which can't open Encore's own files: shared through CoverArtProvider.
   static Uri? _carArtUri(SubsonicClient? c, String coverArt) {
     if (coverArt.startsWith('http')) return Uri.parse(coverArt);
+    if (coverArt.startsWith('file:')) return null; // the car can't open Encore's own files
     if (c == null || coverArt.isEmpty) return null;
     final kept = savedCovers?.best(c.creds.base, coverArt, 300);
     return kept != null ? sharedCoverUri(kept.$1) : c.coverUrl(coverArt, size: 300);
@@ -1783,7 +1799,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Future<List<Song>> _smartPicks(int n) async {
     final c = container.read(clientProvider);
     final base = (_original ?? _songs)
-        .where((s) => !_suggested.contains(s.id) && !_autoplay.contains(s.id) && !s.isLookup)
+        .where((s) => !_suggested.contains(s.id) && !_autoplay.contains(s.id) && !s.isLookup && !isLocalFileId(s.id))
         .toList();
     if (c == null || base.isEmpty) return const [];
     final inQueue = _songs.map((s) => s.id).toSet();
@@ -1919,7 +1935,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _listened = Duration.zero;
     _lastTick = null;
     _submitted = null;
-    if (_settings.scrobble && !_private && _scrobbledNow != s.id && !isPodcastId(s.id) && !container.read(offlineProvider)) {
+    if (_settings.scrobble && !_private && _scrobbledNow != s.id && !isPodcastId(s.id) && !isLocalFileId(s.id) &&
+        !container.read(offlineProvider)) {
       _scrobbledNow = s.id;
       container.read(clientProvider)?.scrobble(s.id, submission: false).catchError((_) {});
     }
@@ -1955,7 +1972,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final ps = player.processingState;
     final ended = s == null || ps == ProcessingState.completed || ps == ProcessingState.idle;
     final id = s?.id ?? _reportedId;
-    if (id == null || (s != null && (s.isLookup || isPodcastId(s.id)))) return;
+    if (id == null || (s != null && (s.isLookup || isPodcastId(s.id) || isLocalFileId(s.id)))) return; // not the server's
     final state = ended
         ? 'stopped'
         : !player.playing
@@ -2000,7 +2017,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _playCounted = s.id;
       _countPlay(s.id); // played through: not a song you skip
     }
-    if (_submitted == s.id || !_settings.scrobble || _private) return; // private: not even queued for later
+    // private session, or a file on this device (never sent anywhere): not even queued for later
+    if (_submitted == s.id || !_settings.scrobble || _private || isLocalFileId(s.id)) return;
     if (_listened >= need) {
       _submitted = s.id;
       final c = container.read(clientProvider);
@@ -2075,10 +2093,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     );
     final c = container.read(clientProvider);
     // the server's queue only knows its own songs: an audiobook's place is kept on Audiobookshelf instead
-    final serverSongs = [for (final s in _songs) if (!isAudiobookId(s.id)) s.id];
+    final serverSongs = [for (final s in _songs) if (!isAudiobookId(s.id) && !isLocalFileId(s.id)) s.id];
     final cur = _songs.isNotEmpty ? _songs[min(i, _songs.length - 1)].id : null;
     if (_settings.syncPlayQueue && c != null && !container.read(offlineProvider) && serverSongs.isNotEmpty &&
-        serverSongs.length <= 1000 && (cur == null || !isAudiobookId(cur))) {
+        serverSongs.length <= 1000 && (cur == null || (!isAudiobookId(cur) && !isLocalFileId(cur)))) {
       try {
         await c.savePlayQueue(serverSongs, current: cur, positionMs: pos);
       } catch (_) {}

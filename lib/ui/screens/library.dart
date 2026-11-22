@@ -14,6 +14,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import 'local_music.dart' show LocalMusicTile;
 import 'smart_playlist.dart';
 import 'podcasts.dart';
 
@@ -373,7 +374,11 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
       itemCount: _songs.length + 2,
       itemBuilder: (_, i) {
         if (i == 0) {
-          return PlayButtons(
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const LocalMusicTile(), // files on this device that aren't on the server (local_music.dart)
+              PlayButtons(
             source: 'songs',
             onPlay: () async =>
                 audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 500), source: 'songs'),
@@ -382,6 +387,8 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
               shuffle: true,
               source: 'songs',
             ),
+              ),
+            ],
           );
         }
         if (i == _songs.length + 1) {

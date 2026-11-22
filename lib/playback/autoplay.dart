@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../data/local_files.dart' show isLocalFileId;
 import '../data/models.dart';
 import 'not_for_me.dart';
 
@@ -117,7 +118,8 @@ String songKey(Song s) {
 /// Which of the last songs played to find more like. The latest one always, plus up to [extra] others from
 /// the few before it, so autoplay follows where the music went instead of circling the first song.
 List<Song> chooseSeeds(List<Song> history, {Random? rng, int extra = 2, int window = 6}) {
-  final usable = history.where((s) => !s.isLookup && !isPodcastId(s.id)).toList();
+  // a file on this device isn't on the server: nothing to find songs like it with
+  final usable = history.where((s) => !s.isLookup && !isPodcastId(s.id) && !isLocalFileId(s.id)).toList();
   if (usable.isEmpty) return const [];
   final last = usable.last;
   final before = usable.reversed.skip(1).take(window - 1).where((s) => s.id != last.id).toList();

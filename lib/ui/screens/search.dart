@@ -12,6 +12,8 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../../data/song_id.dart' show canIdentify;
 import '../whats_playing.dart';
+import '../../core/platform.dart' show isDesktop;
+import '../../data/local_files.dart' show localLibraryProvider;
 import '../widgets.dart';
 
 /// One entry in "Recent searches": a song, album or artist you opened from search, or a search you typed.
@@ -274,7 +276,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ],
       );
     }
-    if (r.isEmpty && !_loading) return Center(child: Text('Nothing found for "$_query"'));
+    // files on this device that match (local_files.dart): searched here, never sent to the server
+    final local = ref.watch(localLibraryProvider).search(_query);
+    if (r.isEmpty && local.isEmpty && !_loading) return Center(child: Text('Nothing found for "$_query"'));
     final songs = r.songs.where((s) => !s.isLookup).toList();
     final lookupSongs = showLookup ? r.songs.where((s) => s.isLookup).toList() : const <Song>[];
     final albums = r.albums.where((a) => !a.isLookup).toList();
@@ -328,6 +332,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 },
                 child: SongTile(songs[i], list: songs, index: i),
               ),
+          ],
+          if (local.isNotEmpty) ...[
+            SectionTitle(isDesktop ? 'On this computer' : 'On this device'),
+            for (var i = 0; i < local.length && i < 20; i++) SongTile(local[i], list: local, index: i),
           ],
           if (albums.isNotEmpty)
             Shelf(
