@@ -51,11 +51,14 @@ final noNetworkProvider = Provider<bool>((ref) {
 class ServerReachNotifier extends Notifier<bool> {
   Timer? _timer;
   bool _checking = false;
+  int _gen = 0; // goes up with each build: a ping through the old way to the server (closed) is dropped
 
   @override
   bool build() {
     ref.watch(clientProvider);
     ref.watch(connectivityProvider);
+    _gen++;
+    _checking = false;
     ref.onDispose(() => _timer?.cancel());
     Future.microtask(check);
     return true; // optimistic until the first ping answers
@@ -65,6 +68,7 @@ class ServerReachNotifier extends Notifier<bool> {
     final c = ref.read(clientProvider);
     if (c == null || ref.read(noNetworkProvider) || _checking) return;
     _checking = true;
+    final gen = _gen;
     var ok = false;
     try {
       await c.call('ping', const {}, null, const Duration(seconds: 6));
@@ -73,9 +77,9 @@ class ServerReachNotifier extends Notifier<bool> {
       ok = e.code != 0; // the server answered (even "wrong password" means it's there)
     } catch (_) {
       ok = false;
-    } finally {
-      _checking = false;
     }
+    if (gen != _gen) return; // the client changed meanwhile (its requests were cut off): not an answer
+    _checking = false;
     if (state != ok) state = ok;
     _timer?.cancel();
     _timer = Timer(ok ? const Duration(minutes: 2) : const Duration(seconds: 20), check);

@@ -19,6 +19,7 @@ class UsbLinkNotifier extends Notifier<bool> {
   Timer? _timer;
   bool _checking = false;
   int _misses = 0; // checks in a row the cable didn't answer
+  int _gen = 0; // goes up with each build: a check started for another server is dropped
 
   /// [u] taken through the cable (same path and login, so a server under e.g. /navidrome works too).
   static Uri viaCable(Uri u) => u.replace(scheme: 'http', host: '127.0.0.1', port: port);
@@ -32,6 +33,9 @@ class UsbLinkNotifier extends Notifier<bool> {
     // the extras (Settings › Server › Address on your home network covers that computer, see README)
     if (isDesktop) return false;
     ref.watch(accountProvider); // not clientProvider: that one follows this
+    _gen++;
+    _checking = false;
+    _misses = 0;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 10), (_) => check());
     ref.onDispose(() => _timer?.cancel());
@@ -44,6 +48,7 @@ class UsbLinkNotifier extends Notifier<bool> {
     final creds = ref.read(accountProvider).value;
     if (creds == null || _checking) return;
     _checking = true;
+    final gen = _gen;
     var ok = false;
     final c = SubsonicClient(creds, via: cableBase(creds));
     try {
@@ -52,6 +57,7 @@ class UsbLinkNotifier extends Notifier<bool> {
     } catch (_) {} finally {
       c.close();
     }
+    if (gen != _gen) return; // signed in to another server meanwhile: this answer is for the old one
     _checking = false;
     // unplugged = two checks in a row without an answer (one slow answer while the cable is busy isn't)
     _misses = ok ? 0 : _misses + 1;
