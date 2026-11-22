@@ -1117,23 +1117,37 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   bool get _held => !_loaded && _songs.isNotEmpty;
   Duration _restoredPosition = Duration.zero;
 
-  Future<void> playNext(List<Song> songs) => insertSongs((player.currentIndex ?? -1) + 1, songs);
+  /// The song you're on: the player's, or the held one ([_held]).
+  int? get _at => _held ? _restoredIndex : player.currentIndex;
+
+  /// A held queue was changed: the player holds none of it (it's loaded from [_songs] on play), so only
+  /// the place and what's shown change.
+  void _heldChanged() {
+    _broadcastQueue();
+    _rebroadcast();
+    final cur = currentSong;
+    if (cur != null && mediaItem.value != null && mediaItem.value!.id != cur.id) mediaItem.add(_mediaItem(cur));
+    _scheduleSave();
+  }
+
+  Future<void> playNext(List<Song> songs) => insertSongs((_at ?? -1) + 1, songs);
 
   /// Put songs into the queue at [at] (clamped to after the playing song and the end).
   Future<void> insertSongs(int at, List<Song> songs) async {
     final add = songs.where(usable).toList();
     if (add.isEmpty) return;
     if (_songs.isEmpty || radioStation != null) return playSongs(add);
-    at = at.clamp((player.currentIndex ?? -1) + 1, _songs.length);
+    final held = _held;
+    at = at.clamp((_at ?? -1) + 1, _songs.length);
     // you chose it now: autoplay's own copy of it (still to come) goes, so it isn't there twice
     final ids = add.map((s) => s.id).toSet();
-    final cur = player.currentIndex ?? -1;
+    final cur = _at ?? -1;
     _rearranging = true;
     try {
       for (var k = _songs.length - 1; k > cur; k--) {
         if (ids.contains(_songs[k].id) && _autoplay.contains(_songs[k].id)) {
           _songs.removeAt(k);
-          await player.removeAudioSourceAt(k);
+          if (!held) await player.removeAudioSourceAt(k);
           if (k < at) at--;
         }
       }
@@ -1143,6 +1157,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _autoplay.removeAll(ids);
     _original?.addAll(add);
     _songs.insertAll(at, add);
+    if (held) return _heldChanged(); // after the held song: its place stays
     await player.insertAudioSources(at, add.map(_source).toList());
     _broadcastQueue();
     _scheduleSave();
@@ -1153,10 +1168,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (add.isEmpty) return;
     if (_songs.isEmpty) return playSongs(add);
     // what you add goes before autoplay's songs, like Spotify's queue
-    final firstAuto = _songs.indexWhere((s) => _autoplay.contains(s.id), (player.currentIndex ?? -1) + 1);
+    final firstAuto = _songs.indexWhere((s) => _autoplay.contains(s.id), (_at ?? -1) + 1);
     if (firstAuto >= 0) return insertSongs(firstAuto, add);
     _original?.addAll(add);
     _songs.addAll(add);
+    if (_held) return _heldChanged();
     await player.addAudioSources(add.map(_source).toList());
     _broadcastQueue();
     _scheduleSave();
@@ -1165,11 +1181,19 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   @override
   Future<void> removeQueueItemAt(int index) async {
     if (index < 0 || index >= _songs.length) return;
+    final held = _held;
+    final at = _at ?? -1;
     final gone = _songs.removeAt(index);
     _suggested.remove(gone.id);
-    if (_autoplay.remove(gone.id) && index > (player.currentIndex ?? -1)) _countSkip(gone.id); // not for you
+    if (_autoplay.remove(gone.id) && index > at) _countSkip(gone.id); // not for you
     final o = _original?.indexWhere((s) => s.id == gone.id) ?? -1;
     if (o >= 0) _original!.removeAt(o);
+    if (held) {
+      if (index == at) _restoredPosition = Duration.zero; // the next one takes its place, from its start
+      _restoredIndex = placeAfterRemove(at, index, _songs.length);
+      if (_songs.isEmpty) return clearQueue();
+      return _heldChanged();
+    }
     await player.removeAudioSourceAt(index);
     _broadcastQueue();
     _scheduleSave();
@@ -1180,6 +1204,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (from == to || from < 0 || to < 0 || from >= _songs.length || to >= _songs.length) return;
     final s = _songs.removeAt(from);
     _songs.insert(to, s);
+    if (!_loaded) {
+      _restoredIndex = placeAfterMove(_restoredIndex, from, to);
+      return _heldChanged();
+    }
     await player.moveAudioSource(from, to);
     _broadcastQueue();
     _scheduleSave();
@@ -1443,19 +1471,21 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   /// Take autoplay's songs that haven't played yet out of the queue (switched off, or shuffle changed).
   Future<void> _dropAutoplay() async {
-    final cur = player.currentIndex ?? -1;
+    final held = _held;
+    final cur = _at ?? -1;
     if (!_songs.skip(cur + 1).any((s) => _autoplay.contains(s.id))) return;
     _rearranging = true;
     try {
       for (var k = _songs.length - 1; k > cur; k--) {
         if (_autoplay.remove(_songs[k].id)) {
           _songs.removeAt(k);
-          await player.removeAudioSourceAt(k);
+          if (!held) await player.removeAudioSourceAt(k);
         }
       }
     } finally {
       _rearranging = false;
     }
+    if (held) return _heldChanged();
     _onIndex(player.currentIndex);
     _broadcastQueue();
     _scheduleSave();
@@ -2667,4 +2697,17 @@ final castInfo = ValueNotifier<CastInfo?>(null);
 List<String> stillPending(List<String> sent, List<String> left, List<String> now) {
   final was = sent.toSet();
   return [...left, ...now.where((e) => !was.contains(e))];
+}
+
+/// Where the song at [cur] is once the one at [removed] is taken out ([left] songs are left): the one after
+/// it takes its place when it's the one removed.
+int placeAfterRemove(int cur, int removed, int left) =>
+    (removed < cur ? cur - 1 : cur).clamp(0, max(0, left - 1));
+
+/// Where the song at [cur] is once the one at [from] is moved to [to].
+int placeAfterMove(int cur, int from, int to) {
+  if (from == cur) return to;
+  if (from < cur && to >= cur) return cur - 1;
+  if (from > cur && to <= cur) return cur + 1;
+  return cur;
 }
