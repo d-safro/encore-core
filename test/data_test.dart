@@ -120,6 +120,12 @@ void main() {
       expect(f.last.song?.title, 'Loose');
     });
 
+    test('a scrobble that fails can be ignored with catchError (no "wrong type" error)', () async {
+      final c = client((r) async => http.Response('down', 502));
+      // the player fires these and forgets them: the handler returns nothing
+      await expectLater(c.scrobble('x', submission: false).catchError((_) {}), completes);
+    });
+
     test('a folder request on a plain server gives null (the app falls back)', () async {
       final c = client((r) async => http.Response(jsonEncode(ok({})), 200));
       expect(await c.realFolder(''), isNull);

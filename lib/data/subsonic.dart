@@ -300,8 +300,11 @@ class SubsonicClient {
   Future<LookupReport> lookupSongs(List<String> ids, {bool fetch = false}) async =>
       LookupReport.fromJson(_m((await call('lookupSongs', {'id': ids, if (fetch) 'fetch': true}))['lookupSongs']));
   Future<void> setRating(String id, int rating) => call('setRating', {'id': id, 'rating': rating});
-  Future<void> scrobble(String id, {required bool submission, DateTime? time}) =>
-      call('scrobble', {'id': id, 'submission': submission, if (time != null) 'time': time.millisecondsSinceEpoch});
+  // async, so the future really is a Future<void>: callers fire it with `.catchError((_) {})`, which throws
+  // "must return a value of the future's type" on a Future<Map> when the server can't be reached
+  Future<void> scrobble(String id, {required bool submission, DateTime? time}) async {
+    await call('scrobble', {'id': id, 'submission': submission, if (time != null) 'time': time.millisecondsSinceEpoch});
+  }
 
   // ── Play queue (follows you between devices and Feishin) ──
   Future<(List<Song>, String?, int)> playQueue() async {
