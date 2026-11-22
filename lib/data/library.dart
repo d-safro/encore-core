@@ -310,7 +310,8 @@ class SyncNotifier extends Notifier<SyncState> {
   SyncState build() {
     final gen = ++_gen;
     ref.read(dbProvider).lastSync().then((d) {
-      if (gen == _gen && !state.running) state = SyncState(last: d);
+      // (switched servers meanwhile, or signed out: this notifier is gone)
+      if (ref.mounted && gen == _gen && !state.running) state = SyncState(last: d);
     });
     return const SyncState();
   }
@@ -324,7 +325,7 @@ class SyncNotifier extends Notifier<SyncState> {
     final gen = _gen;
     // what this sync says goes to its own server's state only
     void set(SyncState s) {
-      if (gen == _gen) state = s;
+      if (ref.mounted && gen == _gen) state = s;
     }
     try {
       set(const SyncState(running: true, message: 'Artists…'));
@@ -352,7 +353,7 @@ class SyncNotifier extends Notifier<SyncState> {
         } catch (_) {} // one playlist that won't load shouldn't stop the whole sync
       }
       // switched to another server meanwhile: its library copy isn't this one (its own sync fills it)
-      if (gen != _gen) return;
+      if (!ref.mounted || gen != _gen) return;
       await ref
           .read(dbProvider)
           .replaceLibrary(artists: artists, albums: albums, songs: songs, playlists: playlists, playlistSongs: plSongs);
