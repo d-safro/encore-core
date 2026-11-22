@@ -8,6 +8,7 @@ import '../../data/shows.dart';
 import '../../data/updates.dart' show openUrl;
 import '../actions.dart' show toast;
 import '../widgets.dart';
+import '../sheets.dart';
 
 /// Concerts near you, on Home: the next shows of the artists you play and follow, near your town.
 class ConcertsShelf extends ConsumerWidget {
@@ -82,7 +83,7 @@ class ConcertCard extends StatelessWidget {
 }
 
 /// A show: tickets and "add to calendar".
-Future<void> showConcertSheet(BuildContext context, Show s) => showModalBottomSheet(
+Future<void> showConcertSheet(BuildContext context, Show s) => showAppSheet(
   context: context,
   useRootNavigator: true,
   showDragHandle: true,

@@ -2,7 +2,12 @@ import 'package:material_ui/material_ui.dart';
 
 /// How a menu or a panel opens. The phone uses a bottom sheet; the desktop app puts its own in [sheetOpener]
 /// (a menu at the pointer, a dialog in the middle), so this shared code knows nothing about the desktop.
-typedef SheetOpener = Future<Object?> Function(BuildContext context, WidgetBuilder builder, {required bool menu});
+typedef SheetOpener = Future<Object?> Function(
+  BuildContext context,
+  WidgetBuilder builder, {
+  required bool menu,
+  required bool dismissible,
+});
 
 /// Set by the desktop app (lib/desktop/sheets.dart); null on the phone.
 SheetOpener? sheetOpener;
@@ -22,7 +27,7 @@ Future<T?> showAppSheet<T>({
   BoxConstraints? constraints,
 }) async {
   final open = sheetOpener;
-  if (open != null) return await open(context, builder, menu: menu) as T?;
+  if (open != null) return await open(context, builder, menu: menu, dismissible: isDismissible) as T?;
   return showModalBottomSheet<T>(
     context: context,
     builder: builder,

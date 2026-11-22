@@ -41,6 +41,7 @@ import '../../data/devices.dart';
 import '../../data/pairing.dart';
 import '../../data/subsonic.dart';
 import '../../desktop/desktop_settings.dart';
+import '../sheets.dart';
 
 const _formats = {'raw': 'Original', 'opus': 'Opus', 'mp3': 'MP3', 'aac': 'AAC'};
 const _bitrates = [64, 96, 128, 160, 192, 256, 320];
@@ -455,7 +456,7 @@ class SettingsScreen extends ConsumerWidget {
   Future<void> _replayGain(BuildContext context, WidgetRef ref, Settings s) async {
     var mode = s.replayGain;
     var pre = s.replayGainPreamp;
-    await showModalBottomSheet(
+    await showAppSheet(
       useRootNavigator: true,
       context: context,
       showDragHandle: true,
@@ -516,7 +517,7 @@ class _QualityTile extends StatelessWidget {
       onTap: () async {
         var f = format;
         var b = bitrate == 0 ? 192 : bitrate;
-        await showModalBottomSheet(
+        await showAppSheet(
           useRootNavigator: true,
           context: context,
           showDragHandle: true,

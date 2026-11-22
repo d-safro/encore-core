@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../data/account.dart';
 import '../actions.dart';
 import '../state.dart';
+import '../sheets.dart';
 
 /// Smart playlists are Navidrome's own: it keeps them filled from the rules, for every app.
 enum _Kind { text, number, bool, date }
@@ -123,7 +124,7 @@ final smartPresets = <(String, String, Map<String, dynamic>)>[
 
 /// "New playlist": an ordinary one, a smart one from a preset, or your own rules.
 Future<void> showNewPlaylistSheet(BuildContext context, WidgetRef ref) async {
-  final pick = await showModalBottomSheet<Object>(
+  final pick = await showAppSheet<Object>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

@@ -10,10 +10,11 @@ import '../playback/private_session.dart';
 import 'actions.dart';
 import 'cast_sheet.dart';
 import 'widgets.dart';
+import 'sheets.dart';
 
 /// Your other devices running Encore: what each is playing, and moving playback between them or controlling
 /// one from here (like Spotify Connect). Cast speakers are one tap further.
-Future<void> showDevicesSheet(BuildContext context) => showModalBottomSheet(
+Future<void> showDevicesSheet(BuildContext context) => showAppSheet(
   context: context,
   useRootNavigator: true,
   isScrollControlled: true,
@@ -174,7 +175,7 @@ class _DeviceCard extends ConsumerWidget {
 }
 
 /// A remote for another device: what it plays, and play / pause / skip / seek / volume sent to it.
-Future<void> showRemoteControl(BuildContext context, String id) => showModalBottomSheet(
+Future<void> showRemoteControl(BuildContext context, String id) => showAppSheet(
   context: context,
   useRootNavigator: true,
   isScrollControlled: true,

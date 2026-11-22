@@ -7,9 +7,10 @@ import 'package:share_plus/share_plus.dart';
 import '../../data/jam.dart';
 import '../../data/library.dart';
 import '../actions.dart';
+import '../sheets.dart';
 
 /// Start / show / end a Jam: friends scan the code or open the link to add songs to the queue.
-Future<void> showJamSheet(BuildContext context) => showModalBottomSheet(
+Future<void> showJamSheet(BuildContext context) => showAppSheet(
   useRootNavigator: true,
   context: context,
   isScrollControlled: true,

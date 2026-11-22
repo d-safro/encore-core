@@ -6,6 +6,7 @@ import '../data/models.dart';
 import 'screens/player.dart' show artSchemeProvider;
 import 'share_picture.dart';
 import 'widgets.dart';
+import 'sheets.dart';
 
 /// Lyric cards: hold a line in the lyrics to make a picture of it (and up to three more lines) with the song's
 /// cover and colours, to share (phone) or save (desktop).
@@ -16,7 +17,7 @@ List<String> cardLines(List<LyricLine> lines, int first, int count) => [
   for (final l in lines.skip(first).take(count.clamp(1, maxCardLines))) if (l.text.trim().isNotEmpty) l.text.trim(),
 ];
 
-Future<void> showLyricCard(BuildContext context, Song song, List<LyricLine> lines, int first) => showModalBottomSheet(
+Future<void> showLyricCard(BuildContext context, Song song, List<LyricLine> lines, int first) => showAppSheet(
   context: context,
   useRootNavigator: true,
   isScrollControlled: true,

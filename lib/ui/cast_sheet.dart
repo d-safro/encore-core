@@ -4,9 +4,10 @@ import '../core/platform.dart';
 import '../playback/cast.dart';
 import '../playback/handler.dart';
 import '../playback/upnp.dart';
+import 'sheets.dart';
 
 /// Play on a Chromecast / Google Cast speaker or TV on this Wi-Fi, or stop.
-Future<void> showCastSheet(BuildContext context) => showModalBottomSheet(
+Future<void> showCastSheet(BuildContext context) => showAppSheet(
   context: context,
   useRootNavigator: true,
   isScrollControlled: true,

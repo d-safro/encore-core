@@ -18,13 +18,14 @@ import '../../data/playlist_covers.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import '../sheets.dart';
 
 /// Name, description, and who can see it.
 Future<void> showPlaylistDetails(BuildContext context, WidgetRef ref, Playlist p) async {
   final name = TextEditingController(text: p.name);
   final notes = TextEditingController(text: p.comment);
   var public = p.public;
-  final save = await showModalBottomSheet<bool>(
+  final save = await showAppSheet<bool>(
     context: context,
     showDragHandle: true,
     useRootNavigator: true,
@@ -93,7 +94,7 @@ Future<void> showPlaylistDetails(BuildContext context, WidgetRef ref, Playlist p
 /// Your own picture for a playlist: from your photos, your files, or one of its album covers.
 Future<void> showPlaylistPicture(BuildContext context, WidgetRef ref, Playlist p) async {
   final mine = ref.read(playlistCoversProvider)[p.id];
-  final choice = await showModalBottomSheet<String>(
+  final choice = await showAppSheet<String>(
     context: context,
     showDragHandle: true,
     useRootNavigator: true,
@@ -192,7 +193,7 @@ void _refreshSoon(ProviderContainer container, String id) {
 
 Future<Uint8List?> _pickAlbumCover(BuildContext context, WidgetRef ref, Playlist p) async {
   final covers = albumCovers(p.songs);
-  final picked = await showModalBottomSheet<String>(
+  final picked = await showAppSheet<String>(
     context: context,
     showDragHandle: true,
     useRootNavigator: true,

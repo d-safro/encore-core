@@ -26,6 +26,7 @@ import '../collab_sheet.dart';
 import 'smart_playlist.dart';
 import 'radio.dart';
 import 'following.dart' show ShowTile;
+import '../sheets.dart';
 
 /// Re-loads a page every 20 s while it shows songs that are being downloaded (⏳ → real song).
 mixin _PollWhileDownloading<T extends ConsumerStatefulWidget> on ConsumerState<T> {
@@ -964,7 +965,8 @@ class RadioScreen extends ConsumerWidget {
   }
 
   Future<void> _menu(BuildContext context, WidgetRef ref, InternetRadio r) async {
-    final v = await showModalBottomSheet<String>(
+    final v = await showAppSheet<String>(
+      menu: true, // the desktop: a menu where the mouse is
       useRootNavigator: true,
       context: context,
       showDragHandle: true,

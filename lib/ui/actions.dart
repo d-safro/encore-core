@@ -146,7 +146,7 @@ Future<void> addToPlaylist(BuildContext context, WidgetRef ref, List<Song> songs
   if (c == null || songs.isEmpty) return;
   final lists = await ref.read(repoProvider).playlists();
   if (!context.mounted) return;
-  final choice = await showModalBottomSheet<Object>(
+  final choice = await showAppSheet<Object>(
     useRootNavigator: true,
     context: context,
     showDragHandle: true,
@@ -753,7 +753,7 @@ Future<void> bridgeMix(BuildContext context, WidgetRef ref, Song from) async {
 
 /// A small search dialog that returns one song from the library.
 Future<Song?> pickSong(BuildContext context, WidgetRef ref, String title) {
-  return showModalBottomSheet<Song>(
+  return showAppSheet<Song>(
     useRootNavigator: true,
     context: context,
     isScrollControlled: true,

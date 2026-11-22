@@ -6,6 +6,7 @@ import '../core/settings.dart';
 import '../data/library.dart';
 import 'actions.dart';
 import 'widgets.dart' show nSongs;
+import 'sheets.dart';
 
 String _mb(int bytes) => bytes >= 1 << 30
     ? '${(bytes / (1 << 30)).toStringAsFixed(1)} GB'
@@ -16,7 +17,7 @@ String _mb(int bytes) => bytes >= 1 << 30
 Future<void> pickDownloadQuality(BuildContext context, WidgetRef ref) async {
   final s = ref.read(settingsProvider);
   final now = downloadLevelOf(s.downloadFormat, s.downloadBitrate);
-  final picked = await showModalBottomSheet<(String, String, int, String)>(
+  final picked = await showAppSheet<(String, String, int, String)>(
     context: context,
     useRootNavigator: true,
     showDragHandle: true,

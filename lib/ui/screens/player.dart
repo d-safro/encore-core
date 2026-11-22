@@ -31,6 +31,7 @@ import '../../data/saved_covers.dart';
 import '../cast_sheet.dart';
 import '../devices_sheet.dart';
 import 'jam.dart';
+import '../sheets.dart';
 
 /// Colours taken from the current album art (Material You from the cover).
 final artSchemeProvider = FutureProvider.autoDispose.family<ColorScheme?, String>((ref, coverArt) async {
@@ -706,7 +707,7 @@ final _outputProvider = StreamProvider.autoDispose<(String, String)>((ref) async
 
 Future<void> showSleepTimer(BuildContext context, WidgetRef ref) async {
   final extras = audioHandler.currentExtras;
-  await showModalBottomSheet(
+  await showAppSheet(
     useRootNavigator: true,
     context: context,
     showDragHandle: true,
@@ -755,7 +756,7 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
   var (vol, maxVol) = await AudioDevice.volume();
   var output = await AudioDevice.output();
   if (!context.mounted) return;
-  await showModalBottomSheet(
+  await showAppSheet(
     useRootNavigator: true,
     context: context,
     isScrollControlled: true,
@@ -1138,7 +1139,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
 }
 
 /// Pick lyrics by hand from every online source (remembered for this song).
-Future<void> showChooseLyrics(BuildContext context, WidgetRef ref, Song song) => showModalBottomSheet(
+Future<void> showChooseLyrics(BuildContext context, WidgetRef ref, Song song) => showAppSheet(
   useRootNavigator: true,
   context: context,
   isScrollControlled: true,
