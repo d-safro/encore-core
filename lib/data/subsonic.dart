@@ -11,6 +11,7 @@ import 'lyrics_translation.dart' show LyricsTranslation;
 import 'mixes.dart' show Mixes;
 import '../playback/automix.dart' show MixInfo;
 import 'concerts.dart' show Concerts;
+import '../playback/dj.dart' show DjLine;
 import 'models.dart';
 import 'review.dart';
 
@@ -625,6 +626,14 @@ class SubsonicClient {
     }
     return _m(r['songIdentification']);
   }
+
+  /// The DJ's line before [next] (music-lookup's getDjLine); null when the server's AI is off.
+  Future<DjLine?> djLine({String? prev, required String next}) async {
+    final r = await call('getDjLine', {'next': next, 'prev': ?prev}, null, const Duration(seconds: 45));
+    return DjLine.fromJson(_m(r['djLine']));
+  }
+
+  Uri djAudioUrl(String id) => url('djAudio', {'id': id});
 
   Future<List<Song>> songDiscoveries(String id, {int count = 30}) async {
     try {
