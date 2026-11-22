@@ -1253,16 +1253,18 @@ class _WideSongRowState extends ConsumerState<_WideSongRow> {
                       color: widget.current ? cs.primary : (widget.dim ? cs.onSurfaceVariant : cs.onSurface),
                     ),
                   ),
-                  Row(
-                    children: [
-                      if (widget.onPhone)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
-                        ),
-                      Flexible(child: NameLink(s.artist, to: NameLink.artistOf(s.artistId), style: sub)),
-                    ],
-                  ),
+                  // no artist (a file on this computer without tags): no empty line, the title stays centred
+                  if (s.artist.isNotEmpty || widget.onPhone)
+                    Row(
+                      children: [
+                        if (widget.onPhone)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
+                          ),
+                        Flexible(child: NameLink(s.artist, to: NameLink.artistOf(s.artistId), style: sub)),
+                      ],
+                    ),
                 ],
               ),
             ),

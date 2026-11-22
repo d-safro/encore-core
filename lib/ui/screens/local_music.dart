@@ -106,7 +106,34 @@ class _LocalMusicScreenState extends ConsumerState<LocalMusicScreen> {
                             subtitle: Text('${pl.songs.length} song${pl.songs.length == 1 ? '' : 's'}'),
                             onTap: () => context.push('/local/playlist/${pl.id}'),
                           ),
-                        if (l.tracks.isNotEmpty)
+                        if (l.tracks.isNotEmpty && isDesktop)
+                          // desktop: the play and shuffle buttons every other song list has, the filter beside them
+                          PlayButtons(
+                            onPlay: () => audioHandler.playSongs(songs, source: 'local'),
+                            onShuffle: () => audioHandler.playSongs(songs, shuffle: true, source: 'local'),
+                            leading: [
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 320),
+                                child: SizedBox(
+                                  height: 40,
+                                  child: TextField(
+                                    decoration: InputDecoration(
+                                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                                      hintText: 'Filter',
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(20),
+                                        borderSide: BorderSide.none,
+                                      ),
+                                    ),
+                                    onChanged: (v) => setState(() => _filter = v.trim()),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        else if (l.tracks.isNotEmpty)
                           Row(
                             children: [
                               Expanded(
