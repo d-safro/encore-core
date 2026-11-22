@@ -8,6 +8,7 @@ import '../core/settings.dart';
 import '../playback/handler.dart';
 import 'account.dart';
 import 'library.dart';
+import 'local_files.dart' show shareableCover;
 import 'models.dart';
 import 'subsonic.dart';
 
@@ -123,7 +124,7 @@ class JamNotifier extends Notifier<JamState> {
     'title': s.title,
     'artist': s.artist,
     'album': s.album,
-    'cover': s.coverArt,
+    'cover': shareableCover(s.coverArt), // not a path on this device (guests are on the internet)
     'duration': s.duration ?? 0,
     'by': addedBy[s.id] ?? '',
   };

@@ -156,6 +156,23 @@ abstract class LocalSource {
 /// Set at start-up by the platform (Android: MediaStoreSource below; desktop: lib/desktop/local_folders.dart).
 LocalSource? localSource;
 
+/// A cover id to show anywhere but here: a local file's picture is a path on this device (with your home
+/// folder's name in it), so it's left out of what other devices and Jam guests are sent.
+String shareableCover(String coverArt) => coverArt.startsWith('file:') ? '' : coverArt;
+
+/// The queue as another device can play it: only server songs, and where [index] lands among them (the next
+/// server song when the one playing is a file on this device). Empty when there's none.
+(List<String>, int) serverQueue(List<Song> songs, int index) {
+  final ids = <String>[];
+  var at = -1;
+  for (final (i, s) in songs.indexed) {
+    if (isLocalFileId(s.id)) continue;
+    if (i >= index && at < 0) at = ids.length;
+    ids.add(s.id);
+  }
+  return (ids, at < 0 ? 0 : at);
+}
+
 // ── Opening a file that isn't in the list ("Open with Encore", a file dropped on the window) ──
 final _opened = <String, LocalTrack>{};
 

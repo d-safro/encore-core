@@ -13,6 +13,7 @@ import '../playback/audio_device.dart';
 import '../playback/handler.dart';
 import 'account.dart';
 import 'library.dart';
+import 'local_files.dart' show isLocalFileId, serverQueue, shareableCover;
 import 'subsonic.dart';
 
 /// Your devices running Encore (the phone, the desktop app) see each other through the server (music-lookup's
@@ -261,13 +262,14 @@ class DevicesNotifier extends Notifier<DevicesState> {
       title: s?.title ?? h.mediaItem.value?.title ?? '',
       artist: s?.artist ?? h.mediaItem.value?.artist ?? '',
       album: s?.album ?? '',
-      coverArt: s?.coverArt ?? '',
+      coverArt: shareableCover(s?.coverArt ?? ''), // a file on this device: its picture is only here
       durationMs: (s?.duration ?? 0) * 1000,
       positionMs: h.player.position.inMilliseconds,
       playing: st.playing,
       volume: volume,
-      queue: songs.length <= 500 ? [for (final x in songs) x.id] : const [],
-      index: st.queueIndex ?? 0,
+      // the others can only play server songs (files on this device stay here)
+      queue: songs.length <= 500 ? serverQueue(songs, st.queueIndex ?? 0).$1 : const [],
+      index: songs.length <= 500 ? serverQueue(songs, st.queueIndex ?? 0).$2 : 0,
     ).toJson();
   }
 
@@ -392,10 +394,14 @@ class DevicesNotifier extends Notifier<DevicesState> {
     final h = audioHandler;
     final songs = h.songs;
     if (songs.isEmpty) return false;
+    // files on this device can't play there: the server songs go, from the one playing (or the next)
+    final (ids, index) = serverQueue(songs.take(500).toList(), h.playbackState.value.queueIndex ?? 0);
+    if (ids.isEmpty) return false;
+    final current = h.currentSong;
     final ok = await send(d.id, DeviceCommand.playQueue, {
-      'ids': [for (final s in songs.take(500)) s.id],
-      'index': h.playbackState.value.queueIndex ?? 0,
-      'position': h.player.position.inMilliseconds,
+      'ids': ids,
+      'index': index,
+      'position': current != null && isLocalFileId(current.id) ? 0 : h.player.position.inMilliseconds,
       'play': true,
     });
     if (ok) await h.pause();

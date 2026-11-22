@@ -144,7 +144,7 @@ class _DeviceCard extends ConsumerWidget {
                 FilledButton.tonalIcon(
                   icon: const Icon(Icons.upload_rounded, size: 18),
                   label: Text('Play on ${d.name}'),
-                  onPressed: () => act(() => n.playThere(d), 'Nothing is playing here to send'),
+                  onPressed: () => act(() => n.playThere(d), 'Nothing to send: files on this device only play here'),
                 ),
                 if (s.hasSong)
                   OutlinedButton.icon(
