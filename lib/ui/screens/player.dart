@@ -1256,8 +1256,9 @@ class _ChooseLyricsState extends ConsumerState<_ChooseLyrics> {
 }
 
 class QueueScreen extends ConsumerWidget {
-  const QueueScreen({super.key, this.embedded = false});
-  final bool embedded; // in the desktop's side panel: no back button, nothing to close
+  const QueueScreen({super.key, this.embedded = false, this.onClose});
+  final bool embedded; // in the desktop's side panel: no back button
+  final VoidCallback? onClose; // the side panel's » (hides it)
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(queueProvider);
@@ -1268,6 +1269,17 @@ class QueueScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !embedded,
+        // the desktop's side panel: the same small header as Now playing and Lyrics (», title, buttons)
+        leading: embedded && onClose != null
+            ? IconButton(
+                tooltip: 'Hide the queue',
+                icon: const Icon(Icons.keyboard_double_arrow_right_rounded, size: 20),
+                onPressed: onClose,
+              )
+            : null,
+        centerTitle: embedded ? true : null,
+        toolbarHeight: embedded ? 60 : null,
+        titleTextStyle: embedded ? Theme.of(context).textTheme.titleSmall : null,
         title: Text('Queue · ${nSongs(songs.length)}'),
         actions: [
           if (online && songs.isNotEmpty)
