@@ -181,7 +181,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           trailing: [
             if (_ctl.text.isEmpty && !offline && canIdentify)
               IconButton(
-                tooltip: 'What\'s playing?',
+                tooltip: 'Pitch · What\'s playing?',
                 icon: const Icon(Icons.hearing_rounded),
                 onPressed: () => showWhatsPlaying(context),
               ),
@@ -358,7 +358,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 audioHandler.autoGet
-                    ? 'Tap to play: your server gets it on trial. Heart it to keep it.'
+                    ? 'Tap to play: Audition gets it to try. Heart it to keep it.'
                     : 'Tap to download through your server, or play a preview.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),

@@ -48,7 +48,8 @@ void main() {
     final c = Concerts.fromJson(_json);
     await tester.pumpWidget(app(const Scaffold(body: SingleChildScrollView(child: ConcertsShelf())), c));
     await tester.pump();
-    expect(find.text('Concerts near you'), findsOneWidget);
+    expect(find.text('Marquee'), findsOneWidget); // the shelf's name
+    expect(find.textContaining('Concerts in Lisbon'), findsOneWidget); // and what it is
     expect(find.text('The Band'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(app(const ConcertsScreen(), c));
@@ -64,6 +65,6 @@ void main() {
   testWidgets('nothing found: no Home row', (tester) async {
     await tester.pumpWidget(app(const Scaffold(body: ConcertsShelf()), const Concerts(city: 'x')));
     await tester.pump();
-    expect(find.text('Concerts near you'), findsNothing);
+    expect(find.text('Marquee'), findsNothing);
   });
 }

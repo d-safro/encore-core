@@ -51,7 +51,8 @@ void main() {
       ),
     ));
     await tester.pump();
-    expect(find.text('Your mixes'), findsOneWidget);
+    expect(find.text('Repertoire'), findsOneWidget); // the shelf's name
+    expect(find.text('Your mixes'), findsOneWidget); // and what it is
     expect(find.text('Daily Mix 1'), findsNWidgets(2)); // on the picture and under it
     expect(find.text('A, B and more'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -63,6 +64,6 @@ void main() {
       child: const MaterialApp(home: Scaffold(body: MixesShelf())),
     ));
     await tester.pump();
-    expect(find.text('Your mixes'), findsNothing);
+    expect(find.text('Repertoire'), findsNothing);
   });
 }

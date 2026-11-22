@@ -66,7 +66,7 @@ class _DevicesSheet extends ConsumerWidget {
               const ListTile(
                 leading: Icon(Icons.info_outline_rounded),
                 title: Text('Your server can\'t connect your devices'),
-                subtitle: Text('This needs the server extras (music-lookup). "Continue from another device" on Home '
+                subtitle: Text('This needs Conductor or music-lookup. "Continue from another device" on Home '
                     'still picks up the queue saved on the server.'),
               )
             else if (online.isEmpty)

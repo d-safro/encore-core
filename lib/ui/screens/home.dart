@@ -169,7 +169,7 @@ class _QuickPills extends ConsumerWidget {
           if (online)
             pill(
               Icons.groups_rounded,
-              ref.watch(jamProvider).active ? 'Jam is on' : 'Start a Jam',
+              ref.watch(jamProvider).active ? 'Ensemble is on' : 'Ensemble · Listen together',
               () => showJamSheet(context),
             ),
           if (online)
@@ -277,7 +277,8 @@ class MixesShelf extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     return Shelf(
-      title: 'Your mixes',
+      title: 'Repertoire',
+      subtitle: 'Your mixes',
       children: [
         for (final x in m.mixes)
           SizedBox(

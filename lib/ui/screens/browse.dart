@@ -743,7 +743,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                 const PopupMenuItem(value: 'details', child: Text('Edit name and description')),
                 const PopupMenuItem(value: 'picture', child: Text('Change picture')),
                 if (ref.read(playlistRulesProvider(widget.id)).value == null)
-                  const PopupMenuItem(value: 'invite', child: Text('Invite to edit')),
+                  const PopupMenuItem(value: 'invite', child: Text('Chorus · Invite to edit')),
                 if (ref.read(playlistRulesProvider(widget.id)).value != null)
                   const PopupMenuItem(value: 'rules', child: Text('Edit rules'))
                 else

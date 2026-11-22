@@ -18,7 +18,7 @@ import 'player.dart' show artSchemeProvider;
 final reviewProvider = FutureProvider.autoDispose.family<ListeningReview, (String, int)>((ref, k) async {
   ref.cacheFor(const Duration(minutes: 30));
   final c = ref.watch(clientProvider);
-  if (c == null || !ref.watch(repoProvider).online) throw Exception('Your year in review needs your server');
+  if (c == null || !ref.watch(repoProvider).online) throw Exception('Curtain Call (your year in review) needs your server');
   return c.listeningReview(k.$1, offset: k.$2);
 });
 
@@ -137,7 +137,7 @@ class _StoryState extends ConsumerState<_Story> with SingleTickerProviderStateMi
     final topAlbum = s.albums.isEmpty ? null : s.albums.first;
     return [
       _Card(topAlbum?.$1.coverArt ?? '', (c) => _Big(
-        kicker: 'Your ${widget.title}',
+        kicker: 'Curtain Call · Your ${widget.title}',
         big: thousands(s.minutes),
         line: 'minutes of music',
         more: '${thousands(s.plays)} plays · ${thousands(s.songCount)} songs · ${thousands(s.artistCount)} artists',

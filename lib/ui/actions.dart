@@ -365,7 +365,7 @@ Future<void> showSongMenu(
                 ListTile(
                   leading: const Icon(Icons.play_arrow_rounded),
                   title: const Text('Play'),
-                  subtitle: const Text('Your server gets it on trial; heart it to keep it'),
+                  subtitle: const Text('Audition: your server gets it to try; heart it to keep it'),
                   onTap: () {
                     close();
                     audioHandler.playSongs([song]);

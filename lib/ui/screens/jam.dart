@@ -35,7 +35,13 @@ class _JamSheet extends ConsumerWidget {
               children: [
                 Icon(Icons.groups_rounded, color: cs.primary),
                 const SizedBox(width: 10),
-                Text('Jam', style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Ensemble', style: t.headlineSmall?.copyWith(fontWeight: FontWeight.w700)),
+                    Text('Listen together', style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
+                  ],
+                ),
                 const Spacer(),
                 if (jam.active)
                   Chip(
@@ -60,7 +66,7 @@ class _JamSheet extends ConsumerWidget {
                 icon: jam.busy
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Icon(Icons.play_arrow_rounded),
-                label: const Text('Start a Jam'),
+                label: const Text('Start an Ensemble'),
                 onPressed: !online || jam.busy ? null : () => ref.read(jamProvider.notifier).start(),
               ),
               if (!online)
@@ -70,7 +76,7 @@ class _JamSheet extends ConsumerWidget {
                 ),
             ] else ...[
               Text(
-                'Anyone with this link can add songs, reorder, remove and skip until you end the Jam.',
+                'Anyone with this link can add songs, reorder, remove and skip until you end the Ensemble.',
                 style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
               ),
               const SizedBox(height: 20),
@@ -95,7 +101,7 @@ class _JamSheet extends ConsumerWidget {
                       icon: const Icon(Icons.share_rounded),
                       label: const Text('Share link'),
                       onPressed: () => SharePlus.instance.share(
-                        ShareParams(text: 'Join my Jam and add songs: ${jam.url}', subject: 'Jam'),
+                        ShareParams(text: 'Join my Ensemble and add songs to what we listen to: ${jam.url}', subject: 'Ensemble'),
                       ),
                     ),
                   ),
@@ -113,9 +119,9 @@ class _JamSheet extends ConsumerWidget {
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 icon: const Icon(Icons.stop_rounded),
-                label: const Text('End Jam'),
+                label: const Text('End the Ensemble'),
                 onPressed: () async {
-                  if (await confirm(context, 'End the Jam?', 'The link stops working for everyone.', ok: 'End')) {
+                  if (await confirm(context, 'End the Ensemble?', 'The link stops working for everyone.', ok: 'End')) {
                     await ref.read(jamProvider.notifier).end();
                   }
                 },

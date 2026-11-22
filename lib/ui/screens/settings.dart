@@ -110,7 +110,7 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             secondary: const Icon(Icons.cloud_download_outlined),
             title: const Text('Show music you don\'t have'),
-            subtitle: const Text('Search and album pages include songs your server can download (music-lookup)'),
+            subtitle: const Text('Search and album pages include songs your server can download (Conductor or music-lookup)'),
             value: s.showLookup,
             onChanged: (v) => set('showLookup', v),
           ),
@@ -152,7 +152,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ListTile(
             leading: const Icon(Icons.translate_rounded),
-            title: const Text('Translate lyrics into'),
+            title: const Text('Libretto · Translate lyrics into'),
             subtitle: Text(
               '${s.lyricsLanguage.isEmpty ? 'Your phone\'s language (${lyricsLanguages[lyricsTargetLanguage('')]})' : lyricsLanguages[s.lyricsLanguage] ?? s.lyricsLanguage}'
               ' · by your server\'s AI, nothing leaves home',
@@ -161,7 +161,7 @@ class SettingsScreen extends ConsumerWidget {
               final v = await showDialog<String>(
                 context: context,
                 builder: (ctx) => SimpleDialog(
-                  title: const Text('Translate lyrics into'),
+                  title: const Text('Libretto · Translate lyrics into'),
                   children: [
                     for (final e in {'': 'Your phone\'s language', ...lyricsLanguages}.entries)
                       ListTile(
@@ -177,7 +177,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           SwitchListTile(
             secondary: const Icon(Icons.stadium_outlined),
-            title: const Text('Concerts near you'),
+            title: const Text('Marquee · Concerts near you'),
             subtitle: const Text('A notification when an artist you play or follow announces a show near you'),
             value: prefs.getBool('concertAlerts') ?? true,
             onChanged: (v) async {
@@ -311,7 +311,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           SwitchListTile(
             secondary: const Icon(Icons.record_voice_over_outlined),
-            title: const Text('DJ'),
+            title: const Text('Interlude · DJ'),
             subtitle: Text(s.dj
                 ? 'Says a line about the next song ${s.djEvery == 1 ? 'before every song' : 'every ${s.djEvery} songs'}, over its start. Needs your server\'s AI to be on'
                 : 'A line about the next song now and then, written and read by your server\'s AI (when it\'s on)'),
@@ -331,7 +331,7 @@ class SettingsScreen extends ConsumerWidget {
           if (s.dj)
             ListTile(
               leading: const SizedBox(width: 24),
-              title: const Text('The DJ speaks'),
+              title: const Text('Interlude speaks'),
               subtitle: Text(s.djLanguage.isEmpty
                   ? 'Your phone\'s language (${djLanguages[djLanguage('')]})'
                   : djLanguages[s.djLanguage] ?? s.djLanguage),
@@ -339,7 +339,7 @@ class SettingsScreen extends ConsumerWidget {
                 final v = await showDialog<String>(
                   context: context,
                   builder: (ctx) => SimpleDialog(
-                    title: const Text('The DJ speaks'),
+                    title: const Text('Interlude speaks'),
                     children: [
                       for (final e in {'': 'Your phone\'s language', ...djLanguages}.entries)
                         ListTile(
@@ -355,9 +355,9 @@ class SettingsScreen extends ConsumerWidget {
             ),
           SwitchListTile(
             secondary: const Icon(Icons.auto_fix_high_outlined),
-            title: const Text('Automix'),
+            title: const Text('Metronome · Automix'),
             subtitle: const Text('The next song comes in where this one starts to fade, for a few bars at its '
-                'tempo; silence at the ends is cut. Uses your server\'s analysis, else the crossfade above'),
+                'tempo; silence at the ends is cut. Uses Metronome, your server\'s analysis, else the crossfade above'),
             value: s.automix,
             onChanged: (v) => set('automix', v),
           ),
@@ -1217,7 +1217,7 @@ class _DevicesSettings extends ConsumerWidget {
           secondary: const Icon(Icons.devices_rounded),
           title: const Text('Connect to your other devices'),
           subtitle: Text(switch (st.supported) {
-            false => 'Your server doesn\'t have the extras for this (music-lookup)',
+            false => 'Your server doesn\'t have the extras for this (Conductor or music-lookup)',
             _ when !on => 'Off: your devices don\'t see this one',
             _ => st.online.isEmpty
                 ? 'See what they play, control them, move playback (none open right now)'
@@ -1294,7 +1294,7 @@ class _MixesSettingsState extends ConsumerState<_MixesSettings> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionTitle('Your mixes'),
+        const SectionTitle('Repertoire · Your mixes'),
         for (final k in mixNames.keys)
           SwitchListTile(
             secondary: Icon(switch (k) {
