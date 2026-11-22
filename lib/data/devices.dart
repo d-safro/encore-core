@@ -13,7 +13,7 @@ import '../playback/audio_device.dart';
 import '../playback/handler.dart';
 import 'account.dart';
 import 'library.dart';
-import 'local_files.dart' show isLocalFileId, serverQueue, shareableCover;
+import 'local_files.dart' show isLocalFileId, serverQueue, serverQueueAround, shareableCover;
 import 'subsonic.dart';
 
 /// Your devices running Encore (the phone, the desktop app) see each other through the server (music-lookup's
@@ -395,7 +395,7 @@ class DevicesNotifier extends Notifier<DevicesState> {
     final songs = h.songs;
     if (songs.isEmpty) return false;
     // files on this device can't play there: the server songs go, from the one playing (or the next)
-    final (ids, index) = serverQueue(songs.take(500).toList(), h.playbackState.value.queueIndex ?? 0);
+    final (ids, index) = serverQueueAround(songs, h.playbackState.value.queueIndex ?? 0);
     if (ids.isEmpty) return false;
     final current = h.currentSong;
     final ok = await send(d.id, DeviceCommand.playQueue, {

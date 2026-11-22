@@ -5,7 +5,7 @@ import 'dart:io';
 
 import 'package:background_downloader/background_downloader.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
+import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -310,7 +310,8 @@ class SyncNotifier extends Notifier<SyncState> {
   SyncState build() {
     final gen = ++_gen;
     ref.read(dbProvider).lastSync().then((d) {
-      if (gen == _gen && !state.running) state = SyncState(last: d);
+      // (switched servers meanwhile, or signed out: this notifier is gone)
+      if (ref.mounted && gen == _gen && !state.running) state = SyncState(last: d);
     });
     return const SyncState();
   }
@@ -324,7 +325,7 @@ class SyncNotifier extends Notifier<SyncState> {
     final gen = _gen;
     // what this sync says goes to its own server's state only
     void set(SyncState s) {
-      if (gen == _gen) state = s;
+      if (ref.mounted && gen == _gen) state = s;
     }
     try {
       set(const SyncState(running: true, message: 'Artists…'));
@@ -352,7 +353,7 @@ class SyncNotifier extends Notifier<SyncState> {
         } catch (_) {} // one playlist that won't load shouldn't stop the whole sync
       }
       // switched to another server meanwhile: its library copy isn't this one (its own sync fills it)
-      if (gen != _gen) return;
+      if (!ref.mounted || gen != _gen) return;
       await ref
           .read(dbProvider)
           .replaceLibrary(artists: artists, albums: albums, songs: songs, playlists: playlists, playlistSongs: plSongs);
@@ -408,13 +409,22 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   final _inFlight = <String, List<(int?, String)>>{}; // artist|title -> (length, song id) downloading now
   final _waiting = <String, List<Song>>{}; // song id downloading -> other copies waiting for its file
 
+  // "(2011 Remaster)" is the same recording; "(Radio Edit)", "(Live)", "(Acoustic Version)", "(… Mix)" aren't
+  static final _remaster = RegExp(
+    r'\((?![^)]*\b(live|version|edit|mix)\b)[^)]*(remaster|mono|stereo)[^)]*\)|\s-\s(?!.*\b(live|version|edit|mix)\b).*remaster.*$',
+  );
   static String _norm(String x) => x
       .toLowerCase()
-      .replaceAll(RegExp(r'\(.*?(remaster|version|edit|mono|stereo).*?\)|\s-\s.*(remaster|version).*$'), '')
+      .replaceAll(_remaster, '')
       .replaceAll(RegExp(r'[^\p{L}\p{N}]+', unicode: true), ' ')
       .trim();
   static String _recording(Song s) => '${_norm(s.artist)}|${_norm(s.title)}';
-  static bool _sameLength(int? a, int? b) => a == null || b == null || (a - b).abs() <= 2;
+  // an unknown length isn't the same length: two songs only share a file when both lengths agree
+  static bool _sameLength(int? a, int? b) => a != null && b != null && (a - b).abs() <= 2;
+
+  /// Whether [a] and [b] are taken for the same recording (stored once, see above).
+  @visibleForTesting
+  static bool sameRecording(Song a, Song b) => _recording(a) == _recording(b) && _sameLength(a.duration, b.duration);
 
   String? _copyOf(Song s) {
     for (final (len, path) in _copies[_recording(s)] ?? const <(int?, String)>[]) {
@@ -482,6 +492,11 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
 
   /// Loads the saved downloads, dropping any whose file is gone or isn't audio (e.g. a server error page).
   Future<void> _loadFiles() async {
+    // like _run: a server switch meanwhile (a new build) and what this finds belongs to the server left, so
+    // it isn't mixed into the new server's downloads
+    final gen = _gen;
+    bool stale() => _disposed || gen != _gen;
+    final db = ref.read(dbProvider);
     // files replaced by smaller copies while the player was using them
     for (final p in prefs.getStringList('deleteLater') ?? const <String>[]) {
       try {
@@ -490,13 +505,15 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     }
     prefs.remove('deleteLater');
     try {
-      final rows = await ref.read(dbProvider).downloads();
+      final rows = await db.downloads();
+      if (stale()) return;
       final m = {for (final (song, path, _) in rows) song.id: path};
       final bad = <String>[];
       final ok = <String, bool>{};
       for (final e in m.entries) {
         if (!(ok[e.value] ??= await _isAudio(e.value))) bad.add(e.key);
       }
+      if (stale()) return;
       for (final (song, path, _) in rows) {
         if (ok[path] == true) _addCopy(song, path);
       }
@@ -504,8 +521,10 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         try {
           await File(m.remove(id)!).delete();
         } catch (_) {}
-        await ref.read(dbProvider).removeDownload(id);
+        if (stale()) return;
+        await db.removeDownload(id);
       }
+      if (stale()) return;
       state = state.copy(files: {...m, ...state.files});
     } catch (_) {}
   }
@@ -551,7 +570,20 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   static const _parallel = 3;
   static const _parallelCable = 6; // the server converting songs to Opus is what limits it then
 
+  /// Where downloads are kept (each server and account in a folder of its own inside, see [_ownDir]).
   static Future<Directory> musicDir() async => Directory(p.join((await getApplicationSupportDirectory()).path, 'music'));
+
+  /// This server's (and account's) folder: two accounts on one server have the same song ids, so one
+  /// folder for all would let one account's "remove" delete the other's file. Named after its library file.
+  String get _ownFolder => p.basenameWithoutExtension(ref.read(dbProvider).file);
+  Future<Directory> _ownDir() async => Directory(p.join((await musicDir()).path, _ownFolder));
+
+  /// Downloads from before each had its own folder (Encore 1.10 and older) all sit in [musicDir] itself, and
+  /// may be another account's download too: a file there stays while another library still lists it.
+  Future<bool> _sharedFile(String path) async {
+    if (p.dirname(path) != (await musicDir()).path) return false;
+    return ref.read(dbProvider).otherLibraryHas(path);
+  }
 
   void _loadQueue() {
     try {
@@ -796,7 +828,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     final ext = raw ? (q.song.suffix.isEmpty ? 'mp3' : q.song.suffix) : q.format;
     final guess = raw ? q.song.size : sizeAt(q.song, q.kbps); // when the server doesn't say how big
     try {
-      final dir = await musicDir();
+      final dir = await _ownDir();
       final net = _net ??= HttpClient()
         ..connectionTimeout = const Duration(seconds: 20)
         ..idleTimeout = const Duration(seconds: 30);
@@ -884,12 +916,15 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   }
 
   Future<void> _deletePart(String id) async {
-    try {
-      await for (final f in (await musicDir()).list()) {
-        final name = p.basename(f.path);
-        if (name.startsWith('$id.') && name.endsWith('.part')) await f.delete();
-      }
-    } catch (_) {}
+    // (and one left in the shared folder from before, which nothing will carry on with now)
+    for (final dir in [await _ownDir(), await musicDir()]) {
+      try {
+        await for (final f in dir.list()) {
+          final name = p.basename(f.path);
+          if (name.startsWith('$id.') && name.endsWith('.part')) await f.delete();
+        }
+      } catch (_) {}
+    }
   }
 
   /// Songs Encore 1.7 and older left with Android's download jobs (still queued, or failed while the server
@@ -998,7 +1033,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
         taskId: 'shrink-${s.id}',
         url: c.streamUrl(s.id, format: set.downloadFormat, maxBitRate: set.downloadBitrate).toString(),
         filename: '${s.id}-${set.downloadBitrate}.${set.downloadFormat}',
-        directory: 'music',
+        directory: 'music/$_ownFolder',
         baseDirectory: BaseDirectory.applicationSupport,
         updates: Updates.status,
         requiresWiFi: set.downloadWifiOnly,
@@ -1052,7 +1087,9 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     }
     state = state.copy(files: files);
     final busy = files.entries.any((e) => e.value == newPath && (fileInUse?.call(e.key) ?? false));
-    if (busy) {
+    if (await _sharedFile(oldPath)) {
+      // another account's download too: it keeps the old file
+    } else if (busy) {
       await prefs.setStringList('deleteLater', [...?prefs.getStringList('deleteLater'), oldPath]);
     } else {
       try {
@@ -1097,7 +1134,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     }
     for (final path in gone) {
       try {
-        await File(path).delete();
+        if (!await _sharedFile(path)) await File(path).delete();
       } catch (_) {}
       for (final l in _copies.values) {
         l.removeWhere((e) => e.$2 == path);

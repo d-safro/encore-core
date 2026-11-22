@@ -7,6 +7,7 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 
 import 'automix.dart';
@@ -927,14 +928,41 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     );
   }
 
-  /// The lock screen's, notification's and widget's picture: the one kept on the phone when there is one
-  /// (shows with no server too), else the server's.
+  /// The lock screen's, notification's and widget's picture: always one on the phone (it shows with no
+  /// server too). Never the server's address for it: that carries your login (a token that works again and
+  /// again), and every app that can see what's playing could read it. The playing song's is fetched onto
+  /// the phone when it isn't there yet ([_fetchArt]).
   static Uri? _artUri(SubsonicClient? c, String coverArt) {
     if (coverArt.startsWith('http')) return Uri.parse(coverArt); // an audiobook's cover
     if (coverArt.startsWith('file:')) return Uri.file(coverArt.substring(5)); // a file on this device: its picture
     if (c == null || coverArt.isEmpty) return null;
     final kept = savedCovers?.file(c.creds.base, coverArt, SavedCovers.large);
-    return kept != null ? Uri.file(kept.path) : c.stableCoverUrl(coverArt);
+    return kept != null ? Uri.file(kept.path) : null;
+  }
+
+  final _artTried = <String>{}; // server|cover the server had no picture for (not asked again)
+
+  /// Gets the playing song's picture onto the phone (with the downloads' covers), then shows it.
+  Future<void> _fetchArt(Song s) async {
+    final c = container.read(clientProvider);
+    final store = savedCovers;
+    final id = s.coverArt;
+    if (c == null || store == null || id.isEmpty || id.startsWith('http') || id.startsWith('file:')) return;
+    final server = c.creds.base;
+    final key = '$server|$id';
+    if (store.file(server, id, SavedCovers.large) != null || !_artTried.add(key)) return;
+    try {
+      final r = await http.get(c.coverUrl(id, size: SavedCovers.large)).timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200) return;
+      await store.save(server, id, SavedCovers.large, r.bodyBytes);
+    } catch (_) {
+      _artTried.remove(key); // no server right now: tried again next time
+      return;
+    }
+    if (store.file(server, id, SavedCovers.large) == null) return; // it has none
+    _artTried.remove(key);
+    final cur = currentSong;
+    if (cur != null && cur.coverArt == id && mediaItem.value?.id == cur.id) mediaItem.add(_mediaItem(cur));
   }
 
   /// The same for the car's lists, which can't open Encore's own files: shared through CoverArtProvider.
@@ -976,7 +1004,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _newQueue();
     playContext = context;
     playSource = source ?? context?.key;
-    var list = songs.where((s) => (allowLookup || !s.isLookup || autoGet) && canPlay(s)).toList();
+    final kept = [
+      for (var k = 0; k < songs.length; k++)
+        if ((allowLookup || !songs[k].isLookup || autoGet) && canPlay(songs[k])) k,
+    ];
+    var list = [for (final k in kept) songs[k]];
     if (list.isEmpty) {
       if (songs.isNotEmpty) {
         playerNotices.add(
@@ -988,8 +1020,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       return;
     }
     if (index >= 0 && index < songs.length) {
+      // the copy tapped (a song in the list twice plays from where you tapped it)
       final want = songs[index];
-      index = max(0, list.indexWhere((s) => s.id == want.id));
+      final at = kept.indexOf(index);
+      index = at >= 0 ? at : max(0, list.indexWhere((s) => s.id == want.id));
     } else {
       index = 0;
     }
@@ -1063,6 +1097,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }
     }
     _loaded = false;
+    _restoredIndex = index; // pressing play tries again from here
+    _restoredPosition = position ?? Duration.zero;
     if (!offline && index < list.length) _diagnose(list[index]);
     if (!quiet) {
       playerNotices.add(
@@ -1076,6 +1112,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// is loaded again when you press play.
   bool _loaded = false;
   int _restoredIndex = 0;
+  Duration _restoredPosition = Duration.zero;
 
   Future<void> playNext(List<Song> songs) => insertSongs((player.currentIndex ?? -1) + 1, songs);
 
@@ -1393,7 +1430,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   /// The queue ran out anyway (the songs weren't ready in time): fetch them now; they start when they come.
+  /// Nothing came: it stops there (paused; else the player stays "playing" at the end, keeping the
+  /// notification up and saving forever). Songs that arrive later still start by themselves.
   void _continueAfterEnd() {
+    player.pause();
     if (player.currentIndex == _songs.length - 1) _keepGoing();
   }
 
@@ -1930,16 +1970,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _fadeFrom == i - 1 && _fadeTimer != null ? _handOff() : _cancelFade();
     }
     mediaItem.add(_mediaItem(s));
+    _fetchArt(s);
     _applyReplayGain();
     if (_cast != null) _castCurrent();
     _listened = Duration.zero;
     _lastTick = null;
     _submitted = null;
-    if (_settings.scrobble && !_private && _scrobbledNow != s.id && !isPodcastId(s.id) && !isLocalFileId(s.id) &&
-        !container.read(offlineProvider)) {
-      _scrobbledNow = s.id;
-      container.read(clientProvider)?.scrobble(s.id, submission: false).catchError((_) {});
-    }
     _keepGoing();
     _smartFill();
     _scheduleSave();
@@ -1973,6 +2009,18 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final ended = s == null || ps == ProcessingState.completed || ps == ProcessingState.idle;
     final id = s?.id ?? _reportedId;
     if (id == null || (s != null && (s.isLookup || isPodcastId(s.id) || isLocalFileId(s.id)))) return; // not the server's
+    if (!ended && !player.playing && _reportedId != id) {
+      // only lined up, never started (e.g. the first song of a queue shuffled straight away, or one restored
+      // at start-up): not reported as playing. What was reported before it has stopped.
+      final was = _reportedId;
+      if (was == null || _reportedState == 'stopped') return;
+      try {
+        await c.reportPlayback(was, state: 'stopped', positionMs: 0);
+        _reportedId = null;
+        _reportedState = 'stopped';
+      } catch (_) {}
+      return;
+    }
     final state = ended
         ? 'stopped'
         : !player.playing
@@ -2011,6 +2059,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       return;
     }
     if (s == null) return;
+    // "now playing" once the song has really started playing (not a song only lined up, e.g. the first of a
+    // queue that was shuffled straight away)
+    if (_scrobbledNow != s.id && player.playing && _listened >= const Duration(milliseconds: 500) &&
+        _settings.scrobble && !_private && !isLocalFileId(s.id) && !container.read(offlineProvider)) {
+      _scrobbledNow = s.id;
+      container.read(clientProvider)?.scrobble(s.id, submission: false).catchError((_) {});
+    }
     final len = Duration(seconds: s.duration ?? 240);
     final need = Duration(milliseconds: min(len.inMilliseconds ~/ 2, 240000));
     if (_playCounted != s.id && _listened >= need) {
@@ -2075,8 +2130,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Future<void> saveNow() => _saveQueue();
 
   Future<void> _saveQueue() async {
-    final i = player.currentIndex ?? 0;
-    final pos = player.position.inMilliseconds;
+    // a queue that couldn't load (no server at start-up, not downloaded): its place stays as it was
+    final held = !_loaded && _songs.isNotEmpty;
+    final i = held ? _restoredIndex : player.currentIndex ?? 0;
+    final pos = held ? _restoredPosition.inMilliseconds : player.position.inMilliseconds;
     prefs.setString(
       'queue',
       jsonEncode({
@@ -2124,7 +2181,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   /// After switching servers: that server's queue, as you left it.
-  Future<void> enterServer() => _restoreQueue();
+  /// (Nothing to do when the queue is still here: signed in to the same server again, e.g. a new password.)
+  Future<void> enterServer() async {
+    if (_songs.isEmpty) await _restoreQueue();
+  }
 
   Future<void> _restoreQueue() async {
     final raw = prefs.getString('queue');
@@ -2140,7 +2200,11 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         final kept = container.read(bookDownloadsProvider).kept;
         await reopenBooks([for (final s in songs) s.id], local: {for (final e in kept.entries) e.key: e.value.tracks});
       }
+      final position = Duration(milliseconds: (j['position'] as num?)?.toInt() ?? 0);
+      // where it is until it loads (the 5-second save keeps this, not the empty player's 0:00 of song 1)
       _restoredIndex = index;
+      _restoredPosition = position;
+      _loaded = false;
       _songs.addAll(songs);
       final byId = {for (final s in songs) s.id: s};
       _shuffleKind = ShuffleKind.values.firstWhere((k) => k.name == j['shuffle'], orElse: () => ShuffleKind.off);
@@ -2152,7 +2216,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       _autoplay.addAll(((j['autoplay'] as List?) ?? const []).map((e) => '$e').where(byId.containsKey));
       playContext = PlayContext.fromJson(j['context']);
       playSource = j['source'] as String? ?? playContext?.key;
-      await _load(songs, index, position: Duration(milliseconds: (j['position'] as num?)?.toInt() ?? 0), quiet: true);
+      await _load(songs, index, position: position, quiet: true);
       _broadcastQueue();
       _rebroadcast();
     } catch (_) {
@@ -2168,6 +2232,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (songs.isEmpty) return false;
     final idx = max(0, songs.indexWhere((s) => s.id == current));
     radioSeed = null;
+    radioStation = null;
     _newQueue();
     _resetShuffle();
     _songs
@@ -2206,8 +2271,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   @override
   Future<void> play() async {
     if (!_loaded && _songs.isNotEmpty && radioStation == null) {
-      final i = player.currentIndex ?? _restoredIndex;
-      if (!await _load(List.of(_songs), i.clamp(0, _songs.length - 1), position: player.position)) return;
+      // the place it was held at (not the player's: it holds nothing that loaded)
+      final i = _restoredIndex.clamp(0, _songs.length - 1);
+      if (!await _load(List.of(_songs), i, position: _restoredPosition)) return;
     }
     await player.play();
   }
@@ -2251,6 +2317,12 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   @override
   Future<void> skipToQueueItem(int index) async {
     if (index < 0 || index >= _songs.length) return;
+    if (!_loaded) {
+      // a queue that couldn't load yet (no server at start-up): it's tried again from the song picked
+      _restoredIndex = index;
+      _restoredPosition = Duration.zero;
+      return play();
+    }
     _userMoved(index > (player.currentIndex ?? 0));
     await player.seek(Duration.zero, index: index);
     player.play();
@@ -2470,8 +2542,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (parentMediaId.startsWith('album:')) {
         final a = await repo.album(parentMediaId.substring(6));
         return [
-          for (final s in a.songs.where((s) => !s.isLookup && canPlay(s)))
-            songItem(s, 'song:${a.id}:${s.id}'),
+          // the song's place in the album too: a song in it twice plays from the copy picked
+          for (final (k, s) in a.songs.indexed)
+            if (!s.isLookup && canPlay(s)) songItem(s, 'song:${a.id}:${s.id}:$k'),
         ];
       }
       if (parentMediaId.startsWith('pl:')) {
@@ -2479,8 +2552,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         final p = await repo.playlist(id);
         return [
           action('plshuffle:$id', 'Shuffle', subtitle: p.name),
-          for (final s in p.songs.where((s) => !s.isLookup && canPlay(s)).take(300))
-            songItem(s, 'plsong:$id:${s.id}'),
+          for (final (k, s) in p.songs.indexed.where((e) => !e.$2.isLookup && canPlay(e.$2)).take(300))
+            songItem(s, 'plsong:$id:${s.id}:$k'),
         ];
       }
     } catch (_) {}
@@ -2491,6 +2564,15 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   Future<void> playFromMediaId(String mediaId, [Map<String, dynamic>? extras]) async {
     final repo = container.read(repoProvider);
     final p = mediaId.split(':');
+    // song:<album>:<song>:<place in the album> (plsong: the same in a playlist): where in [songs] (the
+    // album's or playlist's songs that aren't lookups) the picked one is
+    int picked(List<Song> all, List<Song> songs) {
+      final k = p.length > 3 ? int.tryParse(p[3]) : null;
+      if (k != null && k < all.length && all[k].id == p[2] && !all[k].isLookup) {
+        return all.take(k).where((s) => !s.isLookup).length;
+      }
+      return max(0, songs.indexWhere((s) => s.id == p[2]));
+    }
     switch (p.first) {
       case 'resume':
         return play(); // the restored queue is already loaded
@@ -2526,7 +2608,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         final songs = pl.songs.where((s) => !s.isLookup).toList();
         return playSongs(
           songs,
-          index: max(0, songs.indexWhere((s) => s.id == p[2])),
+          index: picked(pl.songs, songs),
           context: PlayContext.playlist(pl.id, pl.name),
         );
       case 'song':
@@ -2534,7 +2616,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         final songs = a.songs.where((s) => !s.isLookup).toList();
         return playSongs(
           songs,
-          index: max(0, songs.indexWhere((s) => s.id == p[2])),
+          index: picked(a.songs, songs),
           context: PlayContext.album(a.id, a.name),
         );
     }

@@ -24,6 +24,17 @@ void main() {
     expect(identificationSummary(Identification.fromJson({'found': false})), 'not yours');
   });
 
+  test("the server not able to look isn't \"not one of yours\"", () {
+    Identification err(String e) => Identification.fromJson({'found': false, 'error': e});
+    final notSetUp = err("Song ID isn't set up on the server (songid_url)");
+    expect(identificationSummary(notSetUp), "Your server can't recognise songs yet (Pitch isn't set up there)");
+    expect(songIdNotSetUp(notSetUp), isTrue); // listening again won't help
+    final down = err("song-id isn't running");
+    expect(identificationSummary(down), "Your server's song ID isn't running right now");
+    expect(songIdNotSetUp(down), isFalse);
+    expect(identificationSummary(err('Something else broke')), 'Something else broke');
+  });
+
   test('finds are remembered, newest first, once each', () async {
     await rememberIdentified({'id': 'a', 'title': 'A', 'artist': 'X'});
     await rememberIdentified({'id': 'b', 'title': 'B', 'artist': 'Y'});

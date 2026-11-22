@@ -70,7 +70,10 @@ class HomeScreen extends ConsumerWidget {
                       if (offline)
                         Padding(
                           padding: const EdgeInsets.only(right: 4),
-                          child: Icon(Icons.cloud_off_rounded, color: cs.onSurfaceVariant, size: 20),
+                          child: Tooltip(
+                            message: 'Offline: your downloads play',
+                            child: Icon(Icons.cloud_off_rounded, color: cs.onSurfaceVariant, size: 20),
+                          ),
                         ),
                       IconButton(
                         icon: const Icon(Icons.download_done_rounded),

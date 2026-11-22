@@ -51,15 +51,84 @@ String lyricsTargetLanguage(String picked, [String? device]) {
 
 /// Lyrics written in another alphabet (Japanese, Korean, Chinese, Cyrillic, Arabic, Hebrew, Hindi, Greek):
 /// these can also be shown romanized.
-bool needsRomanizing(Iterable<String> lines) {
+/// (Credit lines, see [isCreditLine], don't count.)
+bool needsRomanizing(Iterable<String> lines, {String title = '', String artist = ''}) {
   final other = RegExp(r'[Ͱ-ϿЀ-ӿ֐-ۿऀ-ॿ぀-ヿ㐀-鿿가-힯]');
-  var n = 0, total = 0;
+  final sung = sungLines(lines, title: title, artist: artist);
+  return sung.isNotEmpty && sung.where(other.hasMatch).length * 3 >= sung.length; // a third of the lines or more
+}
+
+/// The lines that are sung: not empty, not credits ([isCreditLine], or a "Title - Artist (…)" line at the top).
+List<String> sungLines(Iterable<String> lines, {String title = '', String artist = ''}) {
+  final out = <String>[];
   for (final l in lines) {
-    if (l.trim().isEmpty) continue;
-    total++;
-    if (other.hasMatch(l)) n++;
+    if (l.trim().isEmpty || isCreditLine(l, title: title, artist: artist, first: out.isEmpty)) continue;
+    out.add(l);
   }
-  return total > 0 && n * 3 >= total; // a third of the lines or more
+  return out;
+}
+
+/// Not a sung line: "Title - Artist (…)" at the top of lyrics found online (e.g. "Test Song - Test Band
+/// (测试乐队)"), "Written by …", "作词 : …".
+/// [first]: the first line with words (a "Song - Band (…)" line there is a credit even when the names
+/// differ from the song's here).
+bool isCreditLine(String line, {String title = '', String artist = '', bool first = false}) {
+  final l = line.trim().toLowerCase();
+  if (l.isEmpty) return false;
+  if (first && RegExp(r'^[^()]+\s[-–—]\s[^()]+\([^()]+\)$').hasMatch(l)) return true;
+  if (RegExp(r'^((written|lyrics|words|music|composed|produced|arranged) by\b|(作词|作曲|编曲|作詞|編曲|词|曲)\s*[:：])').hasMatch(l)) {
+    return true;
+  }
+  final t = title.trim().toLowerCase(), a = artist.trim().toLowerCase();
+  return l.contains(' - ') && ((t.isNotEmpty && l.contains(t)) || (a.isNotEmpty && l.contains(a)));
+}
+
+// everyday English words other languages hardly use (not "me", "no", "a", "in", "come"...)
+const _englishWords = {
+  'the', 'you', 'your', "you're", 'and', 'to', 'of', 'my', 'it', "it's", "i'm", "i'll", "i've", "don't", "can't",
+  "won't", 'that', 'what', 'this', 'with', 'just', 'know', 'when', 'are', 'but', 'be', 'never', 'she', 'they',
+  'we', 'love', 'like', 'need', 'feel', 'baby', 'yeah', 'can', 'there', 'how', 'why', 'where', 'now',
+  'out', 'back', 'get', 'got', 'time', 'night', 'heart', 'say', 'one', 'if', 'been', 'have',
+};
+
+/// Lyrics already in [lang], going by most of their sung lines (credit lines don't count): nothing to
+/// translate then. Only said when it can tell: English by its everyday words, and languages with an
+/// alphabet of their own; false otherwise (the server then says whether they're already in it).
+bool lyricsAlreadyIn(Iterable<String> lines, String lang, {String title = '', String artist = ''}) {
+  final sung = [for (final l in sungLines(lines, title: title, artist: artist)) l.toLowerCase()];
+  if (sung.isEmpty) return false;
+  final kana = RegExp(r'[぀-ヿ]'), han = RegExp(r'[㐀-鿿]'), hangul = RegExp(r'[가-힯]');
+  final notLatin = RegExp(r'[Ͱ-ϿЀ-ӿ֐-ۿऀ-ॿ぀-ヿ㐀-鿿가-힯]');
+  final bool Function(String) isIn = switch (lang) {
+    'en' => (l) =>
+        !notLatin.hasMatch(l) && RegExp(r"[a-z']+").allMatches(l).any((m) => _englishWords.contains(m[0])),
+    'ja' => (l) => kana.hasMatch(l),
+    'zh' => (l) => han.hasMatch(l) && !kana.hasMatch(l) && !hangul.hasMatch(l),
+    'ko' => (l) => hangul.hasMatch(l),
+    'he' => (l) => RegExp(r'[֐-׿]').hasMatch(l),
+    'ar' => (l) => RegExp(r'[؀-ۿ]').hasMatch(l),
+    'hi' => (l) => RegExp(r'[ऀ-ॿ]').hasMatch(l),
+    _ => (_) => false,
+  };
+  return sung.where(isIn).length * 2 > sung.length;
+}
+
+/// The lines as sent to be translated: credit lines left blank (they'd make the lyrics look like another
+/// language), so they get no second line.
+String linesToTranslate(Iterable<String> lines, {String title = '', String artist = ''}) {
+  final out = <String>[];
+  var first = true; // no line with words yet
+  for (final l in lines) {
+    if (l.trim().isEmpty) {
+      out.add(l);
+    } else if (isCreditLine(l, title: title, artist: artist, first: first)) {
+      out.add('');
+    } else {
+      first = false;
+      out.add(l);
+    }
+  }
+  return out.join('\n');
 }
 
 /// What to tell you when there's no translation.

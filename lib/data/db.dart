@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
@@ -271,6 +272,51 @@ class LibraryDb {
   }, conflictAlgorithm: ConflictAlgorithm.replace);
 
   Future<void> removeDownload(String songId) => db.delete('downloads', where: 'song_id = ?', whereArgs: [songId]);
+
+  /// Whether the library file [file] lists any downloads. (Can't tell, e.g. a damaged file: true.)
+  static Future<bool> hasDownloads(String file) async {
+    final path = p.join(await getDatabasesPath(), file);
+    if (!await File(path).exists()) return false;
+    try {
+      final d = await openDatabase(path, readOnly: true, singleInstance: false);
+      try {
+        return (await d.rawQuery('SELECT 1 FROM downloads LIMIT 1')).isNotEmpty;
+      } finally {
+        await d.close();
+      }
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Whether the library file of another server or account on this device lists [path] as a download.
+  /// (Can't tell, e.g. a damaged file: true, so nothing it may need is deleted.)
+  Future<bool> otherLibraryHas(String path) async {
+    final dir = await getDatabasesPath();
+    final others = <String>[];
+    try {
+      for (final f in Directory(dir).listSync()) {
+        final name = p.basename(f.path);
+        if (f is File && name.startsWith('encore') && name.endsWith('.db') && name != file) others.add(f.path);
+      }
+    } catch (_) {
+      return true;
+    }
+    for (final o in others) {
+      try {
+        final d = await openDatabase(o, readOnly: true, singleInstance: false);
+        try {
+          final r = await d.rawQuery('SELECT 1 FROM downloads WHERE path = ? LIMIT 1', [path]);
+          if (r.isNotEmpty) return true;
+        } finally {
+          await d.close();
+        }
+      } catch (_) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   Future<Map<String, String>> downloadPaths() async => {
     for (final r in await db.query('downloads', columns: ['song_id', 'path']))

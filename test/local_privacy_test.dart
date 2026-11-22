@@ -21,4 +21,15 @@ void main() {
     expect(q(serverQueue([s1, s2, local], 2)), (['s1', 's2'].join(','), 0)); // nothing after it
     expect(q(serverQueue([local], 0)), (<String>[].join(','), 0));
   });
+
+  test('a long queue goes to another device around the song playing, not from the top', () {
+    final songs = [for (var i = 0; i < 1200; i++) Song(id: 's$i', title: '$i')];
+    final (ids, at) = serverQueueAround(songs, 900);
+    expect(ids.length, 500);
+    expect(ids[at], 's900');
+    final (few, at2) = serverQueueAround(songs.take(20).toList(), 7);
+    expect((few.length, few[at2]), (20, 's7'));
+    final (end, at3) = serverQueueAround(songs, 1199);
+    expect((end.length, end[at3]), (500, 's1199'));
+  });
 }
