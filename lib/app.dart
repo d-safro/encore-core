@@ -14,6 +14,7 @@ import 'data/episode_alerts.dart';
 import 'data/account.dart';
 import 'data/devices.dart';
 import 'desktop/file_drop.dart';
+import 'desktop/desktop_page.dart';
 import 'desktop/shell.dart';
 import 'data/sync.dart';
 import 'data/library.dart';
@@ -112,7 +113,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: '/audiobooks',
             pageBuilder: (_, _) => const NoTransitionPage(child: AudiobooksScreen()),
           ),
-          GoRoute(path: '/audiobook/:id', builder: (_, s) => AudiobookScreen(id: s.pathParameters['id']!)),
+          GoRoute(
+            path: '/audiobook/:id',
+            pageBuilder: (_, s) => _page(s, AudiobookScreen(id: s.pathParameters['id']!)),
+          ),
           GoRoute(
             path: '/library',
             pageBuilder: (_, s) {
@@ -133,56 +137,68 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: '/album/:id',
-            builder: (_, s) => AlbumScreen(id: s.pathParameters['id']!),
+            pageBuilder: (_, s) => _page(s, AlbumScreen(id: s.pathParameters['id']!)),
           ),
           GoRoute(
             path: '/artist/:id',
-            builder: (_, s) => ArtistScreen(id: s.pathParameters['id']!),
+            pageBuilder: (_, s) => _page(s, ArtistScreen(id: s.pathParameters['id']!)),
           ),
           GoRoute(
             path: '/playlist/:id',
-            builder: (_, s) => PlaylistScreen(id: s.pathParameters['id']!),
+            pageBuilder: (_, s) => _page(s, PlaylistScreen(id: s.pathParameters['id']!)),
           ),
           GoRoute(
             path: '/genre/:name',
-            builder: (_, s) => GenreScreen(name: s.pathParameters['name']!),
+            pageBuilder: (_, s) => _page(s, GenreScreen(name: s.pathParameters['name']!)),
           ),
           GoRoute(
             path: '/albums/:type',
-            builder: (_, s) =>
-                AlbumListScreen(type: s.pathParameters['type']!, title: s.uri.queryParameters['title'] ?? 'Albums'),
+            pageBuilder: (_, s) => _page(
+              s,
+              AlbumListScreen(type: s.pathParameters['type']!, title: s.uri.queryParameters['title'] ?? 'Albums'),
+            ),
           ),
-          GoRoute(path: '/folders', builder: (_, _) => const FoldersScreen()),
-          GoRoute(path: '/radio', builder: (_, _) => const RadioScreen()),
-          GoRoute(path: '/liked', builder: (_, _) => const LikedSongsScreen()),
+          GoRoute(path: '/folders', pageBuilder: (_, s) => _page(s, const FoldersScreen())),
+          GoRoute(path: '/radio', pageBuilder: (_, s) => _page(s, const RadioScreen())),
+          GoRoute(path: '/liked', pageBuilder: (_, s) => _page(s, const LikedSongsScreen())),
           GoRoute(
             path: '/following',
-            builder: (_, s) => FollowingScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0),
+            pageBuilder: (_, s) =>
+                _page(s, FollowingScreen(initialTab: int.tryParse(s.uri.queryParameters['tab'] ?? '') ?? 0)),
           ),
-          GoRoute(path: '/stats', builder: (_, _) => const StatsScreen()),
-          GoRoute(path: '/import', builder: (_, _) => const ImportPlaylistScreen()),
-          GoRoute(path: '/local', builder: (_, _) => const LocalMusicScreen()),
-          GoRoute(path: '/local/playlist/:id', builder: (_, s) => DevicePlaylistScreen(id: s.pathParameters['id']!)),
-          GoRoute(path: '/concerts', builder: (_, _) => const ConcertsScreen()),
-          GoRoute(path: '/podcasts/add', builder: (_, _) => const AddPodcastScreen()),
+          GoRoute(path: '/stats', pageBuilder: (_, s) => _page(s, const StatsScreen())),
+          GoRoute(path: '/import', pageBuilder: (_, s) => _page(s, const ImportPlaylistScreen())),
+          GoRoute(path: '/local', pageBuilder: (_, s) => _page(s, const LocalMusicScreen())),
+          GoRoute(
+            path: '/local/playlist/:id',
+            pageBuilder: (_, s) => _page(s, DevicePlaylistScreen(id: s.pathParameters['id']!)),
+          ),
+          GoRoute(path: '/concerts', pageBuilder: (_, s) => _page(s, const ConcertsScreen())),
+          GoRoute(path: '/podcasts/add', pageBuilder: (_, s) => _page(s, const AddPodcastScreen())),
           GoRoute(
             path: '/podcast/:id',
-            builder: (_, s) => PodcastScreen(id: s.pathParameters['id']!),
+            pageBuilder: (_, s) => _page(s, PodcastScreen(id: s.pathParameters['id']!)),
           ),
           GoRoute(
             path: '/podcaster',
-            builder: (_, s) =>
-                PodcasterScreen(name: s.uri.queryParameters['name'] ?? '', showId: s.uri.queryParameters['show'] ?? ''),
+            pageBuilder: (_, s) => _page(
+              s,
+              PodcasterScreen(name: s.uri.queryParameters['name'] ?? '', showId: s.uri.queryParameters['show'] ?? ''),
+            ),
           ),
-          GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
-          GoRoute(path: '/appearance', builder: (_, _) => const AppearanceScreen()),
-          GoRoute(path: '/equalizer', builder: (_, _) => const EqualizerScreen()),
-          GoRoute(path: '/downloads', builder: (_, _) => const DownloadsScreen()),
+          GoRoute(path: '/settings', pageBuilder: (_, s) => _page(s, const SettingsScreen())),
+          GoRoute(path: '/appearance', pageBuilder: (_, s) => _page(s, const AppearanceScreen())),
+          GoRoute(path: '/equalizer', pageBuilder: (_, s) => _page(s, const EqualizerScreen())),
+          GoRoute(path: '/downloads', pageBuilder: (_, s) => _page(s, const DownloadsScreen())),
         ],
       ),
     ],
   );
 });
+
+/// Pages inside the window: on the desktop, without a second back arrow (see DesktopPage).
+Page<void> _page(GoRouterState s, Widget child) =>
+    isDesktop ? DesktopPage(key: s.pageKey, child: child) : MaterialPage(key: s.pageKey, child: child);
 
 /// A plain-words strip above the player when the server answers but can't play music.
 class _ServerTrouble extends StatelessWidget {
