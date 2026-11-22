@@ -1956,13 +1956,13 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       }),
     );
     final c = container.read(clientProvider);
-    if (_settings.syncPlayQueue && c != null && !container.read(offlineProvider) && _songs.length <= 1000) {
+    // the server's queue only knows its own songs: an audiobook's place is kept on Audiobookshelf instead
+    final serverSongs = [for (final s in _songs) if (!isAudiobookId(s.id)) s.id];
+    final cur = _songs.isNotEmpty ? _songs[min(i, _songs.length - 1)].id : null;
+    if (_settings.syncPlayQueue && c != null && !container.read(offlineProvider) && serverSongs.isNotEmpty &&
+        serverSongs.length <= 1000 && (cur == null || !isAudiobookId(cur))) {
       try {
-        await c.savePlayQueue(
-          _songs.map((s) => s.id).toList(),
-          current: _songs.isNotEmpty ? _songs[min(i, _songs.length - 1)].id : null,
-          positionMs: pos,
-        );
+        await c.savePlayQueue(serverSongs, current: cur, positionMs: pos);
       } catch (_) {}
     }
   }
@@ -1998,6 +1998,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       final songs = (j['songs'] as List).map((e) => Song.fromJson((e as Map).cast<String, dynamic>())).toList();
       if (songs.isEmpty) return;
       final index = ((j['index'] as num?)?.toInt() ?? 0).clamp(0, songs.length - 1);
+      // an audiobook from before: a new Audiobookshelf session gives its files' addresses again
+      if (songs.any((s) => isAudiobookId(s.id))) await reopenBooks([for (final s in songs) s.id]);
       _restoredIndex = index;
       _songs.addAll(songs);
       final byId = {for (final s in songs) s.id: s};
