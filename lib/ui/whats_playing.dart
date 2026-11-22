@@ -6,9 +6,10 @@ import '../data/account.dart';
 import '../data/song_id.dart';
 import '../data/subsonic.dart';
 import 'widgets.dart';
+import 'sheets.dart';
 
 /// "What's playing?" (Search): listen for 10 s, then show your song, or say it isn't one of yours.
-Future<void> showWhatsPlaying(BuildContext context) => showModalBottomSheet(
+Future<void> showWhatsPlaying(BuildContext context) => showAppSheet(
   context: context,
   useRootNavigator: true,
   isScrollControlled: true,

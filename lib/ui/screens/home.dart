@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/appearance.dart';
+import '../../core/platform.dart';
 import '../../core/settings.dart';
 import '../../data/ai.dart';
 import '../../data/jam.dart';
@@ -188,21 +189,38 @@ class _JumpBackIn extends ConsumerWidget {
   const _JumpBackIn();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final albums =
-        ref.watch(albumListProvider('recent')).value?.where((a) => !a.isLookup).take(MediaQuery.sizeOf(context).width >= 900 ? 9 : 6).toList() ?? const <Album>[];
-    if (albums.isEmpty) return const SizedBox(height: 8);
+    final recent = ref.watch(albumListProvider('recent')).value?.where((a) => !a.isLookup) ?? const <Album>[];
+    if (recent.isEmpty) return const SizedBox(height: 8);
+    if (!isDesktop) {
+      final wide = MediaQuery.sizeOf(context).width >= 900; // wider screens: three across
+      return _grid(context, ref, recent.take(wide ? 9 : 6).toList(), columns: wide ? 3 : 2);
+    }
+    // desktop: rows of a fixed height, more across as the page widens (tiles that kept the phone's shape grew
+    // to 170 px tall on a big window); two or three full rows
+    return LayoutBuilder(
+      builder: (context, box) {
+        final columns = box.maxWidth >= 1200 ? 4 : (box.maxWidth >= 640 ? 3 : 2);
+        return _grid(context, ref, recent.take(columns == 4 ? 8 : columns * 3).toList(), columns: columns, height: 72);
+      },
+    );
+  }
+
+  Widget _grid(BuildContext context, WidgetRef ref, List<Album> albums, {required int columns, double? height}) {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: GridView.count(
-        crossAxisCount: MediaQuery.sizeOf(context).width >= 900 ? 3 : 2, // wider screens: three across
+      child: GridView(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 3.1,
+          mainAxisExtent: height,
+        ),
         padding: EdgeInsets.zero,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 3.1,
         children: [
           for (final a in albums)
             Material(

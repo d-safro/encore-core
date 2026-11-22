@@ -8,6 +8,7 @@ import '../../data/shows.dart';
 import '../../data/updates.dart' show openUrl;
 import '../actions.dart' show toast;
 import '../widgets.dart';
+import '../sheets.dart';
 
 /// Concerts near you, on Home: the next shows of the artists you play and follow, near your town.
 class ConcertsShelf extends ConsumerWidget {
@@ -82,7 +83,7 @@ class ConcertCard extends StatelessWidget {
 }
 
 /// A show: tickets and "add to calendar".
-Future<void> showConcertSheet(BuildContext context, Show s) => showModalBottomSheet(
+Future<void> showConcertSheet(BuildContext context, Show s) => showAppSheet(
   context: context,
   useRootNavigator: true,
   showDragHandle: true,
@@ -148,7 +149,14 @@ class ConcertsScreen extends ConsumerWidget {
           if (!c.supported) {
             return const Center(child: Text('Your server can\'t look for concerts (it needs Conductor or music-lookup)'));
           }
+          // the month of each show that starts a new month (a heading goes above it)
+          final starts = <int>{};
           String? month;
+          for (final (i, (s, _)) in c.shows.indexed) {
+            final m = s.date.length >= 7 ? s.date.substring(0, 7) : null;
+            if (m != null && m != month) starts.add(i);
+            month = m ?? month;
+          }
           return ListView(
             children: [
               ListTile(
@@ -165,13 +173,9 @@ class ConcertsScreen extends ConsumerWidget {
                   padding: EdgeInsets.all(32),
                   child: Center(child: Text('No concerts found near you yet. They\'re checked once a week.')),
                 ),
-              for (final (s, _) in c.shows) ...[
-                if (s.date.length >= 7 && s.date.substring(0, 7) != month) ...[
-                  Builder(builder: (_) {
-                    month = s.date.substring(0, 7);
-                    return SectionTitle(showDate('${s.date.substring(0, 7)}-01').split(' ').skip(2).join(' '));
-                  }),
-                ],
+              for (final (i, (s, _)) in c.shows.indexed) ...[
+                if (starts.contains(i))
+                  SectionTitle(showDate('${s.date.substring(0, 7)}-01').split(' ').skip(2).join(' ')),
                 ListTile(
                   leading: SizedBox(
                     width: 44,

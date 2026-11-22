@@ -9,11 +9,12 @@ import '../data/updates.dart' show openUrl;
 import '../playback/handler.dart';
 import 'actions.dart';
 import 'widgets.dart';
+import 'sheets.dart';
 
 /// Add songs (files on this device and server songs alike) to a playlist kept on this device.
 Future<void> addToDevicePlaylist(BuildContext context, WidgetRef ref, List<Song> songs) async {
   final lists = ref.read(devicePlaylistsProvider);
-  final pick = await showModalBottomSheet<String>(
+  final pick = await showAppSheet<String>(
     context: context,
     useRootNavigator: true,
     showDragHandle: true,
@@ -55,7 +56,8 @@ Future<void> addToDevicePlaylist(BuildContext context, WidgetRef ref, List<Song>
 
 /// A file on this device: its own menu (no server actions: it isn't on the server).
 Future<void> showLocalSongMenu(BuildContext context, WidgetRef ref, Song song, {int? queueIndex}) =>
-    showModalBottomSheet(
+    showAppSheet(
+      menu: true, // the desktop: a menu where the mouse is
       context: context,
       useRootNavigator: true,
       showDragHandle: true,

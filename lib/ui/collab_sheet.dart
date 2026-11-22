@@ -7,6 +7,7 @@ import '../data/account.dart';
 import '../data/models.dart';
 import 'actions.dart' show confirm, toast;
 import 'screens/jam.dart' show QrView;
+import 'sheets.dart';
 
 /// Collaborative playlists: a link (like Jam's) that lets friends add songs from your library to this
 /// playlist on a web page, and take out the ones they added. Made by the server (music-lookup's collab.py)
@@ -27,7 +28,7 @@ class PlaylistShare {
   );
 }
 
-Future<void> showInviteToEdit(BuildContext context, Playlist p) => showModalBottomSheet(
+Future<void> showInviteToEdit(BuildContext context, Playlist p) => showAppSheet(
   context: context,
   useRootNavigator: true,
   isScrollControlled: true,

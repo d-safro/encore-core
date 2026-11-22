@@ -74,6 +74,10 @@ void addRecent(RecentItem r) =>
 void removeRecent(RecentItem r) =>
     _saveRecents(recentSearches().where((x) => !(x.kind == r.kind && x.id == r.id)).toList());
 
+/// The desktop window's own search box (null on the phone). When it's there, the Search page shows no box of
+/// its own and searches as you type in that one.
+ValueNotifier<String>? searchBoxText;
+
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key, this.initialQuery = ''});
   final String initialQuery; // the desktop's search box: search for this at once
@@ -103,10 +107,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       _ctl.text = q;
       Future.microtask(() => _run(q));
     }
+    searchBoxText?.addListener(_fromBox);
+  }
+
+  void _fromBox() {
+    final q = searchBoxText!.value;
+    if (q == _ctl.text) return;
+    _ctl.text = q;
+    _changed(q);
   }
 
   @override
   void dispose() {
+    searchBoxText?.removeListener(_fromBox);
     _debounce?.cancel();
     _quick?.cancel();
     _ctl.dispose();
@@ -172,37 +185,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final showLookup = ref.watch(settingsProvider.select((s) => s.showLookup));
     final offline = ref.watch(offlineProvider);
     return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 8,
-        title: SearchBar(
-          controller: _ctl,
-          hintText: offline ? 'Search downloaded music' : 'Songs, albums, artists',
-          leading: const Icon(Icons.search),
-          trailing: [
-            if (_ctl.text.isEmpty && !offline && canIdentify)
-              IconButton(
-                tooltip: 'Pitch · What\'s playing?',
-                icon: const Icon(Icons.hearing_rounded),
-                onPressed: () => showWhatsPlaying(context),
-              ),
-            if (_ctl.text.isNotEmpty)
-              IconButton(
-                tooltip: 'Clear',
-                icon: const Icon(Icons.close),
-                onPressed: () {
-                  _ctl.clear();
-                  _run('');
-                },
-              ),
-          ],
-          elevation: const WidgetStatePropertyAll(0),
-          onChanged: _changed,
-          onSubmitted: (q) {
-            _remember(q.trim());
-            _run(q);
-          },
-        ),
-      ),
+      // the desktop: no box here, the window's own search box drives this page
+      appBar: searchBoxText != null ? null : _bar(offline),
       body: Column(
         children: [
           if (_loading) const LinearProgressIndicator(minHeight: 2),
@@ -212,11 +196,50 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
+  AppBar _bar(bool offline) => AppBar(
+    titleSpacing: 8,
+    title: SearchBar(
+      controller: _ctl,
+      hintText: offline ? 'Search downloaded music' : 'Songs, albums, artists',
+      leading: const Icon(Icons.search),
+      trailing: [
+        if (_ctl.text.isEmpty && !offline && canIdentify)
+          IconButton(
+            tooltip: 'Pitch · What\'s playing?',
+            icon: const Icon(Icons.hearing_rounded),
+            onPressed: () => showWhatsPlaying(context),
+          ),
+        if (_ctl.text.isNotEmpty)
+          IconButton(
+            tooltip: 'Clear',
+            icon: const Icon(Icons.close),
+            onPressed: () {
+              _ctl.clear();
+              _run('');
+            },
+          ),
+      ],
+      elevation: const WidgetStatePropertyAll(0),
+      onChanged: _changed,
+      onSubmitted: (q) {
+        _remember(q.trim());
+        _run(q);
+      },
+    ),
+  );
+
   Widget _body(SearchResult? r, bool showLookup) {
     if (_error != null) return Center(child: Text(_error!));
     if (r == null) {
       final recents = recentSearches();
       final cs = Theme.of(context).colorScheme;
+      if (recents.isEmpty) {
+        return const EmptyState(
+          Icons.search_rounded,
+          'Search your library',
+          hint: 'Songs, albums and artists. What you open from here is kept as your recent searches.',
+        );
+      }
       return ListView(
         children: [
           if (recents.isNotEmpty)
@@ -278,7 +301,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     // files on this device that match (local_files.dart): searched here, never sent to the server
     final local = ref.watch(localLibraryProvider).search(_query);
-    if (r.isEmpty && local.isEmpty && !_loading) return Center(child: Text('Nothing found for "$_query"'));
+    if (r.isEmpty && local.isEmpty && !_loading) {
+      return EmptyState(
+        Icons.search_off_rounded,
+        'Nothing found for "$_query"',
+        hint: 'Check the spelling, or try fewer words.',
+      );
+    }
     final songs = r.songs.where((s) => !s.isLookup).toList();
     final lookupSongs = showLookup ? r.songs.where((s) => s.isLookup).toList() : const <Song>[];
     final albums = r.albums.where((a) => !a.isLookup).toList();

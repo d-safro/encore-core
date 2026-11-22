@@ -31,6 +31,7 @@ import '../../data/saved_covers.dart';
 import '../cast_sheet.dart';
 import '../devices_sheet.dart';
 import 'jam.dart';
+import '../sheets.dart';
 
 /// Colours taken from the current album art (Material You from the cover).
 final artSchemeProvider = FutureProvider.autoDispose.family<ColorScheme?, String>((ref, coverArt) async {
@@ -470,7 +471,8 @@ class _Titles extends ConsumerWidget {
                       : t.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
                 ),
                 const SizedBox(height: 2),
-                Tappable(
+                NameLink(
+                  item.artist ?? '',
                   // a song's artist, or for an episode the show and who makes it
                   onTap: s == null
                       ? null
@@ -479,14 +481,10 @@ class _Titles extends ConsumerWidget {
                       : s.artistId.isEmpty
                       ? null
                       : () => context.push('/artist/${s.artistId}'),
-                  child: Text(
-                    item.artist ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: (large ? t.titleLarge : t.titleMedium)?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  phoneToo: true,
+                  style: (large ? t.titleLarge : t.titleMedium)?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -709,7 +707,7 @@ final _outputProvider = StreamProvider.autoDispose<(String, String)>((ref) async
 
 Future<void> showSleepTimer(BuildContext context, WidgetRef ref) async {
   final extras = audioHandler.currentExtras;
-  await showModalBottomSheet(
+  await showAppSheet(
     useRootNavigator: true,
     context: context,
     showDragHandle: true,
@@ -758,7 +756,7 @@ Future<void> showSoundPanel(BuildContext context, WidgetRef ref) async {
   var (vol, maxVol) = await AudioDevice.volume();
   var output = await AudioDevice.output();
   if (!context.mounted) return;
-  await showModalBottomSheet(
+  await showAppSheet(
     useRootNavigator: true,
     context: context,
     isScrollControlled: true,
@@ -1141,7 +1139,7 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
 }
 
 /// Pick lyrics by hand from every online source (remembered for this song).
-Future<void> showChooseLyrics(BuildContext context, WidgetRef ref, Song song) => showModalBottomSheet(
+Future<void> showChooseLyrics(BuildContext context, WidgetRef ref, Song song) => showAppSheet(
   useRootNavigator: true,
   context: context,
   isScrollControlled: true,
@@ -1259,8 +1257,9 @@ class _ChooseLyricsState extends ConsumerState<_ChooseLyrics> {
 }
 
 class QueueScreen extends ConsumerWidget {
-  const QueueScreen({super.key, this.embedded = false});
-  final bool embedded; // in the desktop's side panel: no back button, nothing to close
+  const QueueScreen({super.key, this.embedded = false, this.onClose});
+  final bool embedded; // in the desktop's side panel: no back button
+  final VoidCallback? onClose; // the side panel's » (hides it)
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(queueProvider);
@@ -1271,6 +1270,17 @@ class QueueScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: !embedded,
+        // the desktop's side panel: the same small header as Now playing and Lyrics (», title, buttons)
+        leading: embedded && onClose != null
+            ? IconButton(
+                tooltip: 'Hide the queue',
+                icon: const Icon(Icons.keyboard_double_arrow_right_rounded, size: 20),
+                onPressed: onClose,
+              )
+            : null,
+        centerTitle: embedded ? true : null,
+        toolbarHeight: embedded ? 60 : null,
+        titleTextStyle: embedded ? Theme.of(context).textTheme.titleSmall : null,
         title: Text('Queue · ${nSongs(songs.length)}'),
         actions: [
           if (online && songs.isNotEmpty)

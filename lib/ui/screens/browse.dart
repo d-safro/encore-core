@@ -18,6 +18,7 @@ import '../../core/settings.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
+import '../../core/platform.dart';
 import '../widgets.dart';
 import '../../data/playlist_covers.dart';
 import 'playlist_edit.dart';
@@ -26,6 +27,7 @@ import '../collab_sheet.dart';
 import 'smart_playlist.dart';
 import 'radio.dart';
 import 'following.dart' show ShowTile;
+import '../sheets.dart';
 
 /// Re-loads a page every 20 s while it shows songs that are being downloaded (⏳ → real song).
 mixin _PollWhileDownloading<T extends ConsumerStatefulWidget> on ConsumerState<T> {
@@ -189,7 +191,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
         final auto = ref.watch(settingsProvider.select((s) => s.autoGetSongs)) && audioHandler.autoGet;
         final toPlay = auto ? a.songs.where(audioHandler.usable).toList() : playable;
         final discs = a.songs.map((s) => s.disc ?? 1).toSet();
-        final children = <Widget>[];
+        final children = <Widget>[const SongTableHeader(showTrack: true)];
         int? lastDisc;
         for (final s in a.songs) {
           if (discs.length > 1 && s.disc != lastDisc) {
@@ -209,10 +211,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                 artist: a.artist,
                 album: a.name,
                 lines: [
-                  Tappable(
-                    onTap: a.artistId.isEmpty ? null : () => context.push('/artist/${a.artistId}'),
-                    child: Text(a.artist, style: t.titleSmall),
-                  ),
+                  NameLink(a.artist, to: NameLink.artistOf(a.artistId), style: t.titleSmall, phoneToo: true),
                   Text(
                     [
                       if (a.year != null) '${a.year}',
@@ -822,6 +821,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                       audioHandler.playSongs(songs, shuffle: true, context: PlayContext.playlist(p.id, p.name)),
                   leading: [DownloadToggle(pinKey: 'playlist:${p.id}', songs: () async => songs)],
                 ),
+              const SongTableHeader(),
             ],
             count: p.songs.length,
             itemBuilder: (_, i) => SongTile(p.songs[i], list: songs, playContext: PlayContext.playlist(p.id, p.name)),
@@ -967,7 +967,8 @@ class RadioScreen extends ConsumerWidget {
   }
 
   Future<void> _menu(BuildContext context, WidgetRef ref, InternetRadio r) async {
-    final v = await showModalBottomSheet<String>(
+    final v = await showAppSheet<String>(
+      menu: true, // the desktop: a menu where the mouse is
       useRootNavigator: true,
       context: context,
       showDragHandle: true,
@@ -1014,8 +1015,17 @@ class RadioScreen extends ConsumerWidget {
     final playing = ref.watch(mediaItemProvider).value?.id;
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Internet radio')),
-      floatingActionButton: online
+      appBar: AppBar(
+        title: const Text('Internet radio'),
+        actions: [
+          if (online && isDesktop)
+            AddButton('Add station', onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddStationScreen()));
+              ref.invalidate(radiosProvider);
+            }),
+        ],
+      ),
+      floatingActionButton: online && !isDesktop
           ? FloatingActionButton.extended(
               icon: const Icon(Icons.add),
               label: const Text('Add station'),
@@ -1027,11 +1037,11 @@ class RadioScreen extends ConsumerWidget {
           : null,
       body: AsyncView(ref.watch(radiosProvider), (List<InternetRadio> list) {
         if (list.isEmpty) {
-          return const Center(
+          return Center(
             child: Padding(
-              padding: EdgeInsets.all(32),
+              padding: const EdgeInsets.all(32),
               child: Text(
-                'No radio stations yet. Tap Add station to find one or paste its address.',
+                'No radio stations yet. ${isDesktop ? 'Click' : 'Tap'} Add station to find one or paste its address.',
                 textAlign: TextAlign.center,
               ),
             ),

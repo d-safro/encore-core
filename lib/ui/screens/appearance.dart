@@ -5,6 +5,7 @@ import '../../core/appearance.dart';
 import '../../core/settings.dart';
 import '../actions.dart';
 import '../widgets.dart';
+import '../sheets.dart';
 
 const accentChoices = [
   0xFF6750A4, 0xFF4355B9, 0xFF0061A4, 0xFF006A6A, 0xFF006E1C, 0xFF386A20, //
@@ -295,7 +296,7 @@ class AppearanceScreen extends ConsumerWidget {
     int min = 0,
   }) async {
     var picked = [...chosen.where(all.contains)];
-    await showModalBottomSheet(
+    await showAppSheet(
       useRootNavigator: true,
       context: context,
       showDragHandle: true,

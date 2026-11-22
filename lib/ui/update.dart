@@ -8,6 +8,7 @@ import '../core/settings.dart';
 import '../desktop/desktop.dart' show quitApp;
 import '../data/updates.dart';
 import 'actions.dart';
+import 'sheets.dart';
 
 /// "Encore 1.7.0 is available": what's new, and Update / Later / Skip this version.
 Future<void> showUpdateDialog(BuildContext context, UpdateInfo u, {bool fromCheck = false}) async {
@@ -40,7 +41,7 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo u, {bool fromChec
   );
   if (go == 'skip') await prefs.setString('updateSkipped', u.version);
   if (go == 'update' && context.mounted) {
-    await showModalBottomSheet(
+    await showAppSheet(
       context: context,
       useRootNavigator: true,
       isDismissible: false,

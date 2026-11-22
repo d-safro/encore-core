@@ -55,23 +55,7 @@ class LibraryScreen extends ConsumerWidget {
           ],
           bottom: const PreferredSize(
             preferredSize: Size.fromHeight(52),
-            child: Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: TabBar(
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                tabs: [
-                  Tab(text: 'Playlists', height: 36),
-                  Tab(text: 'Podcasts', height: 36),
-                  Tab(text: 'Albums', height: 36),
-                  Tab(text: 'Artists', height: 36),
-                  Tab(text: 'Songs', height: 36),
-                  Tab(text: 'Liked', height: 36),
-                  Tab(text: 'Genres', height: 36),
-                ],
-              ),
-            ),
+            child: Padding(padding: EdgeInsets.only(bottom: 8), child: _Tabs()),
           ),
         ),
         body: const TabBarView(
@@ -87,6 +71,29 @@ class LibraryScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+class _Tabs extends StatelessWidget {
+  const _Tabs();
+  @override
+  Widget build(BuildContext context) {
+    const bar = TabBar(
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      padding: EdgeInsets.symmetric(horizontal: 8),
+      tabs: [
+        Tab(text: 'Playlists', height: 36),
+        Tab(text: 'Podcasts', height: 36),
+        Tab(text: 'Albums', height: 36),
+        Tab(text: 'Artists', height: 36),
+        Tab(text: 'Songs', height: 36),
+        Tab(text: 'Liked', height: 36),
+        Tab(text: 'Genres', height: 36),
+      ],
+    );
+    // desktop: on the left under the title, like the rest of the page
+    return isDesktop ? const Align(alignment: Alignment.centerLeft, child: bar) : bar;
   }
 }
 
@@ -257,6 +264,17 @@ class _AlbumsTabState extends ConsumerState<AlbumsTab> {
                 child: Center(child: CircularProgressIndicator()),
               ),
             ),
+          if (!_loading && _done && _albums.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: EmptyState(
+                Icons.album_outlined,
+                _type == 'starred' ? 'No liked albums yet' : 'No albums yet',
+                hint: _type == 'starred'
+                    ? 'Like an album and it shows up here.'
+                    : 'They show up here once your server has scanned your music.',
+              ),
+            ),
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
       ),
@@ -411,7 +429,7 @@ class _PlaylistsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final online = ref.watch(repoProvider).online;
     return Scaffold(
-      floatingActionButton: online
+      floatingActionButton: online && !isDesktop
           ? FloatingActionButton.extended(
               icon: const Icon(Icons.add),
               label: const Text('New playlist'),
@@ -420,10 +438,12 @@ class _PlaylistsTab extends ConsumerWidget {
           : null,
       body: AsyncView(ref.watch(playlistsProvider), (List<Playlist> lists) {
         final covers = ref.watch(playlistCoversProvider);
+        if (isDesktop) return _PlaylistGrid(lists: lists, online: online);
         return RefreshIndicator(
           onRefresh: () async => ref.invalidate(playlistsProvider),
           child: ListView(
             children: [
+              if (online && isDesktop) AddButton('New playlist', onPressed: () => showNewPlaylistSheet(context, ref)),
               const _LikedTile(),
               for (final pin in ref.watch(libraryPinsProvider)) _PinnedTile(pin),
               if (lists.isNotEmpty) const SectionTitle('Playlists'),
@@ -540,6 +560,140 @@ class _LikedTile extends ConsumerWidget {
   }
 }
 
+/// Desktop: playlists as covers in a grid, like Albums (a list of rows left most of a wide window empty).
+class _PlaylistGrid extends ConsumerWidget {
+  const _PlaylistGrid({required this.lists, required this.online});
+  final List<Playlist> lists;
+  final bool online;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final covers = ref.watch(playlistCoversProvider);
+    final pins = ref.watch(libraryPinsProvider);
+    final cs = Theme.of(context).colorScheme;
+    final liked = ref.watch(starredProvider).value?.songs.length;
+    Widget card({
+      required Widget cover,
+      required String title,
+      required String subtitle,
+      required VoidCallback onTap,
+      VoidCallback? onMenu,
+      bool pinned = false,
+    }) {
+      final t = Theme.of(context).textTheme;
+      return Tappable(
+        onTap: onTap,
+        onSecondaryTap: onMenu,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(aspectRatio: 1, child: cover),
+            const SizedBox(height: 8),
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: t.titleSmall),
+            Row(
+              children: [
+                if (pinned)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Icon(Icons.push_pin, size: 13, color: cs.primary),
+                  ),
+                Flexible(
+                  child: Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    LibraryPin pinOf(Playlist p) => LibraryPin('playlist', p.id, p.name, cover: p.coverArt, subtitle: 'Playlist');
+    final cards = <Widget>[
+      card(
+        cover: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppLook.of(context).r(14)),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [cs.primary, cs.tertiary],
+            ),
+          ),
+          child: Center(child: Icon(Icons.favorite_rounded, color: cs.onPrimary, size: 48)),
+        ),
+        title: 'Liked songs',
+        subtitle: liked == null ? 'Playlist' : 'Playlist · ${nSongs(liked)}',
+        pinned: true,
+        onTap: () => context.push('/liked'),
+      ),
+      for (final pin in pins)
+        card(
+          cover: Cover(
+            pin.kind == 'album' ? pin.cover : shownPlaylistCover(covers[pin.id], _serverCover(ref, pin)),
+            size: double.infinity,
+            radius: 14,
+            icon: pin.kind == 'album' ? Icons.album_outlined : Icons.queue_music_rounded,
+          ),
+          title: pin.name,
+          subtitle: pin.kind == 'album' ? 'Album' : 'Playlist',
+          pinned: true,
+          onTap: () => context.push('/${pin.kind}/${pin.id}'),
+          onMenu: () => showCollectionMenu(
+            context,
+            ref,
+            pin.name,
+            () async => pin.kind == 'album'
+                ? (await ref.read(repoProvider).album(pin.id)).songs
+                : (await ref.read(repoProvider).playlist(pin.id)).songs,
+            pin: pin,
+          ),
+        ),
+      for (final p in lists.where((p) => !pins.any((x) => x.kind == 'playlist' && x.id == p.id)))
+        card(
+          cover: Cover(
+            shownPlaylistCover(covers[p.id], p.coverArt),
+            size: double.infinity,
+            radius: 14,
+            icon: Icons.queue_music_rounded,
+          ),
+          title: p.name,
+          subtitle: '${nSongs(p.songCount ?? 0)} · ${formatDuration(p.duration)}',
+          onTap: () => context.push('/playlist/${p.id}'),
+          onMenu: () => showCollectionMenu(
+            context,
+            ref,
+            p.name,
+            () async => (await ref.read(repoProvider).playlist(p.id)).songs,
+            pin: pinOf(p),
+          ),
+        ),
+    ];
+    return CustomScrollView(
+      slivers: [
+        if (online)
+          SliverToBoxAdapter(child: AddButton('New playlist', onPressed: () => showNewPlaylistSheet(context, ref))),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: AppLook.of(context).gridExtent,
+              childAspectRatio: 0.74,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 16,
+            ),
+            delegate: SliverChildListDelegate(cards),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// A pinned playlist's cover as the server has it now (the pin keeps the one it had when pinned).
 String _serverCover(WidgetRef ref, LibraryPin pin) {
   for (final p in ref.watch(playlistsProvider).value ?? const <Playlist>[]) {
@@ -613,9 +767,12 @@ class _FavouritesTab extends ConsumerWidget {
           itemBuilder: (_, i) => SongTile(songs[i], list: songs, index: i, playContext: const PlayContext.liked()),
           footer: [
             if (r.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: Text('Nothing hearted yet')),
+              EmptyState(
+                Icons.favorite_border_rounded,
+                'No liked songs yet',
+                hint: isDesktop
+                    ? 'Click the heart on a song, or press Ctrl+L while it plays, and it lands here.'
+                    : 'Tap the heart on a song and it lands here.',
               ),
           ],
           header: [
@@ -644,6 +801,7 @@ class _FavouritesTab extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                   child: Text(nSongs(songs.length), style: Theme.of(context).textTheme.bodySmall),
                 ),
+              const SongTableHeader(),
             ],
           ],
         ),

@@ -16,6 +16,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import '../sheets.dart';
 
 // ── Data (the last answers are kept on the phone, for when the server can't be reached) ──
 Object? _cached(String key) {
@@ -159,7 +160,7 @@ class PodcastsTab extends ConsumerWidget {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      floatingActionButton: online
+      floatingActionButton: online && !isDesktop
           ? FloatingActionButton.extended(
               icon: const Icon(Icons.add),
               label: const Text('Add podcast'),
@@ -168,16 +169,23 @@ class PodcastsTab extends ConsumerWidget {
           : null,
       body: AsyncView(ref.watch(podcastsProvider), (List<PodcastChannel> list) {
         if (list.isEmpty) {
-          return Center(
+          final empty = Center(
             child: Padding(
               padding: const EdgeInsets.all(32),
               child: Text(
                 online
-                    ? 'No podcasts yet. Tap Add podcast to find one.'
+                    ? 'No podcasts yet. ${isDesktop ? 'Click' : 'Tap'} Add podcast to find one.'
                     : "Can't reach your server. Your shows appear here once the app has seen them online.",
                 textAlign: TextAlign.center,
               ),
             ),
+          );
+          if (!online || !isDesktop) return empty;
+          return Column(
+            children: [
+              AddButton('Add podcast', onPressed: () => context.push('/podcasts/add')),
+              Expanded(child: empty),
+            ],
           );
         }
         return RefreshIndicator(
@@ -189,8 +197,9 @@ class PodcastsTab extends ConsumerWidget {
             refreshPodcastViews(ref);
           },
           child: ListView(
-            padding: const EdgeInsets.only(bottom: 96),
+            padding: EdgeInsets.only(bottom: isDesktop ? 24 : 96),
             children: [
+              if (online && isDesktop) AddButton('Add podcast', onPressed: () => context.push('/podcasts/add')),
               for (final p in list)
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -446,12 +455,11 @@ class EpisodeTile extends ConsumerWidget {
                             WidgetSpan(
                               alignment: PlaceholderAlignment.baseline,
                               baseline: TextBaseline.alphabetic,
-                              child: Tappable(
-                                onTap: () => context.push(podcasterPath(name: e.author, show: e.channelId)),
-                                child: Text(
-                                  e.show,
-                                  style: t.labelSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
-                                ),
+                              child: NameLink(
+                                e.show,
+                                to: podcasterPath(name: e.author, show: e.channelId),
+                                phoneToo: true,
+                                style: t.labelSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
                               ),
                             ),
                           ],
@@ -530,8 +538,9 @@ class EpisodeTile extends ConsumerWidget {
 Future<void> showEpisodeMenu(BuildContext context, WidgetRef ref, PodcastEpisode e) async {
   final dl = ref.read(downloadsProvider);
   final onPhone = dl.files.containsKey(e.id);
-  await showModalBottomSheet(
+  await showAppSheet(
     context: context,
+    menu: true, // the desktop: a menu where the mouse is
     useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,

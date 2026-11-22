@@ -657,6 +657,63 @@ class AlbumCard extends ConsumerWidget {
   }
 }
 
+/// A page's "add" action (New playlist, Add podcast, Add station). The phone has a floating button; the
+/// desktop puts this button at the top right of the page instead (a mouse doesn't need a big floating target,
+/// and it doesn't cover the list's last row).
+class AddButton extends StatelessWidget {
+  const AddButton(this.label, {super.key, required this.onPressed});
+  final String label;
+  final VoidCallback onPressed;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+    child: Align(
+      alignment: Alignment.centerRight,
+      child: FilledButton.tonalIcon(
+        icon: const Icon(Icons.add_rounded, size: 20),
+        label: Text(label),
+        onPressed: onPressed,
+      ),
+    ),
+  );
+}
+
+/// A page with nothing to show yet: an icon, what's missing and how to get some, the same everywhere
+/// (some pages were blank, others had one small line of text).
+class EmptyState extends StatelessWidget {
+  const EmptyState(this.icon, this.title, {super.key, this.hint, this.action});
+  final IconData icon;
+  final String title;
+  final String? hint;
+  final Widget? action;
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 48, color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+              const SizedBox(height: 12),
+              Text(title, style: t.titleMedium, textAlign: TextAlign.center),
+              if (hint != null) ...[
+                const SizedBox(height: 6),
+                Text(hint!, style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant), textAlign: TextAlign.center),
+              ],
+              if (action != null) ...[const SizedBox(height: 16), action!],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A titled horizontal row (home, artist pages, discover).
 class Shelf extends StatefulWidget {
   const Shelf({
@@ -681,6 +738,26 @@ class Shelf extends StatefulWidget {
 
 class _ShelfState extends State<Shelf> {
   final _ctl = ScrollController();
+  // desktop: whether ‹ and › have anywhere to go (no arrows at all when the row fits)
+  bool _back = false, _on = false;
+
+  void _ends() {
+    if (!_ctl.hasClients) return;
+    final p = _ctl.position;
+    final back = p.pixels > 1, on = p.pixels < p.maxScrollExtent - 1;
+    if (back != _back || on != _on) {
+      setState(() {
+        _back = back;
+        _on = on;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl.addListener(_ends);
+  }
 
   @override
   void dispose() {
@@ -709,6 +786,16 @@ class _ShelfState extends State<Shelf> {
       itemBuilder: (_, i) => widget.children[i],
     );
     if (isDesktop) {
+      // the row's size is known once it's laid out (and changes with the window)
+      list = NotificationListener<ScrollMetricsNotification>(
+        onNotification: (_) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _ends();
+          });
+          return false;
+        },
+        child: list,
+      );
       // the row can also be dragged with the mouse
       list = ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(
@@ -725,7 +812,7 @@ class _ShelfState extends State<Shelf> {
           widget.title,
           subtitle: widget.subtitle,
           onMore: widget.onMore,
-          trailing: isDesktop
+          trailing: isDesktop && (_back || _on)
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -733,13 +820,13 @@ class _ShelfState extends State<Shelf> {
                       tooltip: 'Scroll ${widget.title} back',
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.chevron_left_rounded),
-                      onPressed: () => _page(-1),
+                      onPressed: _back ? () => _page(-1) : null,
                     ),
                     IconButton(
                       tooltip: 'Scroll ${widget.title} on',
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.chevron_right_rounded),
-                      onPressed: () => _page(1),
+                      onPressed: _on ? () => _page(1) : null,
                     ),
                   ],
                 )
@@ -1156,6 +1243,56 @@ class _HoverPlayState extends State<HoverPlay> {
   }
 }
 
+/// Desktop: the column names over a wide song list (the rows are a table there: see _WideSongRow), in the
+/// same columns as the rows. Nothing on the phone or a narrow list.
+class SongTableHeader extends StatelessWidget {
+  const SongTableHeader({super.key, this.showTrack = false});
+  final bool showTrack; // an album: track numbers, no album column
+  @override
+  Widget build(BuildContext context) {
+    if (!isDesktop) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    final style = Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant, letterSpacing: 0.8);
+    return LayoutBuilder(
+      builder: (context, box) => box.maxWidth < 760
+          ? const SizedBox.shrink()
+          : Container(
+              margin: const EdgeInsets.fromLTRB(0, 0, 0, 4),
+              padding: const EdgeInsets.fromLTRB(16, 6, 4, 6),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5))),
+              ),
+              child: Row(
+                children: [
+                  SizedBox(width: showTrack ? 32 : 52, child: Text(showTrack ? '#' : '', style: style)),
+                  Expanded(flex: 5, child: Text('TITLE', style: style)),
+                  if (!showTrack)
+                    Expanded(
+                      flex: 4,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('ALBUM', style: style),
+                      ),
+                    ),
+                  const SizedBox(width: 40),
+                  SizedBox(
+                    width: 52,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Tooltip(
+                        message: 'Length',
+                        child: Icon(Icons.schedule_rounded, size: 16, color: cs.onSurfaceVariant),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 44),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
 /// A song as a table row on a wide desktop list: number or cover, title and artist, album, heart, length, menu.
 class _WideSongRow extends ConsumerStatefulWidget {
   const _WideSongRow({
@@ -1223,16 +1360,18 @@ class _WideSongRowState extends ConsumerState<_WideSongRow> {
                       color: widget.current ? cs.primary : (widget.dim ? cs.onSurfaceVariant : cs.onSurface),
                     ),
                   ),
-                  Row(
-                    children: [
-                      if (widget.onPhone)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
-                        ),
-                      Flexible(child: NameLink(s.artist, to: NameLink.artistOf(s.artistId), style: sub)),
-                    ],
-                  ),
+                  // no artist (a file on this computer without tags): no empty line, the title stays centred
+                  if (s.artist.isNotEmpty || widget.onPhone)
+                    Row(
+                      children: [
+                        if (widget.onPhone)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 4),
+                            child: Icon(Icons.arrow_circle_down_rounded, size: 14, color: cs.primary),
+                          ),
+                        Flexible(child: NameLink(s.artist, to: NameLink.artistOf(s.artistId), style: sub)),
+                      ],
+                    ),
                 ],
               ),
             ),

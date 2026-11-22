@@ -41,6 +41,7 @@ import '../../data/devices.dart';
 import '../../data/pairing.dart';
 import '../../data/subsonic.dart';
 import '../../desktop/desktop_settings.dart';
+import '../sheets.dart';
 
 const _formats = {'raw': 'Original', 'opus': 'Opus', 'mp3': 'MP3', 'aac': 'AAC'};
 const _bitrates = [64, 96, 128, 160, 192, 256, 320];
@@ -61,10 +62,13 @@ class SettingsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       // a wide window: settings in a readable column
-      body: _Readable(
+      body: _WithIndex(
+        child: _Readable(
         child: ListView(
+        // desktop: every section is built, so the index beside it can jump to any of them
+        cacheExtent: isDesktop ? 20000 : null,
         children: [
-          const SectionTitle('Server'),
+          _Section('Server'),
           ListTile(
             leading: const Icon(Icons.dns_outlined),
             title: Text(creds?.base ?? ''),
@@ -234,7 +238,7 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           const _MixesSettings(),
-          const SectionTitle('Audiobooks'),
+          _Section('Audiobooks'),
           Builder(builder: (context) {
             final abs = ref.watch(absAccountProvider);
             return abs == null
@@ -254,14 +258,14 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   );
           }),
-          const SectionTitle('Your devices'),
+          _Section('Your devices'),
           const _DevicesSettings(),
           if (isDesktop) ...[
-            const SectionTitle('Desktop'),
+            _Section('Desktop'),
             const DesktopSettings(),
           ],
 
-          const SectionTitle('Look'),
+          _Section('Look'),
           ListTile(
             leading: const Icon(Icons.palette_outlined),
             title: const Text('Appearance'),
@@ -277,7 +281,7 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => HomeWidget.requestPinWidget(qualifiedAndroidName: 'dev.safro.encore.EncoreWidget'),
           ),
 
-          const SectionTitle('Playback'),
+          _Section('Playback'),
           ListTile(
             leading: const Icon(Icons.equalizer),
             title: const Text('Equalizer'),
@@ -383,7 +387,7 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) => set('autoplay', v),
           ),
 
-          const SectionTitle('Streaming quality'),
+          _Section('Streaming quality'),
           _QualityTile(
             icon: Icons.wifi,
             title: 'On Wi-Fi',
@@ -399,7 +403,7 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (f, b) => n.update({'mobileFormat': f, 'mobileBitrate': b}),
           ),
 
-          const SectionTitle('Downloads'),
+          _Section('Downloads'),
           ListTile(
             leading: const Icon(Icons.offline_pin_outlined),
             title: const Text('Downloaded music'),
@@ -422,7 +426,7 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) => set('downloadWifiOnly', v),
           ),
 
-          const SectionTitle('About'),
+          _Section('About'),
           const ListTile(
             leading: EncoreLogo(size: 28),
             title: Text('Encore $appVersion'),
@@ -449,13 +453,14 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
       ),
+      ),
     );
   }
 
   Future<void> _replayGain(BuildContext context, WidgetRef ref, Settings s) async {
     var mode = s.replayGain;
     var pre = s.replayGainPreamp;
-    await showModalBottomSheet(
+    await showAppSheet(
       useRootNavigator: true,
       context: context,
       showDragHandle: true,
@@ -516,7 +521,7 @@ class _QualityTile extends StatelessWidget {
       onTap: () async {
         var f = format;
         var b = bitrate == 0 ? 192 : bitrate;
-        await showModalBottomSheet(
+        await showAppSheet(
           useRootNavigator: true,
           context: context,
           showDragHandle: true,
@@ -1268,6 +1273,89 @@ class _DevicesSettings extends ConsumerWidget {
 }
 
 /// At most ~860 px wide, centred (desktop and tablets); phones are narrower anyway.
+/// A top-level section's title. On the desktop each one is also listed in the index beside the page (see
+/// _WithIndex), under the same name, so renaming a section renames its entry.
+class _Section extends StatelessWidget {
+  const _Section(this.title);
+  final String title;
+  @override
+  Widget build(BuildContext context) => SectionTitle(title, key: _sectionKeys.putIfAbsent(title, GlobalKey.new));
+}
+
+/// The sections' titles, each with its place on the page (only what's shown: no Audiobooks without an
+/// Audiobookshelf, no Your mixes on a server without them).
+final _sectionKeys = <String, GlobalKey>{};
+
+/// Desktop, a wide window: the sections listed on the left; a click scrolls to one (a long page otherwise).
+class _WithIndex extends StatefulWidget {
+  const _WithIndex({required this.child});
+  final Widget child;
+  @override
+  State<_WithIndex> createState() => _WithIndexState();
+}
+
+class _WithIndexState extends State<_WithIndex> {
+  List<(String, GlobalKey)> _shown = const [];
+
+  /// The sections on the page now, top to bottom (they're known once the page is laid out).
+  void _look() {
+    if (!mounted) return;
+    final shown = [
+      for (final MapEntry(key: name, value: key) in _sectionKeys.entries)
+        if (key.currentContext?.findRenderObject() case final RenderBox box when box.attached)
+          (name, key, box.localToGlobal(Offset.zero).dy),
+    ]..sort((a, b) => a.$3.compareTo(b.$3));
+    final names = [for (final (n, k, _) in shown) (n, k)];
+    String order(List<(String, GlobalKey)> l) => l.map((e) => e.$1).join('\n');
+    if (order(names) != order(_shown)) setState(() => _shown = names);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isDesktop) return widget.child;
+    final t = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (context, box) {
+        if (box.maxWidth < 1000) return widget.child;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _look()); // sections come and go (Your mixes loads)
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 200,
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 24, 8, 16),
+                children: [
+                  for (final (name, key) in _shown)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 1),
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () {
+                            final c = key.currentContext;
+                            if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 250));
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            child: Text(name, style: t.labelLarge?.copyWith(color: cs.onSurfaceVariant)),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(child: widget.child),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _Readable extends StatelessWidget {
   const _Readable({required this.child});
   final Widget child;
@@ -1294,7 +1382,7 @@ class _MixesSettingsState extends ConsumerState<_MixesSettings> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionTitle('Repertoire · Your mixes'),
+        _Section('Repertoire · Your mixes'),
         for (final k in mixNames.keys)
           SwitchListTile(
             secondary: Icon(switch (k) {
