@@ -86,6 +86,13 @@ class AppearanceScreen extends ConsumerWidget {
           ),
 
           const SectionTitle('Colours'),
+          choice(
+            Icons.dark_mode_outlined,
+            'Theme',
+            const {AppTheme.dark: 'Dark', AppTheme.light: 'Light', AppTheme.system: 'System'},
+            s.appTheme,
+            (v) => set('appTheme', v.name),
+          ),
           ListTile(
             leading: const Icon(Icons.palette_outlined),
             title: const Text('Colours from'),
@@ -127,9 +134,11 @@ class AppearanceScreen extends ConsumerWidget {
           SwitchListTile(
             secondary: const Icon(Icons.brightness_2_outlined),
             title: const Text('Pure black'),
-            subtitle: const Text('Black backgrounds (saves battery on OLED screens)'),
+            subtitle: Text(s.appTheme == AppTheme.light
+                ? 'For the dark theme'
+                : 'Black backgrounds in the dark theme (saves battery on OLED screens)'),
             value: s.pureBlack,
-            onChanged: (v) => set('pureBlack', v),
+            onChanged: s.appTheme == AppTheme.light ? null : (v) => set('pureBlack', v),
           ),
           SwitchListTile(
             secondary: const Icon(Icons.contrast),
@@ -420,7 +429,8 @@ class LookPreview extends StatelessWidget {
     final s = settings;
     final cs = Theme.of(context).colorScheme;
     final r = AppLook.cornerScale(s.corners);
-    final bg = s.pureBlack ? Colors.black : const Color(0xFF16171C);
+    final light = Theme.of(context).brightness == Brightness.light;
+    final bg = light ? cs.surfaceContainerLow : (s.pureBlack ? Colors.black : const Color(0xFF16171C));
     final ink = cs.onSurface.withValues(alpha: s.highContrast ? 0.5 : 0.3);
     final tile = cs.onSurface.withValues(alpha: 0.14);
     final accent = cs.primary;

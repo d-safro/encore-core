@@ -286,6 +286,9 @@ class _Shell extends ConsumerWidget {
   static const _destinations = navDestinations;
 }
 
+/// Encore's look for [scheme] (dark or light, from its brightness) with these settings.
+ThemeData encoreTheme(ColorScheme scheme, Settings s) => _EncoreAppState.theme(scheme, s);
+
 class EncoreApp extends ConsumerStatefulWidget {
   const EncoreApp({super.key});
   @override
@@ -398,14 +401,18 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     }
   }
 
-  /// Minimal dark look: near-black surfaces tinted by the accent, Inter, soft rounded shapes, no borders.
-  /// Settings → Appearance changes the black, contrast, typeface, roundness and density.
+  /// Minimal look: near-black (or, in the light theme, near-white) surfaces tinted by the accent, Inter, soft
+  /// rounded shapes, no borders. Settings → Appearance changes the theme, black, contrast, typeface, roundness
+  /// and density. [scheme]'s brightness picks dark or light.
   static ThemeData theme(ColorScheme scheme, Settings s) {
     final look = AppLook.from(s);
     double r(double v) => look.r(v);
-    final base = s.pureBlack
-        ? Colors.black
-        : Color.alphaBlend(scheme.primary.withValues(alpha: 0.03), const Color(0xFF0E0F13));
+    final dark = scheme.brightness == Brightness.dark;
+    final base = !dark
+        ? Color.alphaBlend(scheme.primary.withValues(alpha: 0.03), const Color(0xFFF7F7FA))
+        : s.pureBlack
+            ? Colors.black
+            : Color.alphaBlend(scheme.primary.withValues(alpha: 0.03), const Color(0xFF0E0F13));
     // high contrast: surfaces step apart more clearly and secondary text is nearly white
     final step = s.highContrast ? 1.8 : 1.0;
     final cs = scheme.copyWith(
@@ -422,12 +429,13 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
       outlineVariant: s.highContrast ? Color.lerp(scheme.outlineVariant, scheme.onSurface, 0.35) : scheme.outlineVariant,
     );
     final font = s.fontFamily == 'system' ? null : 'Inter';
-    final text = Typography.material2021(platform: TargetPlatform.android).white
+    final typography = Typography.material2021(platform: TargetPlatform.android);
+    final text = (dark ? typography.white : typography.black)
         .apply(fontFamily: font, bodyColor: cs.onSurface, displayColor: cs.onSurface);
     final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(r(16)));
     return ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: scheme.brightness,
       colorScheme: cs,
       fontFamily: font,
       visualDensity: s.compact ? VisualDensity.compact : VisualDensity.standard,
@@ -525,16 +533,30 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     return DynamicColorBuilder(
       builder: (light, dark) {
         final seeded = ColorScheme.fromSeed(seedColor: Color(s.accentColor), brightness: Brightness.dark);
+        final seededLight = ColorScheme.fromSeed(seedColor: Color(s.accentColor));
         final scheme = switch (s.themeSource) {
           ThemeSource.fixed => seeded,
           ThemeSource.albumArt => art ?? dark?.harmonized() ?? seeded,
           ThemeSource.wallpaper => dark?.harmonized() ?? seeded,
         };
+        // the light theme: the same colours, made for a light background (album art gives a dark scheme, so its
+        // main colour seeds a light one)
+        final lightScheme = switch (s.themeSource) {
+          ThemeSource.fixed => seededLight,
+          ThemeSource.albumArt => art != null
+              ? ColorScheme.fromSeed(seedColor: art.primary)
+              : light?.harmonized() ?? seededLight,
+          ThemeSource.wallpaper => light?.harmonized() ?? seededLight,
+        };
         return MaterialApp.router(
           title: 'Encore',
           debugShowCheckedModeBanner: false,
-          themeMode: ThemeMode.dark,
-          theme: theme(scheme, s),
+          themeMode: switch (s.appTheme) {
+            AppTheme.dark => ThemeMode.dark,
+            AppTheme.light => ThemeMode.light,
+            AppTheme.system => ThemeMode.system,
+          },
+          theme: theme(lightScheme, s),
           darkTheme: theme(scheme, s),
           routerConfig: router,
           scaffoldMessengerKey: messengerKey,

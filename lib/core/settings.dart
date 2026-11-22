@@ -5,6 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum ThemeSource { wallpaper, albumArt, fixed }
 
+/// Dark (the default), light, or whatever the phone / computer is set to.
+enum AppTheme { dark, light, system }
+
 enum ReplayGainMode { off, track, album, auto }
 
 enum AlbumSort { recent, newest, alphabetical, artist, year, frequent, random, starred }
@@ -33,7 +36,8 @@ enum NavLabels { always, selected, never }
 class Settings {
   final ThemeSource themeSource;
   final int accentColor; // used when themeSource == fixed (and as fallback)
-  final bool pureBlack; // AMOLED black backgrounds
+  final bool pureBlack; // AMOLED black backgrounds (dark theme only)
+  final AppTheme appTheme;
 
   // Streaming quality: "raw" = original file, else a server transcode target.
   final String wifiFormat, mobileFormat;
@@ -91,6 +95,7 @@ class Settings {
     this.themeSource = ThemeSource.wallpaper,
     this.accentColor = 0xFF6750A4,
     this.pureBlack = false,
+    this.appTheme = AppTheme.dark,
     this.wifiFormat = 'raw',
     this.mobileFormat = 'opus',
     this.wifiBitrate = 0,
@@ -150,6 +155,7 @@ class Settings {
     'themeSource': themeSource.name,
     'accentColor': accentColor,
     'pureBlack': pureBlack,
+    'appTheme': appTheme.name,
     'wifiFormat': wifiFormat,
     'mobileFormat': mobileFormat,
     'wifiBitrate': wifiBitrate,
@@ -211,6 +217,7 @@ class Settings {
       themeSource: pick(ThemeSource.values, j['themeSource'], d.themeSource),
       accentColor: j['accentColor'] ?? d.accentColor,
       pureBlack: j['pureBlack'] ?? d.pureBlack,
+      appTheme: pick(AppTheme.values, j['appTheme'], d.appTheme),
       wifiFormat: j['wifiFormat'] ?? d.wifiFormat,
       mobileFormat: j['mobileFormat'] ?? d.mobileFormat,
       wifiBitrate: j['wifiBitrate'] ?? d.wifiBitrate,

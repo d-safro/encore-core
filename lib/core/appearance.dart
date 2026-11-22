@@ -94,6 +94,7 @@ Map<String, Object?> appearanceDefaults() {
 
 /// The settings that Settings → Appearance owns (what "Reset to default" puts back).
 const appearanceKeys = [
+  'appTheme',
   'themeSource',
   'accentColor',
   'pureBlack',

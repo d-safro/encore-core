@@ -332,7 +332,9 @@ class MixCover extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [c.withValues(alpha: 0.15), c.withValues(alpha: 0.95)],
+                // the band under the name is a little darker than the colour, so the white name stays readable
+                // over light covers and in the light theme
+                colors: [c.withValues(alpha: 0.15), Color.lerp(c, Colors.black, 0.3)!.withValues(alpha: 0.95)],
                 stops: const [0.35, 1],
               ),
             ),
@@ -345,7 +347,13 @@ class MixCover extends StatelessWidget {
               title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18, height: 1.05),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 18,
+                height: 1.05,
+                shadows: [Shadow(color: Colors.black45, blurRadius: 6)],
+              ),
             ),
           ),
         ],
