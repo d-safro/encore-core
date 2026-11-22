@@ -1112,6 +1112,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   /// is loaded again when you press play.
   bool _loaded = false;
   int _restoredIndex = 0;
+
+  /// The queue is there but didn't load (server away at start-up): it's held at [_restoredIndex].
+  bool get _held => !_loaded && _songs.isNotEmpty;
   Duration _restoredPosition = Duration.zero;
 
   Future<void> playNext(List<Song> songs) => insertSongs((player.currentIndex ?? -1) + 1, songs);
@@ -1204,7 +1207,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   }
 
   Song? get currentSong {
-    final i = player.currentIndex;
+    // a restored queue that couldn't load yet is held at its saved place, not at the empty player's song 1
+    final i = _held ? _restoredIndex : player.currentIndex;
     return i != null && i < _songs.length ? _songs[i] : null;
   }
 
@@ -2131,9 +2135,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   Future<void> _saveQueue() async {
     // a queue that couldn't load (no server at start-up, not downloaded): its place stays as it was
-    final held = !_loaded && _songs.isNotEmpty;
-    final i = held ? _restoredIndex : player.currentIndex ?? 0;
-    final pos = held ? _restoredPosition.inMilliseconds : player.position.inMilliseconds;
+    final i = _held ? _restoredIndex : player.currentIndex ?? 0;
+    final pos = _held ? _restoredPosition.inMilliseconds : player.position.inMilliseconds;
     prefs.setString(
       'queue',
       jsonEncode({
@@ -2419,7 +2422,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         updatePosition: player.position,
         bufferedPosition: player.bufferedPosition,
         speed: player.speed,
-        queueIndex: event.currentIndex,
+        queueIndex: _held ? _restoredIndex : event.currentIndex,
         shuffleMode: switch (_shuffleKind) {
           ShuffleKind.off => AudioServiceShuffleMode.none,
           ShuffleKind.on => AudioServiceShuffleMode.all,
