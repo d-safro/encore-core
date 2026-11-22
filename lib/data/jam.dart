@@ -33,7 +33,16 @@ class JamNotifier extends Notifier<JamState> {
 
   @override
   JamState build() {
-    ref.onDispose(_stopLoops);
+    // another server now (or signed out): this Jam's loops stop and its token isn't used with that server
+    // (its token stays saved with the server it belongs to)
+    ref.onDispose(() {
+      _run++;
+      _stopLoops();
+      _token = null;
+      _ack = 0;
+      addedBy.clear();
+      _guestAdds.clear();
+    });
     final token = prefs.getString('jamToken'), url = prefs.getString('jamUrl');
     if (token != null && url != null) {
       // the app was closed during a Jam: pick it up again
@@ -149,7 +158,7 @@ class JamNotifier extends Notifier<JamState> {
     try {
       await c.call('jamState', {'token': token, 'state': jsonEncode(state_)});
     } on SubsonicException catch (e) {
-      if (e.code == 70) _finish(); // ended (or the server forgot it)
+      if (e.code == 70 && token == _token) _finish(); // ended (or the server forgot it)
     } catch (_) {}
   }
 
@@ -174,6 +183,7 @@ class JamNotifier extends Notifier<JamState> {
         final guests = (j['guests'] as num?)?.toInt() ?? 0;
         if (guests != state.guests) state = JamState(active: true, url: state.url, guests: guests);
         for (final cmd in (j['commands'] as List? ?? const [])) {
+          if (run != _run) return;
           if (cmd is! Map) continue;
           _ack = max(_ack, (cmd['seq'] as num?)?.toInt() ?? _ack);
           try {
@@ -182,6 +192,7 @@ class JamNotifier extends Notifier<JamState> {
         }
         failures = 0;
       } on SubsonicException catch (e) {
+        if (run != _run) return;
         if (e.code == 70) return _finish();
         failures++;
       } catch (_) {
