@@ -124,64 +124,125 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
+/// Shortcuts under the greeting (Shuffle all, Liked songs, Made for you…): a grid of tiles, two across on a
+/// phone and more on wider screens, so they all show without scrolling sideways.
 class _QuickPills extends ConsumerWidget {
   const _QuickPills();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final online = ref.watch(repoProvider).online;
-    Widget pill(IconData icon, String label, Future<void> Function() go) => Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ActionChip(
-        avatar: Icon(icon, size: 18),
-        label: Text(label),
-        onPressed: () async {
-          try {
-            await go();
-          } catch (e) {
-            if (context.mounted) toast(context, '$e');
-          }
-        },
+    final jamOn = online && ref.watch(jamProvider).active;
+    // (icon, label, what a screen reader and the tooltip say, action)
+    final items = <(IconData, String, String, Future<void> Function())>[
+      (
+        Icons.shuffle_rounded,
+        'Shuffle all',
+        'Shuffle all',
+        () async => audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 200)),
       ),
-    );
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Row(
-        children: [
-          pill(
-            Icons.shuffle_rounded,
-            'Shuffle all',
-            () async => audioHandler.playSongs(await ref.read(repoProvider).randomSongs(size: 200)),
-          ),
-          pill(Icons.favorite_rounded, 'Liked songs', () async => context.push('/liked')),
-          if (online)
-            pill(Icons.auto_awesome, 'Made for you', () async {
-              final ai = ref.read(aiProvider);
-              if (ai == null) {
-                toast(context, 'Made for you needs AudioMuse-AI on the server');
-                return;
-              }
-              toast(context, 'Making your mix…');
-              final songs = await ai.forYou();
-              if (songs.isEmpty) {
-                if (context.mounted) toast(context, 'Not enough listening history yet');
-                return;
-              }
-              await audioHandler.playSongs(songs, source: 'ai:Made for you');
-            }),
-          if (online) pill(Icons.insights_rounded, 'Your stats', () async => context.push('/stats')),
-          if (online)
-            pill(
-              Icons.groups_rounded,
-              ref.watch(jamProvider).active ? 'Ensemble is on' : 'Ensemble · Listen together',
-              () => showJamSheet(context),
+      (Icons.favorite_rounded, 'Liked songs', 'Liked songs', () async => context.push('/liked')),
+      if (online)
+        (Icons.auto_awesome, 'Made for you', 'Made for you', () async {
+          final ai = ref.read(aiProvider);
+          if (ai == null) {
+            toast(context, 'Made for you needs AudioMuse-AI on the server');
+            return;
+          }
+          toast(context, 'Making your mix…');
+          final songs = await ai.forYou();
+          if (songs.isEmpty) {
+            if (context.mounted) toast(context, 'Not enough listening history yet');
+            return;
+          }
+          await audioHandler.playSongs(songs, source: 'ai:Made for you');
+        }),
+      if (online) (Icons.insights_rounded, 'Your stats', 'Your stats', () async => context.push('/stats')),
+      if (online)
+        (
+          Icons.groups_rounded,
+          jamOn ? 'Ensemble is on' : 'Ensemble',
+          jamOn ? 'Ensemble is on' : 'Ensemble · Listen together',
+          () async => showJamSheet(context),
+        ),
+      if (online)
+        (Icons.devices_rounded, 'Continue here', 'Continue from another device', () async {
+          final ok = await audioHandler.loadServerQueue();
+          if (context.mounted) toast(context, ok ? 'Queue loaded. Press play.' : 'No saved queue on the server');
+        }),
+    ];
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+    final look = AppLook.of(context);
+    Widget tile((IconData, String, String, Future<void> Function()) it) {
+      final (icon, label, full, go) = it;
+      return Semantics(
+        button: true,
+        label: full,
+        excludeSemantics: true,
+        child: Tooltip(
+          message: full,
+          child: Material(
+            color: cs.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(look.r(10)),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () async {
+                try {
+                  await go();
+                } catch (e) {
+                  if (context.mounted) toast(context, '$e');
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: cs.primary.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(look.r(8)),
+                      ),
+                      child: Icon(icon, size: 18, color: cs.primary),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 2, // a narrow tile wraps "Continue here" rather than cutting it off
+                        overflow: TextOverflow.ellipsis,
+                        style: t.labelLarge?.copyWith(fontWeight: FontWeight.w600, height: 1.15),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          if (online)
-            pill(Icons.devices_rounded, 'Continue from another device', () async {
-              final ok = await audioHandler.loadServerQueue();
-              if (context.mounted) toast(context, ok ? 'Queue loaded. Press play.' : 'No saved queue on the server');
-            }),
-        ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: LayoutBuilder(
+        builder: (context, box) {
+          // a phone: two across; wider: three; a wide desktop window: all six in one row
+          final columns = box.maxWidth >= 900 ? 6 : (box.maxWidth >= 560 ? 3 : 2);
+          return GridView(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              mainAxisExtent: 52,
+            ),
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [for (final it in items) tile(it)],
+          );
+        },
       ),
     );
   }

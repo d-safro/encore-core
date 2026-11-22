@@ -45,9 +45,16 @@ class _JamSheet extends ConsumerWidget {
                 ),
                 const Spacer(),
                 if (jam.active)
-                  Chip(
-                    avatar: const Icon(Icons.person_rounded, size: 16),
-                    label: Text(jam.guests == 1 ? '1 guest' : '${jam.guests} guests'),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.person_rounded, size: 16, color: cs.onSurfaceVariant),
+                      const SizedBox(width: 6),
+                      Text(
+                        jam.guests == 1 ? '1 guest' : '${jam.guests} guests',
+                        style: t.labelLarge?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                    ],
                   ),
               ],
             ),

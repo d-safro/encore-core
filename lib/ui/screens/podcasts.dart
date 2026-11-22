@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../../core/appearance.dart';
 import '../../core/platform.dart';
 import 'dart:convert';
 
@@ -213,7 +214,7 @@ class PodcastsTab extends ConsumerWidget {
                   trailing: p.unplayed > 0
                       ? Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(999)),
+                          decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(AppLook.of(context).r(5))),
                           child: Text(
                             p.unplayed > 99 ? '99+' : '${p.unplayed}',
                             style: t.labelSmall?.copyWith(color: cs.onPrimary, fontWeight: FontWeight.w700),
