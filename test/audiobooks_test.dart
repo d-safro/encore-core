@@ -54,6 +54,16 @@ void main() {
     expect(isAudiobookId('pe-1'), isFalse);
   });
 
+  test('a file\'s book, even when book ids have dashes', () {
+    expect(bookIdOf('ab-$_id-3'), _id);
+    expect(bookIdOf('pe-1'), isNull);
+    expect(bookIdOf('ab-x'), isNull);
+  });
+
+  test('nothing to reopen when signed out', () async {
+    await reopenBooks(['ab-$_id-0']); // no account kept: returns quietly
+  });
+
   test('signs in, lists books, plays from where you were and keeps the place', () async {
     final sent = <String, Object?>{};
     final mock = MockClient((req) async {

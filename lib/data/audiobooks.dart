@@ -286,6 +286,32 @@ Future<void> listen(
   await play(bookSongs(b, tracks), index, Duration(milliseconds: (pos * 1000).round()));
 }
 
+/// The book id of an audiobook file's song id (`ab-<book>-<n>`; book ids have dashes too).
+String? bookIdOf(String songId) =>
+    songId.startsWith('ab-') && songId.lastIndexOf('-') > 3 ? songId.substring(3, songId.lastIndexOf('-')) : null;
+
+/// After a restart: the queue still has a book's files, but their addresses (and the session) are gone.
+/// Opens a new session for the book so they play again (nothing when you're signed out or it fails).
+Future<void> reopenBooks(List<String> songIds) async {
+  final ids = {for (final id in songIds) ?bookIdOf(id)};
+  if (ids.isEmpty) return;
+  final b = await _store.read(key: 'absServer'), t = await _store.read(key: 'absToken');
+  if (b == null || t == null) return;
+  final a = AbsAccount(b, t);
+  for (final id in ids.take(1)) { // one book at a time is what a queue holds
+    final c = AbsClient(a);
+    try {
+      final (session, tracks, _) = await c.play(id);
+      for (final (i, tr) in tracks.indexed) {
+        _urls[_trackId(id, i)] = tr.url;
+      }
+      _now = _Listening(c, await c.book(id), session, tracks);
+    } catch (_) {
+      c.dispose();
+    }
+  }
+}
+
 /// Keep your place on Audiobookshelf (the handler calls this every 15 s while a book plays).
 Future<void> saveBookPlace(String songId, Duration position) async {
   final n = _now;
