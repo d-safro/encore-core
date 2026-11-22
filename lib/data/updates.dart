@@ -170,14 +170,39 @@ Future<UpdateInfo?> checkForUpdateQuietly(SharedPreferences p) async {
   }
 }
 
-/// Downloads the APK (progress 0..1), checks it against the release's SHA256SUMS.txt, and returns the file.
-Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress) async {
-  final dir = Directory('${(await getTemporaryDirectory()).path}/updates');
+/// The checksum SHA256SUMS.txt gives for [name] (lower case), or null when it has no line for it.
+String? checksumFor(String sums, String name) {
+  for (final l in const LineSplitter().convert(sums)) {
+    final m = RegExp(r'^([0-9a-fA-F]{64})\s+\*?(.+)$').firstMatch(l.trim());
+    if (m != null && m.group(2)!.trim() == name) return m.group(1)!.toLowerCase();
+  }
+  return null;
+}
+
+/// Where the update is downloaded to: a folder only you can read. Android: the app's own cache (the
+/// installer is given it from there: res/xml/update_paths.xml). The desktop: the app's own folder in your
+/// home, not the shared /tmp, where another user could take the name first or swap the file.
+Future<Directory> _updatesDir() async {
+  final base = isDesktop ? await getApplicationSupportDirectory() : await getTemporaryDirectory();
+  final dir = Directory('${base.path}/updates');
   if (await dir.exists()) await dir.delete(recursive: true);
   await dir.create(recursive: true);
+  if (isDesktop && !Platform.isWindows) await Process.run('chmod', ['700', dir.path]);
+  return dir;
+}
+
+/// Downloads the APK (progress 0..1), checks it against the release's SHA256SUMS.txt, and returns the file.
+/// A release with no checksum for the file is refused: an unchecked download is never installed.
+Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress) async {
+  if (u.sumsUrl.isEmpty) throw const FormatException("This release has no checksum, so the download can't be checked");
+  final dir = await _updatesDir();
   final file = File('${dir.path}/${u.apkName}');
   final client = http.Client();
   try {
+    final sums = await client.get(Uri.parse(u.sumsUrl));
+    if (sums.statusCode != 200) throw HttpException("Couldn't get the release's checksums (${sums.statusCode})");
+    final want = checksumFor(utf8.decode(sums.bodyBytes, allowMalformed: true), u.apkName);
+    if (want == null) throw const FormatException("The release's checksums don't list this file");
     final res = await client.send(http.Request('GET', Uri.parse(u.apkUrl)));
     if (res.statusCode != 200) throw HttpException('Download failed (${res.statusCode})');
     final total = res.contentLength ?? u.size;
@@ -189,17 +214,10 @@ Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress) asyn
       if (total > 0) onProgress(got / total);
     }
     await sink.close();
-    if (u.sumsUrl.isNotEmpty) {
-      final sums = await client.get(Uri.parse(u.sumsUrl));
-      final line = const LineSplitter()
-          .convert(sums.body)
-          .firstWhere((l) => l.trim().endsWith(u.apkName), orElse: () => '');
-      final want = line.split(RegExp(r'\s+')).first.toLowerCase();
-      final have = (await sha256.bind(file.openRead()).first).toString();
-      if (want.isEmpty || want != have) {
-        await file.delete();
-        throw const FormatException("The download doesn't match the release's checksum");
-      }
+    final have = (await sha256.bind(file.openRead()).first).toString();
+    if (want != have) {
+      await file.delete();
+      throw const FormatException("The download doesn't match the release's checksum");
     }
     return file;
   } finally {
@@ -249,9 +267,12 @@ String? systemUpdateCommand(UpdateInfo u, String kind) {
     case 'deb':
       if (u.debUrl.isEmpty) return null;
       final file = Uri.parse(u.debUrl).pathSegments.last;
-      return 'cd /tmp && curl -LO ${u.debUrl} && sudo apt install ./$file';
+      return 'cd "\$(mktemp -d)" && curl -LO ${u.debUrl} && sudo apt install ./$file';
     case 'arch':
-      return u.archUrl.isEmpty ? null : 'sudo pacman -U ${u.archUrl}';
+      // pacman checks signatures of packages it downloads itself, and this one isn't signed: download it first
+      if (u.archUrl.isEmpty) return null;
+      final file = Uri.parse(u.archUrl).pathSegments.last;
+      return 'cd "\$(mktemp -d)" && curl -LO ${u.archUrl} && sudo pacman -U ./$file';
     default:
       return u.rpmUrl.isEmpty ? null : 'sudo dnf install ${u.rpmUrl}';
   }

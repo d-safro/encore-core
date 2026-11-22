@@ -6,6 +6,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:background_downloader/background_downloader.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,6 +23,7 @@ import 'data/jam.dart';
 import 'data/library.dart';
 import 'data/local_android.dart';
 import 'data/local_files.dart';
+import 'data/subsonic.dart';
 import 'core/host.dart';
 import 'playback/handler.dart';
 import 'playback/local_open.dart';
@@ -40,14 +42,23 @@ Future<void> runEncore(EncoreHost host, List<String> args) async {
   };
   prefs = await SharedPreferences.getInstance();
   await host.afterPrefs(); // the desktop: its window
-  libraryDb = await LibraryDb.open(file: await currentDbFile()); // each server has its own copy
+  // Linux with no keyring service running: every read of the saved sign-in throws. Open signed out instead
+  // of never showing a window.
+  final keyring = await keyringWorks();
+  libraryDb = await LibraryDb.open(file: keyring ? await _dbFile() : 'encore.db'); // each server has its own copy
   // the covers kept with the downloads: before the player, which shows them on the lock screen
   savedCovers = await SavedCovers.open(Directory(p.join((await getApplicationSupportDirectory()).path, 'covers')));
   // and their lyrics, so they show with no server too
   savedLyrics = await SavedLyrics.open(Directory(p.join((await getApplicationSupportDirectory()).path, 'lyrics')));
 
-  final container = ProviderContainer(overrides: host.overrides);
-  await container.read(accountProvider.future); // the player needs the server before restoring the queue
+  final container = ProviderContainer(
+    overrides: [...host.overrides, if (!keyring) accountProvider.overrideWith(_NoKeyring.new)],
+  );
+  try {
+    await container.read(accountProvider.future); // the player needs the server before restoring the queue
+  } catch (e) {
+    debugPrint('Encore: could not read the sign-in: $e'); // shown as signed out
+  }
   container.read(downloadsProvider); // start listening for finished downloads
   // the player rebuilds the saved queue from these: downloaded songs must play from the phone, not the server
   await container.read(downloadsProvider.notifier).loaded.timeout(const Duration(seconds: 10), onTimeout: () {});
@@ -86,8 +97,51 @@ Future<void> runEncore(EncoreHost host, List<String> args) async {
       ..showSnackBar(SnackBar(content: Text(m), behavior: SnackBarBehavior.floating));
   });
   runApp(UncontrolledProviderScope(container: container, child: const EncoreApp()));
+  if (!keyring) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      messengerKey.currentState?.showSnackBar(
+        SnackBar(
+          content: Text(noKeyringMessage),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 20),
+        ),
+      );
+    });
+  }
   // later, and only while the server answers: covers are fetched again as you browse
   Future.delayed(const Duration(seconds: 30), () {
     if (!container.read(offlineProvider)) dropOldCoverCache(prefs);
   });
+}
+
+/// Shown when the keyring can't be read.
+String get noKeyringMessage => Platform.isLinux
+    ? "Encore can't reach your system's keyring, so it can't remember your sign-in. "
+          'Install or start a keyring service (like GNOME Keyring or KWallet), then open Encore again.'
+    : "Encore couldn't read your saved sign-in, so you're signed out.";
+
+/// Whether the saved sign-in can be read at all (on Linux it lives in the keyring, through libsecret).
+Future<bool> keyringWorks({FlutterSecureStorage storage = const FlutterSecureStorage()}) async {
+  try {
+    await storage.read(key: 'server');
+    return true;
+  } catch (e) {
+    debugPrint('Encore: the keyring could not be read: $e');
+    return false;
+  }
+}
+
+Future<String> _dbFile() async {
+  try {
+    return await currentDbFile();
+  } catch (e) {
+    debugPrint('Encore: could not read the saved servers: $e');
+    return 'encore.db';
+  }
+}
+
+/// No keyring: signed out (signing in then says why it can't be saved).
+class _NoKeyring extends AccountNotifier {
+  @override
+  Future<Credentials?> build() async => null;
 }
