@@ -657,6 +657,23 @@ class AlbumCard extends ConsumerWidget {
   }
 }
 
+/// A page's "add" action (New playlist, Add podcast, Add station). The phone has a floating button; the
+/// desktop puts this button at the top right of the page instead (a mouse doesn't need a big floating target,
+/// and it doesn't cover the list's last row).
+class AddButton extends StatelessWidget {
+  const AddButton(this.label, {super.key, required this.onPressed});
+  final String label;
+  final VoidCallback onPressed;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+    child: Align(
+      alignment: Alignment.centerRight,
+      child: FilledButton.tonalIcon(icon: const Icon(Icons.add_rounded, size: 20), label: Text(label), onPressed: onPressed),
+    ),
+  );
+}
+
 /// A titled horizontal row (home, artist pages, discover).
 class Shelf extends StatefulWidget {
   const Shelf({

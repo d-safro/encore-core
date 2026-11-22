@@ -18,6 +18,7 @@ import '../../core/settings.dart';
 import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
+import '../../core/platform.dart';
 import '../widgets.dart';
 import '../../data/playlist_covers.dart';
 import 'playlist_edit.dart';
@@ -1013,8 +1014,17 @@ class RadioScreen extends ConsumerWidget {
     final playing = ref.watch(mediaItemProvider).value?.id;
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Internet radio')),
-      floatingActionButton: online
+      appBar: AppBar(
+        title: const Text('Internet radio'),
+        actions: [
+          if (online && isDesktop)
+            AddButton('Add station', onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddStationScreen()));
+              ref.invalidate(radiosProvider);
+            }),
+        ],
+      ),
+      floatingActionButton: online && !isDesktop
           ? FloatingActionButton.extended(
               icon: const Icon(Icons.add),
               label: const Text('Add station'),
@@ -1026,11 +1036,11 @@ class RadioScreen extends ConsumerWidget {
           : null,
       body: AsyncView(ref.watch(radiosProvider), (List<InternetRadio> list) {
         if (list.isEmpty) {
-          return const Center(
+          return Center(
             child: Padding(
-              padding: EdgeInsets.all(32),
+              padding: const EdgeInsets.all(32),
               child: Text(
-                'No radio stations yet. Tap Add station to find one or paste its address.',
+                'No radio stations yet. ${isDesktop ? 'Click' : 'Tap'} Add station to find one or paste its address.',
                 textAlign: TextAlign.center,
               ),
             ),

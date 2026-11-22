@@ -418,7 +418,7 @@ class _PlaylistsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final online = ref.watch(repoProvider).online;
     return Scaffold(
-      floatingActionButton: online
+      floatingActionButton: online && !isDesktop
           ? FloatingActionButton.extended(
               icon: const Icon(Icons.add),
               label: const Text('New playlist'),
@@ -431,6 +431,7 @@ class _PlaylistsTab extends ConsumerWidget {
           onRefresh: () async => ref.invalidate(playlistsProvider),
           child: ListView(
             children: [
+              if (online && isDesktop) AddButton('New playlist', onPressed: () => showNewPlaylistSheet(context, ref)),
               const _LikedTile(),
               for (final pin in ref.watch(libraryPinsProvider)) _PinnedTile(pin),
               if (lists.isNotEmpty) const SectionTitle('Playlists'),
