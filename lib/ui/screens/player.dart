@@ -22,6 +22,7 @@ import '../../playback/handler.dart';
 import '../../playback/private_session.dart';
 import '../actions.dart';
 import '../state.dart';
+import '../lyric_card.dart';
 import '../widgets.dart';
 import 'podcasts.dart';
 import 'radio.dart';
@@ -1100,6 +1101,8 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
               return InkWell(
                 key: _keys.putIfAbsent(i, GlobalKey.new),
                 onTap: line.start == null ? null : () => audioHandler.seek(line.start!),
+                // hold a line: a picture of it to share (lyric_card.dart)
+                onLongPress: line.text.trim().isEmpty ? null : () => showLyricCard(context, widget.song, l.lines, i),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: Column(

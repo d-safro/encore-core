@@ -1,20 +1,15 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:ui' as ui;
 
-import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../core/platform.dart';
 import '../../data/account.dart';
 import '../../data/library.dart';
 import '../../data/review.dart';
-import '../actions.dart' show toast;
+import '../share_picture.dart';
 import '../widgets.dart';
 import 'player.dart' show artSchemeProvider;
 
@@ -449,28 +444,9 @@ class _ShareCardPageState extends State<_ShareCardPage> {
 
   Future<void> _share() async {
     setState(() => _busy = true);
-    try {
-      final box = _key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (box == null) return;
-      final img = await box.toImage(pixelRatio: 1080 / box.size.width); // 1080 px wide
-      final png = (await img.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
-      final name = 'encore-${widget.title.replaceAll(' ', '-').toLowerCase()}-${_story ? 'story' : 'square'}.png';
-      if (isDesktop) {
-        // the desktop can't share a file: save it to Downloads
-        final dir = await getDownloadsDirectory() ?? await getTemporaryDirectory();
-        final f = File('${dir.path}/$name');
-        await f.writeAsBytes(png);
-        if (mounted) toast(context, 'Saved to ${f.path}');
-      } else {
-        final f = File('${(await getTemporaryDirectory()).path}/$name');
-        await f.writeAsBytes(png);
-        await SharePlus.instance.share(ShareParams(files: [XFile(f.path, mimeType: 'image/png')], text: 'My ${widget.title} on Encore'));
-      }
-    } catch (e) {
-      if (mounted) toast(context, 'Couldn\'t make the picture: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+    await sharePicture(context, _key, 'encore-${widget.title}-${_story ? 'story' : 'square'}',
+        text: 'My ${widget.title} on Encore');
+    if (mounted) setState(() => _busy = false);
   }
 
   @override
