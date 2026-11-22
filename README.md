@@ -1,13 +1,26 @@
-# encore_core
+<h1 align="center">encore_core</h1>
 
-The code the two Encore apps share: the Navidrome / Subsonic client, the player (queue, gapless, ReplayGain,
-crossfade, scrobbling, casting), downloads and offline mode, settings, sync between your devices, and the
-screens and widgets both apps show.
+<p align="center">The shared heart of <a href="https://github.com/d-safro/encore">Encore</a>: everything the phone and desktop apps have in common.</p>
 
-- The phone app: [d-safro/encore](https://github.com/d-safro/encore)
-- The desktop app (Linux and Windows): [d-safro/encore-desktop](https://github.com/d-safro/encore-desktop)
+<p align="center">
+  <a href="../../tags"><img alt="Latest tag" src="https://img.shields.io/github/v/tag/d-safro/encore-core?label=version"></a>
+  <img alt="Flutter package" src="https://img.shields.io/badge/Flutter-package-02569b">
+</p>
 
-It's a Flutter package, not an app: the apps depend on it from git at a tag (see their READMEs).
+## What's in it
+
+- **The server client:** Subsonic / OpenSubsonic, plus Conductor's extras.
+- **The player:** queue, gapless, ReplayGain, crossfade and Automix, scrobbling, casting.
+- **Downloads and offline mode,** lyrics included.
+- **Settings,** and sync between your devices.
+- **The screens and widgets both apps show.**
+
+It's a Flutter package, not an app. The apps take it from git at a tag:
+
+| App | Repository |
+|---|---|
+| Phone and Wear OS | [d-safro/encore](https://github.com/d-safro/encore) |
+| Linux and Windows | [d-safro/encore-desktop](https://github.com/d-safro/encore-desktop) |
 
 ## The apps' hooks
 
