@@ -16,6 +16,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import '../sheets.dart';
 
 // ── Data (the last answers are kept on the phone, for when the server can't be reached) ──
 Object? _cached(String key) {
@@ -529,8 +530,9 @@ class EpisodeTile extends ConsumerWidget {
 Future<void> showEpisodeMenu(BuildContext context, WidgetRef ref, PodcastEpisode e) async {
   final dl = ref.read(downloadsProvider);
   final onPhone = dl.files.containsKey(e.id);
-  await showModalBottomSheet(
+  await showAppSheet(
     context: context,
+    menu: true, // the desktop: a menu where the mouse is
     useRootNavigator: true,
     isScrollControlled: true,
     showDragHandle: true,

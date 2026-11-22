@@ -19,6 +19,7 @@ import '../playback/not_for_me.dart';
 import 'screens/radio.dart';
 import 'state.dart';
 import 'widgets.dart' show nSongs;
+import 'sheets.dart';
 
 void toast(BuildContext context, String text) {
   if (!context.mounted) return; // the screen was closed while waiting
@@ -343,8 +344,9 @@ Future<void> showSongMenu(
   final downloads = ref.read(downloadsProvider);
   final have = downloads.files.containsKey(song.id);
   final online = ref.read(repoProvider).online;
-  await showModalBottomSheet(
+  await showAppSheet(
     context: context,
+    menu: true, // the desktop: a menu where the mouse is
     showDragHandle: true,
     useRootNavigator: true, // above the mini player and the tab bar
     isScrollControlled: true,
@@ -659,8 +661,9 @@ Future<void> showCollectionMenu(
 }) async {
   final online = ref.read(repoProvider).online;
   final pinned = pin != null && ref.read(libraryPinsProvider.notifier).isPinned(pin.key);
-  await showModalBottomSheet(
+  await showAppSheet(
     context: context,
+    menu: true, // the desktop: a menu where the mouse is
     showDragHandle: true,
     useRootNavigator: true, // above the mini player and the tab bar
     isScrollControlled: true,
