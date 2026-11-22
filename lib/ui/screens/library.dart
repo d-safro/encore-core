@@ -55,23 +55,7 @@ class LibraryScreen extends ConsumerWidget {
           ],
           bottom: const PreferredSize(
             preferredSize: Size.fromHeight(52),
-            child: Padding(
-              padding: EdgeInsets.only(bottom: 8),
-              child: TabBar(
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                tabs: [
-                  Tab(text: 'Playlists', height: 36),
-                  Tab(text: 'Podcasts', height: 36),
-                  Tab(text: 'Albums', height: 36),
-                  Tab(text: 'Artists', height: 36),
-                  Tab(text: 'Songs', height: 36),
-                  Tab(text: 'Liked', height: 36),
-                  Tab(text: 'Genres', height: 36),
-                ],
-              ),
-            ),
+            child: Padding(padding: EdgeInsets.only(bottom: 8), child: _Tabs()),
           ),
         ),
         body: const TabBarView(
@@ -87,6 +71,29 @@ class LibraryScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+class _Tabs extends StatelessWidget {
+  const _Tabs();
+  @override
+  Widget build(BuildContext context) {
+    const bar = TabBar(
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      padding: EdgeInsets.symmetric(horizontal: 8),
+      tabs: [
+        Tab(text: 'Playlists', height: 36),
+        Tab(text: 'Podcasts', height: 36),
+        Tab(text: 'Albums', height: 36),
+        Tab(text: 'Artists', height: 36),
+        Tab(text: 'Songs', height: 36),
+        Tab(text: 'Liked', height: 36),
+        Tab(text: 'Genres', height: 36),
+      ],
+    );
+    // desktop: on the left under the title, like the rest of the page
+    return isDesktop ? const Align(alignment: Alignment.centerLeft, child: bar) : bar;
   }
 }
 

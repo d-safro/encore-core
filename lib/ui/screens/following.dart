@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/appearance.dart';
+import '../../core/platform.dart';
 import '../../core/settings.dart';
 import '../../data/follows.dart';
 import '../../data/shows.dart';
@@ -131,13 +132,34 @@ class FollowingScreen extends StatelessWidget {
     child: Scaffold(
       appBar: AppBar(
         title: const Text('Following'),
-        bottom: const TabBar(
-          tabs: [
-            Tab(text: 'Artists'),
-            Tab(text: 'New releases'),
-            Tab(text: 'Shows'),
-          ],
-        ),
+        // desktop: the Library's pill tabs, under the title (not stretched across the page)
+        bottom: isDesktop
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(52),
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TabBar(
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.start,
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                      tabs: [
+                        Tab(text: 'Artists', height: 36),
+                        Tab(text: 'New releases', height: 36),
+                        Tab(text: 'Shows', height: 36),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            : const TabBar(
+                tabs: [
+                  Tab(text: 'Artists'),
+                  Tab(text: 'New releases'),
+                  Tab(text: 'Shows'),
+                ],
+              ),
       ),
       body: const TabBarView(children: [_ArtistsTab(), _ReleasesTab(), _ShowsTab()]),
     ),
