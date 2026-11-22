@@ -216,7 +216,7 @@ class SettingsScreen extends ConsumerWidget {
             value: s.scrobble,
             onChanged: (v) => set('scrobble', v),
           ),
-          const _ScrobblingSettings(),
+          const ScrobblingSettings(),
           SwitchListTile(
             secondary: const Icon(Icons.devices),
             title: const Text('Keep the queue on the server'),
@@ -1430,28 +1430,32 @@ class _MixesSettingsState extends ConsumerState<_MixesSettings> {
 
 /// Your own ListenBrainz and Last.fm, linked on the server (Conductor), which sends your plays there. Hidden on
 /// servers that can't.
-class _ScrobblingSettings extends ConsumerStatefulWidget {
-  const _ScrobblingSettings();
+@visibleForTesting
+class ScrobblingSettings extends ConsumerStatefulWidget {
+  const ScrobblingSettings({super.key});
   @override
-  ConsumerState<_ScrobblingSettings> createState() => _ScrobblingSettingsState();
+  ConsumerState<ScrobblingSettings> createState() => _ScrobblingSettingsState();
 }
 
-class _ScrobblingSettingsState extends ConsumerState<_ScrobblingSettings> {
+class _ScrobblingSettingsState extends ConsumerState<ScrobblingSettings> {
   bool _busy = false;
 
   Future<void> _run(Future<void> Function() f) async {
+    // (Settings may be closed before the server answers: what's linked is still looked up again)
+    final container = ProviderScope.containerOf(context, listen: false);
     setState(() => _busy = true);
     try {
       await f();
     } catch (e) {
       if (mounted) toast(context, '$e');
     } finally {
-      ref.invalidate(scrobblingProvider);
+      container.invalidate(scrobblingProvider);
       if (mounted) setState(() => _busy = false);
     }
   }
 
   String _status(ScrobbleAccount a, String service) {
+    if (a.broken && a.fromSettings) return '$service stopped accepting the server\'s link: its admin links it again';
     if (a.broken) return '$service stopped accepting the link: tap to link it again';
     if (a.fromSettings) return 'Linked${a.name.isEmpty ? '' : ' as ${a.name}'} in the server\'s settings';
     if (a.linked) return 'Linked as ${a.name}: your plays are sent there';
@@ -1494,14 +1498,16 @@ class _ScrobblingSettingsState extends ConsumerState<_ScrobblingSettings> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-    await openUrl(link.url);
+    // no browser to open it: the dialog still comes, with its own button for it
+    await openUrl(link.url).catchError((_) {});
     if (!mounted) return;
+    final container = ProviderScope.containerOf(context, listen: false);
     final status = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (_) => _LastfmWaitDialog(client: c, link: link),
     );
-    ref.invalidate(scrobblingProvider);
+    container.invalidate(scrobblingProvider);
     if (!mounted) return;
     if (status == 'linked') toast(context, 'Last.fm linked');
     if (status == 'expired') toast(context, 'That Last.fm link ran out: try again');
@@ -1579,7 +1585,7 @@ class _TokenDialogState extends State<_TokenDialog> {
         TextButton.icon(
           icon: const Icon(Icons.open_in_new_rounded, size: 18),
           label: const Text('listenbrainz.org/settings'),
-          onPressed: () => openUrl('https://listenbrainz.org/settings/'),
+          onPressed: () => openUrl('https://listenbrainz.org/settings/').catchError((_) {}),
         ),
         TextField(
           controller: _c,
@@ -1654,7 +1660,7 @@ class _LastfmWaitDialogState extends State<_LastfmWaitDialog> {
         TextButton.icon(
           icon: const Icon(Icons.open_in_new_rounded, size: 18),
           label: const Text('Open Last.fm again'),
-          onPressed: () => openUrl(widget.link.url),
+          onPressed: () => openUrl(widget.link.url).catchError((_) {}),
         ),
       ],
     ),
