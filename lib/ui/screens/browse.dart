@@ -191,7 +191,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
         final auto = ref.watch(settingsProvider.select((s) => s.autoGetSongs)) && audioHandler.autoGet;
         final toPlay = auto ? a.songs.where(audioHandler.usable).toList() : playable;
         final discs = a.songs.map((s) => s.disc ?? 1).toSet();
-        final children = <Widget>[];
+        final children = <Widget>[const SongTableHeader(showTrack: true)];
         int? lastDisc;
         for (final s in a.songs) {
           if (discs.length > 1 && s.disc != lastDisc) {
@@ -821,6 +821,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> with _PollWhile
                       audioHandler.playSongs(songs, shuffle: true, context: PlayContext.playlist(p.id, p.name)),
                   leading: [DownloadToggle(pinKey: 'playlist:${p.id}', songs: () async => songs)],
                 ),
+              const SongTableHeader(),
             ],
             count: p.songs.length,
             itemBuilder: (_, i) => SongTile(p.songs[i], list: songs, playContext: PlayContext.playlist(p.id, p.name)),

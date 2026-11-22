@@ -787,6 +787,7 @@ class _FavouritesTab extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                   child: Text(nSongs(songs.length), style: Theme.of(context).textTheme.bodySmall),
                 ),
+              const SongTableHeader(),
             ],
           ],
         ),

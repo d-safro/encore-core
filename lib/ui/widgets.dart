@@ -1203,6 +1203,56 @@ class _HoverPlayState extends State<HoverPlay> {
   }
 }
 
+/// Desktop: the column names over a wide song list (the rows are a table there: see _WideSongRow), in the
+/// same columns as the rows. Nothing on the phone or a narrow list.
+class SongTableHeader extends StatelessWidget {
+  const SongTableHeader({super.key, this.showTrack = false});
+  final bool showTrack; // an album: track numbers, no album column
+  @override
+  Widget build(BuildContext context) {
+    if (!isDesktop) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
+    final style = Theme.of(context).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant, letterSpacing: 0.8);
+    return LayoutBuilder(
+      builder: (context, box) => box.maxWidth < 760
+          ? const SizedBox.shrink()
+          : Container(
+              margin: const EdgeInsets.fromLTRB(0, 0, 0, 4),
+              padding: const EdgeInsets.fromLTRB(16, 6, 4, 6),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5))),
+              ),
+              child: Row(
+                children: [
+                  SizedBox(width: showTrack ? 32 : 52, child: Text(showTrack ? '#' : '', style: style)),
+                  Expanded(flex: 5, child: Text('TITLE', style: style)),
+                  if (!showTrack)
+                    Expanded(
+                      flex: 4,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('ALBUM', style: style),
+                      ),
+                    ),
+                  const SizedBox(width: 40),
+                  SizedBox(
+                    width: 52,
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Tooltip(
+                        message: 'Length',
+                        child: Icon(Icons.schedule_rounded, size: 16, color: cs.onSurfaceVariant),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 44),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
 /// A song as a table row on a wide desktop list: number or cover, title and artist, album, heart, length, menu.
 class _WideSongRow extends ConsumerStatefulWidget {
   const _WideSongRow({
