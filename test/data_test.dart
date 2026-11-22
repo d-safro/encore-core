@@ -5,6 +5,7 @@ import 'package:encore/data/library.dart';
 import 'package:encore/data/models.dart';
 import 'package:encore/data/subsonic.dart';
 import 'package:encore/data/updates.dart';
+import 'package:encore/playback/handler.dart' show stillPending;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -85,6 +86,12 @@ void main() {
       expect(s.days.single.$1, DateTime(2026, 11, 10));
       expect(s.isEmpty, isFalse);
     });
+  });
+
+  test('offline plays queued while the saved ones are being sent stay queued', () {
+    // sent a|1 and b|2 (b failed); c|3 was played offline meanwhile
+    expect(stillPending(['a|1', 'b|2'], ['b|2'], ['a|1', 'b|2', 'c|3']), ['b|2', 'c|3']);
+    expect(stillPending(['a|1'], [], ['a|1']), isEmpty);
   });
 
   group('server client', () {

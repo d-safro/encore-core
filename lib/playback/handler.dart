@@ -2008,23 +2008,30 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     prefs.setStringList('pendingScrobbles', list);
   }
 
-  /// Plays that happened offline are sent when the server is reachable again.
+  bool _flushing = false;
+
+  /// Plays that happened offline are sent when the server is reachable again (and when the app starts).
   Future<void> flushOfflineScrobbles() async {
     final list = prefs.getStringList('pendingScrobbles') ?? [];
     final c = container.read(clientProvider);
-    if (list.isEmpty || c == null) return;
-    final left = <String>[];
-    for (final e in list) {
-      final p = e.split('|');
-      final ms = p.length == 2 ? int.tryParse(p[1]) : null;
-      if (ms == null) continue; // a broken entry: drop it
-      try {
-        await c.scrobble(p[0], submission: true, time: DateTime.fromMillisecondsSinceEpoch(ms));
-      } catch (_) {
-        left.add(e);
+    if (list.isEmpty || c == null || _flushing) return; // once at a time: twice would count plays twice
+    _flushing = true;
+    try {
+      final left = <String>[];
+      for (final e in list) {
+        final p = e.split('|');
+        final ms = p.length == 2 ? int.tryParse(p[1]) : null;
+        if (ms == null) continue; // a broken entry: drop it
+        try {
+          await c.scrobble(p[0], submission: true, time: DateTime.fromMillisecondsSinceEpoch(ms));
+        } catch (_) {
+          left.add(e);
+        }
       }
+      await prefs.setStringList('pendingScrobbles', stillPending(list, left, prefs.getStringList('pendingScrobbles') ?? []));
+    } finally {
+      _flushing = false;
     }
-    prefs.setStringList('pendingScrobbles', left);
   }
 
   // ── Saving / restoring the queue ──
@@ -2534,3 +2541,10 @@ class CastInfo {
 }
 
 final castInfo = ValueNotifier<CastInfo?>(null);
+
+/// The plays still to send after sending [sent]: the ones that failed ([left]), and any queued meanwhile
+/// (in [now], the saved list as it is after sending, but not among [sent]).
+List<String> stillPending(List<String> sent, List<String> left, List<String> now) {
+  final was = sent.toSet();
+  return [...left, ...now.where((e) => !was.contains(e))];
+}

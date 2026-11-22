@@ -308,6 +308,10 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
         ref.read(downloadsProvider.notifier).resume(); // downloads that stopped while the server was away carry on
       }
     });
+    // plays made offline before the app was closed: the server may be there from the start (no change to see)
+    Future.delayed(const Duration(seconds: 15), () {
+      if (mounted && !ref.read(offlineProvider)) audioHandler.flushOfflineScrobbles();
+    });
     // keep downloaded collections up to date (new songs in playlists, newly hearted songs)
     Future.delayed(const Duration(seconds: 20), () async {
       await ref.read(downloadsProvider.notifier).refreshPins();
