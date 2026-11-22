@@ -29,6 +29,7 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
   bool _asking = false;
   Identification? _result;
   String? _problem;
+  bool _cantListen = false; // the server can't do this at all: listening again won't help
 
   @override
   void initState() {
@@ -42,6 +43,7 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
     setState(() {
       _result = null;
       _problem = null;
+      _cantListen = false;
       _left = recordSeconds;
     });
     try {
@@ -56,12 +58,14 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
           _problem = 'Encore needs the microphone for this. Allow it and try again';
         } else {
           _result = r;
+          _cantListen = songIdNotSetUp(r);
         }
       });
     } on SubsonicException catch (e) {
       if (mounted) {
         setState(() {
           _left = null;
+          _cantListen = e.code == 70;
           _problem = e.code == 70 ? 'Your server can\'t recognise songs (Pitch needs Conductor or music-lookup with song-id)' : '$e';
         });
       }
@@ -80,6 +84,7 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
     final r = _result;
+    final failed = r == null ? null : identificationError(r);
     final history = identifiedSongs();
     return SafeArea(
       child: Padding(
@@ -129,6 +134,8 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
                   ),
                 ),
               )
+            else if (failed != null)
+              ListTile(leading: const Icon(Icons.error_outline_rounded), title: Text(failed))
             else if (r != null)
               ListTile(
                 leading: const Icon(Icons.search_off_rounded),
@@ -137,7 +144,7 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
                     ? 'Your server is still learning your library (${r.songs} songs so far): it may be one it hasn\'t got to'
                     : 'Only songs in your library are recognised. Try again closer to the sound'),
               ),
-            if (_left == null) ...[
+            if (_left == null && !_cantListen) ...[
               const SizedBox(height: 12),
               FilledButton.tonalIcon(
                 onPressed: _asking ? null : _listen,
@@ -163,9 +170,25 @@ class _WhatsPlayingState extends ConsumerState<_WhatsPlaying> {
   }
 }
 
+/// The server couldn't look (song ID not set up there, or not running): what to say. Null when it looked.
+String? identificationError(Identification r) {
+  final e = r.error?.trim() ?? '';
+  if (r.found || e.isEmpty) return null;
+  if (songIdNotSetUp(r)) return "Your server can't recognise songs yet (Pitch isn't set up there)";
+  if (e.toLowerCase().contains('running')) return "Your server's song ID isn't running right now";
+  return e;
+}
+
+/// The server has no song ID at all (e.g. "Song ID isn't set up on the server (songid_url)").
+bool songIdNotSetUp(Identification r) {
+  final e = (r.error ?? '').toLowerCase();
+  return !r.found && (e.contains('set up') || e.contains('songid_url'));
+}
+
 /// For tests: what the sheet would show for an answer.
 String identificationSummary(Identification r) => r.found
     ? '${r.song!.title} · ${r.song!.artist}'
-    : r.indexing
-    ? 'not yet'
-    : 'not yours';
+    : identificationError(r) ??
+          (r.indexing
+              ? 'not yet'
+              : 'not yours');

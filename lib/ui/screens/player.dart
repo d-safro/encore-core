@@ -972,7 +972,10 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
     final t = Theme.of(context).textTheme;
     final busy = tr?.isLoading ?? false;
     final v = tr?.value;
-    final lang = lyricsLanguages[lyricsTargetLanguage(ref.watch(settingsProvider).lyricsLanguage)];
+    final target = lyricsTargetLanguage(ref.watch(settingsProvider).lyricsLanguage);
+    final lang = lyricsLanguages[target];
+    final song = widget.song, texts = l.lines.map((e) => e.text);
+    final translatable = !lyricsAlreadyIn(texts, target, title: song.title, artist: song.artist);
     final note = v == null
         ? null
         : v.error != null
@@ -989,14 +992,15 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
           Wrap(
             spacing: 8,
             children: [
-              FilterChip(
-                avatar: busy && _mode == 'translate' ? spinner() : const Icon(Icons.translate_rounded, size: 18),
-                label: Text('Libretto · Translate into $lang'),
-                selected: _mode == 'translate',
-                showCheckmark: false,
-                onSelected: (_) => _setMode('translate'),
-              ),
-              if (needsRomanizing(l.lines.map((e) => e.text)))
+              if (translatable)
+                FilterChip(
+                  avatar: busy && _mode == 'translate' ? spinner() : const Icon(Icons.translate_rounded, size: 18),
+                  label: Text('Libretto · Translate into $lang'),
+                  selected: _mode == 'translate',
+                  showCheckmark: false,
+                  onSelected: (_) => _setMode('translate'),
+                ),
+              if (needsRomanizing(texts, title: song.title, artist: song.artist))
                 FilterChip(
                   avatar: busy && _mode == 'romanize' ? spinner() : const Icon(Icons.abc_rounded, size: 18),
                   label: const Text('Romanize'),
@@ -1041,10 +1045,14 @@ class _LyricsViewState extends ConsumerState<LyricsView> {
             ),
           );
         }
-        final tr = _mode == 'off' || isLocalFileId(widget.song.id)
+        final song = widget.song, texts = l.lines.map((e) => e.text);
+        final target = lyricsTargetLanguage(ref.watch(settingsProvider).lyricsLanguage);
+        // already in that language (going by most lines): not sent to be translated
+        final skip = _mode == 'translate' && lyricsAlreadyIn(texts, target, title: song.title, artist: song.artist);
+        final tr = _mode == 'off' || skip || isLocalFileId(song.id)
             ? null
             : ref.watch(lyricsTranslationProvider(
-                (id: widget.song.id, romanize: _mode == 'romanize', text: l.lines.map((e) => e.text).join('\n')),
+                (id: song.id, romanize: _mode == 'romanize', text: linesToTranslate(texts, title: song.title, artist: song.artist)),
               ));
         final second = tr?.value;
         var cur = -1;
