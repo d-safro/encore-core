@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
@@ -44,6 +45,19 @@ class _NoConnection extends http.ClientException implements SocketException {
   int? get port => cause.port;
   @override
   String toString() => 'ClientException with $cause, uri=$uri';
+}
+
+/// What went wrong, for a person: a server that can't be reached says so plainly, not as the system's error.
+String friendlyError(Object e) {
+  if (e is SocketException) {
+    return 'Can\'t reach the server. Check the address, and that the server is running and this device can reach it.';
+  }
+  if (e is TimeoutException) return 'The server didn\'t answer in time. Check the address and your connection.';
+  if (e is HandshakeException || e is TlsException) {
+    return 'The secure connection failed: check whether the address starts with http:// or https://.';
+  }
+  if (e is http.ClientException) return 'Couldn\'t connect: ${e.message}';
+  return '$e'.replaceFirst('Exception: ', '');
 }
 
 class Credentials {

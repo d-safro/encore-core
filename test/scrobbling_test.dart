@@ -1,7 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'dart:async';
 
 import 'package:encore_core/data/account.dart';
 import 'package:encore_core/data/scrobbling.dart';
@@ -17,6 +17,12 @@ http.Response _ok(Map<String, dynamic> body) =>
     http.Response(jsonEncode({'subsonic-response': {'status': 'ok', ...body}}), 200);
 
 void main() {
+  test('sign-in errors read plainly, without the system\'s text', () {
+    expect(friendlyError(const SocketException('Connection refused')), startsWith('Can\'t reach the server'));
+    expect(friendlyError(TimeoutException('slow')), startsWith('The server didn\'t answer in time'));
+    expect(friendlyError(SubsonicException(40, 'Wrong username or password')), 'Wrong username or password');
+    expect(friendlyError(Exception('Something odd')), 'Something odd');
+  });
   test('reads what is linked', () {
     final s = Scrobbling.fromResponse({
       'scrobbling': {
@@ -140,4 +146,5 @@ class _Refused extends http.ClientException implements SocketException {
   OSError? get osError => null;
   @override
   int? get port => null;
+
 }

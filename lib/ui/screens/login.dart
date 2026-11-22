@@ -50,7 +50,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await audioHandler.enterServer();
       if (widget.adding && mounted) Navigator.of(context).pop();
     } catch (e) {
-      _safeSetState(() => _error = '$e'.replaceFirst('Exception: ', ''));
+      _safeSetState(() => _error = friendlyError(e));
     } finally {
       if (mounted) _safeSetState(() => _busy = false);
     }
@@ -84,7 +84,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await audioHandler.enterServer();
       if (widget.adding && mounted) Navigator.of(context).pop();
     } catch (e) {
-      _safeSetState(() => _error = '$e'.replaceFirst('Exception: ', ''));
+      _safeSetState(() => _error = friendlyError(e));
     } finally {
       if (mounted) _safeSetState(() => _busy = false);
     }
@@ -232,7 +232,7 @@ class _PairDialogState extends State<_PairDialog> {
     } on SubsonicException catch (e) {
       if (!_closed) setState(() => _error = e.message);
     } catch (e) {
-      if (!_closed) setState(() => _error = '$e');
+      if (!_closed) setState(() => _error = friendlyError(e));
     }
   }
 
