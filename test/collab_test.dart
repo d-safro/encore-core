@@ -54,4 +54,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('JAM_PUBLIC_URL'), findsOneWidget);
   });
+
+  testWidgets("stopping the link when the server can't be reached says so and keeps the sheet", (tester) async {
+    final c = SubsonicClient(const Credentials('http://server', 'me', 'pw'), httpClient: MockClient((req) async {
+      if (req.url.pathSegments.last == 'playlistShareEnd') return http.Response('down', 502);
+      return http.Response(jsonEncode({'subsonic-response': {'status': 'ok', 'playlistShare': {'url': 'https://x/jam/pl/t'}}}), 200);
+    }));
+    await tester.pumpWidget(app(c));
+    await tester.tap(find.text('go'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Stop the link'));
+    await tester.tap(find.text('Stop the link'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Stop'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining("Couldn't stop the link"), findsOneWidget);
+    expect(find.text('https://x/jam/pl/t'), findsOneWidget); // still open: the link still works
+  });
 }

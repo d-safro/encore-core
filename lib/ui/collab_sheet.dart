@@ -58,7 +58,12 @@ class _InviteSheetState extends ConsumerState<_InviteSheet> {
         ok: 'Stop')) {
       return;
     }
-    await ref.read(clientProvider)?.call('playlistShareEnd', {'id': widget.p.id});
+    try {
+      await ref.read(clientProvider)?.call('playlistShareEnd', {'id': widget.p.id});
+    } catch (e) {
+      if (mounted) toast(context, "Couldn't stop the link: $e"); // it still works: say so, and stay
+      return;
+    }
     if (mounted) Navigator.pop(context);
   }
 
