@@ -184,6 +184,9 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
         return;
       }
       if (!playing && _fadeFrom != null) _cancelFade(); // paused mid-blend: the rest plays plainly
+      // paused any way (a call, headphones out, the sleep timer, not only the pause button): the DJ stops too,
+      // its player ignores audio focus
+      if (!playing) _stopDj();
       final c = _cast;
       if (c != null && c.isOpen) {
         _castCommandAt = DateTime.now();
