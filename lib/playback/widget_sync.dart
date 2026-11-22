@@ -36,6 +36,8 @@ void startWidgetSync(AudioHandler handler) {
           final res = await http.get(art).timeout(const Duration(seconds: 10));
           if (res.statusCode == 200) bytes = res.bodyBytes;
         }
+        // skipped on meanwhile (a slow server cover): the newer song's cover is already there
+        if (lastId != item.id) return;
         if (bytes != null) {
           final dir = await getApplicationSupportDirectory();
           final f = File(p.join(dir.path, 'widget_cover.jpg'));
@@ -44,6 +46,7 @@ void startWidgetSync(AudioHandler handler) {
         }
       } catch (_) {}
     }
+    if (lastId != item.id) return;
     try {
       await HomeWidget.saveWidgetData<String>('cover', coverPath, deleteFile: false);
     } catch (_) {}
