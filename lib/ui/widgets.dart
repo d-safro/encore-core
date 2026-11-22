@@ -681,6 +681,26 @@ class Shelf extends StatefulWidget {
 
 class _ShelfState extends State<Shelf> {
   final _ctl = ScrollController();
+  // desktop: whether ‹ and › have anywhere to go (no arrows at all when the row fits)
+  bool _back = false, _on = false;
+
+  void _ends() {
+    if (!_ctl.hasClients) return;
+    final p = _ctl.position;
+    final back = p.pixels > 1, on = p.pixels < p.maxScrollExtent - 1;
+    if (back != _back || on != _on) {
+      setState(() {
+        _back = back;
+        _on = on;
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl.addListener(_ends);
+  }
 
   @override
   void dispose() {
@@ -709,6 +729,16 @@ class _ShelfState extends State<Shelf> {
       itemBuilder: (_, i) => widget.children[i],
     );
     if (isDesktop) {
+      // the row's size is known once it's laid out (and changes with the window)
+      list = NotificationListener<ScrollMetricsNotification>(
+        onNotification: (_) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) _ends();
+          });
+          return false;
+        },
+        child: list,
+      );
       // the row can also be dragged with the mouse
       list = ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(
@@ -725,7 +755,7 @@ class _ShelfState extends State<Shelf> {
           widget.title,
           subtitle: widget.subtitle,
           onMore: widget.onMore,
-          trailing: isDesktop
+          trailing: isDesktop && (_back || _on)
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -733,13 +763,13 @@ class _ShelfState extends State<Shelf> {
                       tooltip: 'Scroll ${widget.title} back',
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.chevron_left_rounded),
-                      onPressed: () => _page(-1),
+                      onPressed: _back ? () => _page(-1) : null,
                     ),
                     IconButton(
                       tooltip: 'Scroll ${widget.title} on',
                       visualDensity: VisualDensity.compact,
                       icon: const Icon(Icons.chevron_right_rounded),
-                      onPressed: () => _page(1),
+                      onPressed: _on ? () => _page(1) : null,
                     ),
                   ],
                 )
