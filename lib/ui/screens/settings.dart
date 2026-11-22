@@ -1052,16 +1052,23 @@ class _PinnedRow extends ConsumerWidget {
     final isAlbum = pinKey.startsWith('album:');
     final id = pinKey.substring(isAlbum ? 6 : 9);
     final repo = ref.watch(repoProvider);
-    return FutureBuilder<(String, String, List<Song>)>(
+    return FutureBuilder<(String, String, String, List<Song>)>(
       future: isAlbum
-          ? repo.album(id).then((a) => (a.name, a.coverArt, a.songs))
-          : repo.playlist(id).then((p) => (p.name, p.coverArt, p.songs)),
+          ? repo.album(id).then((a) => (a.name, a.coverArt, a.artist, a.songs))
+          : repo.playlist(id).then((p) => (p.name, p.coverArt, '', p.songs)),
       builder: (ctx, snap) {
-        final (name, cover, songs) = snap.data ?? ('…', '', const <Song>[]);
+        final (name, cover, artist, songs) = snap.data ?? ('…', '', '', const <Song>[]);
         final files = ref.watch(downloadsProvider).files;
         final have = songs.where((x) => files.containsKey(x.id)).length;
         return ListTile(
-          leading: Cover(cover, size: 48, icon: isAlbum ? Icons.album_outlined : Icons.queue_music_rounded),
+          // an album the server has no picture for: the one found for it online, like its page and its songs
+          leading: Cover(
+            cover,
+            size: 48,
+            icon: isAlbum ? Icons.album_outlined : Icons.queue_music_rounded,
+            artist: artist,
+            album: isAlbum ? name : '',
+          ),
           title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(
             songs.isEmpty
