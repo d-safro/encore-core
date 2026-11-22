@@ -16,6 +16,7 @@ import 'dj.dart';
 import 'upnp.dart';
 import 'desktop_audio.dart';
 import 'fetching.dart';
+import 'not_for_me.dart';
 import 'transitions.dart';
 import 'private_session.dart';
 import '../core/platform.dart';
@@ -1289,14 +1290,18 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final c = container.read(clientProvider);
     if (c == null) return;
     final similar = await c.similarSongs(seed.id, count: 50);
-    await playSongs([seed, ...similar.where((s) => s.id != seed.id && (!s.isLookup || autoGet))]);
+    final no = notForMe();
+    await playSongs([seed, ...similar.where((s) => s.id != seed.id && (!s.isLookup || autoGet) && !no.blocks(s))]);
   }
 
   /// Song radio (like Spotify's): the song, then songs that sound like it; it never runs out.
   Future<bool> songRadio(Song seed) async {
     final c = container.read(clientProvider);
     if (c == null) return false;
-    final similar = (await c.similarSongs(seed.id, count: 60)).where((s) => s.id != seed.id && (!s.isLookup || autoGet)).toList();
+    final no = notForMe();
+    final similar = (await c.similarSongs(seed.id, count: 60))
+        .where((s) => s.id != seed.id && (!s.isLookup || autoGet) && !no.blocks(s))
+        .toList();
     if (similar.isEmpty) return false;
     similar.shuffle();
     await playSongs([seed, ...similar.take(40)], radio: seed);
@@ -1767,8 +1772,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     if (c == null || base.isEmpty) return const [];
     final inQueue = _songs.map((s) => s.id).toSet();
     final hidden = _hiddenPicks(playContext?.key ?? '');
+    final no = notForMe();
     bool ok(Song s) =>
-        !s.isLookup && !inQueue.contains(s.id) && !_usedPicks.contains(s.id) && !hidden.contains(s.id) && canPlay(s);
+        !s.isLookup && !inQueue.contains(s.id) && !_usedPicks.contains(s.id) && !hidden.contains(s.id) && canPlay(s) &&
+        !no.blocks(s);
     _pickPool.removeWhere((s) => !ok(s));
     if (_pickPool.length < n) {
       final seeds = ([...base]..shuffle()).take(4).toList();

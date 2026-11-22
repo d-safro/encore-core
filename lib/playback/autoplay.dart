@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../data/models.dart';
+import 'not_for_me.dart';
 
 /// Autoplay: when what you chose runs out, Encore keeps going with songs like it, without end.
 ///
@@ -165,6 +166,7 @@ List<AutoCandidate> pickAutoplay({
     }
     final s = c.song;
     if (s.id.isEmpty || (s.isLookup && !allowLookup) || isPodcastId(s.id) || exclude.contains(s.id)) continue;
+    if (notForMe().blocks(s)) continue; // you said not to suggest it (not_for_me.dart)
     if (recentKeys.contains(songKey(s)) || st.skipsALot(s.id) || s.userRating == 1) continue;
     hits[s.id] = (hits[s.id] ?? 0) + 1;
     final had = byId[s.id];

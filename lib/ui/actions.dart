@@ -12,6 +12,7 @@ import '../data/models.dart';
 import '../data/playlist_add.dart';
 import '../data/share_links.dart';
 import '../playback/handler.dart';
+import '../playback/not_for_me.dart';
 import 'screens/radio.dart';
 import 'state.dart';
 import 'widgets.dart' show nSongs;
@@ -545,6 +546,32 @@ Future<void> showSongMenu(
                     shareLink(context, '${song.title} · ${song.artist}', () => songLink(song));
                   },
                 ),
+              if (!song.isLookup && !isPodcastId(song.id)) ...[
+                ListTile(
+                  leading: const Icon(Icons.do_not_disturb_on_outlined),
+                  title: const Text('Don\'t suggest this song'),
+                  subtitle: const Text('Not in autoplay, radio or mixes; it still plays when you pick it'),
+                  onTap: () async {
+                    close();
+                    await blockSong(song);
+                    if (context.mounted) {
+                      undoToast(context, 'Won\'t suggest "${song.title}"', () => unblockSong(song.id));
+                    }
+                  },
+                ),
+                if (song.artist.isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.person_off_outlined),
+                    title: Text('Don\'t suggest ${song.artist}'),
+                    onTap: () async {
+                      close();
+                      await blockArtist(song.artist);
+                      if (context.mounted) {
+                        undoToast(context, 'Won\'t suggest ${song.artist}', () => unblockArtist(song.artist));
+                      }
+                    },
+                  ),
+              ],
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: const Text('Details'),

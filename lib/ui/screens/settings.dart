@@ -26,6 +26,7 @@ import '../../playback/desktop_audio.dart';
 import '../../playback/fetching.dart';
 import '../../playback/dj.dart' show djChoices, djLanguage, djLanguages;
 import '../../playback/handler.dart';
+import '../../playback/not_for_me.dart';
 import '../../playback/private_session.dart';
 import '../actions.dart';
 import '../update.dart';
@@ -218,6 +219,20 @@ class SettingsScreen extends ConsumerWidget {
             onChanged: (v) => set('syncPlayQueue', v),
           ),
 
+          ListTile(
+            leading: const Icon(Icons.do_not_disturb_on_outlined),
+            title: const Text('Not suggested'),
+            subtitle: Text(() {
+              final n = notForMe();
+              return n.songs.isEmpty && n.artists.isEmpty
+                  ? 'Songs and artists you asked not to hear in autoplay, radio and mixes'
+                  : '${n.songs.length} song${n.songs.length == 1 ? '' : 's'}, ${n.artists.length} artist${n.artists.length == 1 ? '' : 's'}';
+            }()),
+            onTap: () async {
+              await showDialog<void>(context: context, builder: (_) => const _NotForMeDialog());
+              ref.invalidate(settingsProvider); // redraw the count
+            },
+          ),
           const _MixesSettings(),
           const SectionTitle('Audiobooks'),
           Builder(builder: (context) {
@@ -1305,6 +1320,61 @@ class _MixesSettingsState extends ConsumerState<_MixesSettings> {
                   },
           ),
       ],
+    );
+  }
+}
+
+/// Settings › Not suggested: take songs and artists off the list.
+class _NotForMeDialog extends StatefulWidget {
+  const _NotForMeDialog();
+  @override
+  State<_NotForMeDialog> createState() => _NotForMeDialogState();
+}
+
+class _NotForMeDialogState extends State<_NotForMeDialog> {
+  @override
+  Widget build(BuildContext context) {
+    final n = notForMe();
+    return AlertDialog(
+      title: const Text('Not suggested'),
+      content: SizedBox(
+        width: 420,
+        child: n.songs.isEmpty && n.artists.isEmpty
+            ? const Text('Nothing yet. A song\'s menu has "Don\'t suggest this song" and "Don\'t suggest <artist>".')
+            : ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final a in n.artists)
+                    ListTile(
+                      leading: const Icon(Icons.person_off_outlined),
+                      title: Text(a),
+                      trailing: IconButton(
+                        tooltip: 'Suggest $a again',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () async {
+                          await unblockArtist(a);
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                  for (final (id, title, artist) in n.songs)
+                    ListTile(
+                      leading: const Icon(Icons.music_off_outlined),
+                      title: Text(title),
+                      subtitle: Text(artist),
+                      trailing: IconButton(
+                        tooltip: 'Suggest $title again',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () async {
+                          await unblockSong(id);
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                ],
+              ),
+      ),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
     );
   }
 }
