@@ -24,6 +24,7 @@ import '../../data/models.dart';
 import '../../data/online_lyrics.dart';
 import '../../playback/desktop_audio.dart';
 import '../../playback/fetching.dart';
+import '../../playback/dj.dart' show djChoices, djLanguage, djLanguages;
 import '../../playback/handler.dart';
 import '../../playback/private_session.dart';
 import '../actions.dart';
@@ -293,6 +294,50 @@ class SettingsScreen extends ConsumerWidget {
             label: s.crossfade == 0 ? 'Off' : '${s.crossfade} s',
             onChanged: (v) => set('crossfade', v.round()),
           ),
+          SwitchListTile(
+            secondary: const Icon(Icons.record_voice_over_outlined),
+            title: const Text('DJ'),
+            subtitle: Text(s.dj
+                ? 'Says a line about the next song ${s.djEvery == 1 ? 'before every song' : 'every ${s.djEvery} songs'}, over its start. Needs your server\'s AI to be on'
+                : 'A line about the next song now and then, written and read by your server\'s AI (when it\'s on)'),
+            value: s.dj,
+            onChanged: (v) => set('dj', v),
+          ),
+          if (s.dj)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
+              child: SegmentedButton<int>(
+                segments: [for (final n in djChoices) ButtonSegment(value: n, label: Text(n == 1 ? 'Every song' : 'Every $n'))],
+                selected: {s.djEvery},
+                showSelectedIcon: false,
+                onSelectionChanged: (v) => set('djEvery', v.first),
+              ),
+            ),
+          if (s.dj)
+            ListTile(
+              leading: const SizedBox(width: 24),
+              title: const Text('The DJ speaks'),
+              subtitle: Text(s.djLanguage.isEmpty
+                  ? 'Your phone\'s language (${djLanguages[djLanguage('')]})'
+                  : djLanguages[s.djLanguage] ?? s.djLanguage),
+              onTap: () async {
+                final v = await showDialog<String>(
+                  context: context,
+                  builder: (ctx) => SimpleDialog(
+                    title: const Text('The DJ speaks'),
+                    children: [
+                      for (final e in {'': 'Your phone\'s language', ...djLanguages}.entries)
+                        ListTile(
+                          title: Text(e.value),
+                          trailing: e.key == s.djLanguage ? const Icon(Icons.check_rounded) : null,
+                          onTap: () => Navigator.pop(ctx, e.key),
+                        ),
+                    ],
+                  ),
+                );
+                if (v != null) set('djLanguage', v);
+              },
+            ),
           SwitchListTile(
             secondary: const Icon(Icons.auto_fix_high_outlined),
             title: const Text('Automix'),

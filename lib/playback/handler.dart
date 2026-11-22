@@ -12,6 +12,7 @@ import 'package:just_audio/just_audio.dart';
 import 'automix.dart';
 import 'autoplay.dart';
 import 'cast.dart';
+import 'dj.dart';
 import 'upnp.dart';
 import 'desktop_audio.dart';
 import 'fetching.dart';
@@ -311,7 +312,67 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   double _mainVolume = 1, _fadeShare = 1;
   void _setMainVolume(double v) {
     _mainVolume = v;
-    _quiet(() => player.setVolume(_cast != null ? 0 : v * _fadeShare)); // casting: the phone plays along silently
+    // casting: the phone plays along silently; the DJ talking: the music dips under the voice
+    _quiet(() => player.setVolume(_cast != null ? 0 : v * _fadeShare * _duck));
+  }
+
+  // ── The DJ (dj.dart): a line before every few songs, spoken over the start of the song ──
+  AudioPlayer? _djPlayer;
+  double _duck = 1;
+  int _sinceDj = 0; // songs played through since the DJ last spoke
+  String? _djFor; // the song the line being fetched / ready is for
+  DjLine? _djLine;
+  bool _djAsking = false;
+  Timer? _duckTimer;
+
+  void _djTick(int i, Duration left) {
+    final c = container.read(clientProvider);
+    if (!_settings.dj || c == null || _cast != null || container.read(offlineProvider) || i + 1 >= _songs.length) return;
+    if (left > const Duration(seconds: 50) || _djAsking || _sinceDj + 1 < _settings.djEvery) return;
+    final a = _songs[i], b = _songs[i + 1];
+    if (_djFor == b.id || isPodcastId(a.id) || isPodcastId(b.id) || b.isLookup) return;
+    _djFor = b.id;
+    _djLine = null;
+    _djAsking = true;
+    c.djLine(prev: a.id, next: b.id, lang: djLanguage(_settings.djLanguage)).then((l) {
+      if (_djFor == b.id) _djLine = l;
+    }).catchError((_) {}).whenComplete(() => _djAsking = false);
+  }
+
+  void _setDuck(double to, {Duration over = Duration.zero}) {
+    _duckTimer?.cancel();
+    if (over == Duration.zero) {
+      _duck = to;
+      _setMainVolume(_mainVolume);
+      return;
+    }
+    final from = _duck, start = DateTime.now();
+    _duckTimer = Timer.periodic(const Duration(milliseconds: 60), (t) {
+      final x = (DateTime.now().difference(start).inMilliseconds / over.inMilliseconds).clamp(0.0, 1.0);
+      _duck = from + (to - from) * x;
+      _setMainVolume(_mainVolume);
+      if (x >= 1) t.cancel();
+    });
+  }
+
+  Future<void> _speak(DjLine l) async {
+    final c = container.read(clientProvider);
+    if (c == null) return;
+    final p = _djPlayer ??= AudioPlayer(handleInterruptions: false, handleAudioSessionActivation: false);
+    try {
+      await p.setUrl(c.djAudioUrl(l.id).toString());
+      _sinceDj = 0;
+      _setDuck(0.3, over: const Duration(milliseconds: 400));
+      await p.play(); // ends when the line has been said (or it's stopped)
+    } catch (_) {
+    } finally {
+      _setDuck(1, over: const Duration(milliseconds: 1200));
+    }
+  }
+
+  void _stopDj() {
+    _quiet(() async => _djPlayer?.stop());
+    if (_duck != 1) _setDuck(1);
   }
 
   /// The ReplayGain volume for a song (only the quieter-than-reference part; for the crossfade player).
@@ -396,6 +457,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     final i = player.currentIndex, dur = player.duration;
     if (i == null || dur == null || dur <= Duration.zero) return;
     final left = dur - pos;
+    _djTick(i, left);
     if (_fadeFrom != null && _fadeFrom != i) _cancelFade(); // moved somewhere else
     // not measured yet (just asked, the server measures it first): ask again before it's time
     if (_settings.automix && left < const Duration(seconds: 60) && i + 1 < _songs.length &&
@@ -457,7 +519,7 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (speedFrom != 1 && (t.tick % 4 == 0 || x >= 1)) _quiet(() => fp.setSpeed(base * (speedFrom + (1 - speedFrom) * x)));
       // equal-power curves: the overall loudness stays even through the blend
       _fadeShare = cos(x * pi / 2);
-      _quiet(() => player.setVolume(_mainVolume * _fadeShare));
+      _quiet(() => player.setVolume(_mainVolume * _fadeShare * _duck));
       _quiet(() => fp.setVolume(target * sin(x * pi / 2)));
       if (x >= 1) {
         t.cancel();
@@ -1796,6 +1858,16 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _played(s);
     // the song before ended by itself (not a skip, not a new queue)
     final ended = was != null && sameQueue && !moved && i > 0 && _songs[i - 1].id == was.id;
+    if (ended) _sinceDj++;
+    if (_djFor == s.id) {
+      // the DJ's line for this song: said only when the song before ended by itself (not after a skip)
+      final l = _djLine;
+      _djFor = null;
+      _djLine = null;
+      if (ended && l != null && _settings.dj && _cast == null) _speak(l);
+    } else {
+      _stopDj();
+    }
     if (ended && _extras.sleepAfterTrack) {
       // "sleep after this song": the queue goes on (autoplay), so stop at the start of the next one
       player.pause();
@@ -2072,7 +2144,10 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     await player.play();
   }
   @override
-  Future<void> pause() => player.pause();
+  Future<void> pause() {
+    _stopDj();
+    return player.pause();
+  }
   @override
   Future<void> stop() async {
     await _saveQueue();

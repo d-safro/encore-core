@@ -48,6 +48,9 @@ class Settings {
   final int crossfade; // seconds the end of a song overlaps the next (0 = off)
   final bool crossfadeAlbums; // also between songs of an album played in order (else those stay gapless)
   final bool automix; // smart transitions from the server's analysis (see playback/automix.dart)
+  final bool dj; // a DJ line before every few songs (playback/dj.dart)
+  final int djEvery; // 1, 3 or 5 songs
+  final String djLanguage; // '' = the phone's (playback/dj.dart)
   final double speed;
   final bool autoplay; // when what you play runs out, keep going with songs like it (see playback/autoplay.dart)
   final bool scrobble;
@@ -101,6 +104,9 @@ class Settings {
     this.crossfade = 0,
     this.crossfadeAlbums = false,
     this.automix = false,
+    this.dj = false,
+    this.djEvery = 3,
+    this.djLanguage = '',
     this.speed = 1.0,
     this.autoplay = true,
     this.scrobble = true,
@@ -157,6 +163,9 @@ class Settings {
     'crossfade': crossfade,
     'crossfadeAlbums': crossfadeAlbums,
     'automix': automix,
+    'dj': dj,
+    'djEvery': djEvery,
+    'djLanguage': djLanguage,
     'speed': speed,
     'autoplay': autoplay,
     'scrobble': scrobble,
@@ -215,6 +224,9 @@ class Settings {
       crossfade: (j['crossfade'] as num?)?.toInt() ?? d.crossfade,
       crossfadeAlbums: j['crossfadeAlbums'] ?? d.crossfadeAlbums,
       automix: j['automix'] ?? d.automix,
+      dj: j['dj'] ?? d.dj,
+      djEvery: (j['djEvery'] as num?)?.toInt() ?? d.djEvery,
+      djLanguage: j['djLanguage'] ?? d.djLanguage,
       speed: (j['speed'] as num?)?.toDouble() ?? d.speed,
       autoplay: j['autoplay'] ?? d.autoplay,
       scrobble: j['scrobble'] ?? d.scrobble,
