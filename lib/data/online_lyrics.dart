@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -34,7 +36,8 @@ class LyricsCandidate {
 
 /// Best online lyrics for [s]: the first synced match from the enabled sources; plain text only if no
 /// source has synced lyrics. A match the user picked by hand (Choose lyrics) always wins.
-Future<Lyrics> onlineLyrics(Song s, List<String> sources) async {
+/// [strict]: throws when no source could be reached at all (no internet), rather than answering "none".
+Future<Lyrics> onlineLyrics(Song s, List<String> sources, {bool strict = false}) async {
   final picked = pickedLyrics(s.id);
   if (picked != null) {
     final l = await loadCandidate(picked);
@@ -42,7 +45,14 @@ Future<Lyrics> onlineLyrics(Song s, List<String> sources) async {
   }
   if (s.title.isEmpty) return const Lyrics();
   // every source asked at once (the answer is still taken in your order): as slow as the slowest, not the sum
-  final asked = [for (final src in sources) _bestFrom(src, s)];
+  var unreachable = 0;
+  final asked = [
+    for (final src in sources)
+      _bestFrom(src, s, strict: true).catchError((_) {
+        unreachable++;
+        return const Lyrics();
+      }),
+  ];
   Lyrics? plain;
   for (final f in asked) {
     final l = await f;
@@ -50,10 +60,15 @@ Future<Lyrics> onlineLyrics(Song s, List<String> sources) async {
     if (l.synced) return l;
     plain ??= l;
   }
+  if (strict && plain == null && sources.isNotEmpty && unreachable == sources.length) {
+    throw const SocketException('no lyrics source could be reached');
+  }
   return plain ?? const Lyrics();
 }
 
-Future<Lyrics> _bestFrom(String src, Song s) async {
+bool _unreachable(Object e) => e is SocketException || e is TimeoutException || e is http.ClientException;
+
+Future<Lyrics> _bestFrom(String src, Song s, {bool strict = false}) async {
   try {
     switch (src) {
       case 'lrclib':
@@ -65,7 +80,9 @@ Future<Lyrics> _bestFrom(String src, Song s) async {
       case 'ovh':
         return await _ovh(s.artist, s.title);
     }
-  } catch (_) {}
+  } catch (e) {
+    if (strict && _unreachable(e)) rethrow;
+  }
   return const Lyrics();
 }
 

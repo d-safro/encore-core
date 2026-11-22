@@ -17,6 +17,8 @@ import 'account.dart';
 import 'db.dart';
 import 'models.dart';
 import 'saved_covers.dart';
+import 'saved_lyrics.dart';
+import 'song_lyrics.dart';
 import 'song_download.dart';
 import 'local_link.dart';
 import 'usb_link.dart';
@@ -434,6 +436,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
   Future<void> _alias(Song s, String path) async {
     await ref.read(dbProvider).addDownload(s, path, 0);
     state = state.copy(files: {...state.files, s.id: path}, progress: {...state.progress}..remove(s.id));
+    saveLyrics();
   }
 
   @override
@@ -450,10 +453,12 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     _copies.clear();
     _inFlight.clear();
     _waiting.clear();
+    _lyricsChecked.clear();
     ref.onDispose(() {
       _disposed = true; // switched to another server: stop, keeping what has arrived
       _retry?.cancel();
       _coverSoon?.cancel();
+      _lyricsSoon?.cancel();
       _net?.close(force: true);
       _net = null; // closed: the next server's downloads get a new one
       _system.invokeMethod('downloading', {'count': 0}).catchError((_) => null);
@@ -609,6 +614,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     }
     _pump();
     saveCovers();
+    saveLyrics();
   }
 
   // ── Covers kept with the downloads (saved_covers.dart) ──
@@ -667,6 +673,73 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     if (r.statusCode == 404) return null; // no picture
     if (r.statusCode != 200) throw http.ClientException('HTTP ${r.statusCode}');
     return r.bodyBytes;
+  }
+
+  // ── Lyrics kept with the downloads (saved_lyrics.dart, song_lyrics.dart) ──
+  Future<void>? _lyricsPass;
+  bool _lyricsAgain = false;
+  Timer? _lyricsSoon;
+  final _lyricsChecked = <String>{}; // looked at in this run: not read again on the next pass
+
+  /// The pause after each song whose lyrics were looked up: a big library is filled in gently.
+  static Duration lyricsPause = const Duration(seconds: 2);
+
+  /// Soon: looks up the lyrics of downloaded songs that have none saved yet (or old ones), one at a time, and
+  /// drops those of songs that were removed. One pass at a time.
+  void saveLyrics() {
+    _lyricsSoon?.cancel();
+    _lyricsSoon = Timer(const Duration(seconds: 5), () {
+      if (_disposed) return;
+      if (_lyricsPass != null) {
+        _lyricsAgain = true;
+        return;
+      }
+      _lyricsPass = _saveLyrics().whenComplete(() {
+        _lyricsPass = null;
+        if (_lyricsAgain) {
+          _lyricsAgain = false;
+          saveLyrics();
+        }
+      });
+    });
+  }
+
+  Future<void> _saveLyrics() async {
+    final store = savedLyrics;
+    final c = ref.read(clientProvider);
+    if (store == null || c == null) return;
+    final server = c.creds.base;
+    try {
+      final songs = [for (final (s, _, _) in await ref.read(dbProvider).downloads()) s];
+      await store.keepOnly(server, {for (final s in songs) s.id});
+      var n = 0;
+      for (final s in songs) {
+        // the newest downloads first (as they're listed)
+        if (_disposed || !_allowed) return;
+        if (isPodcastId(s.id) || _lyricsChecked.contains(s.id)) continue;
+        final set = ref.read(settingsProvider);
+        final asked = await keepLyrics(
+          s,
+          LyricsAsk(
+            server: server,
+            client: c,
+            online: true,
+            sources: set.onlineLyrics ? set.lyricsSources : const [],
+            keep: true,
+            store: store,
+          ),
+        );
+        if (asked == null) return; // the server or the internet went away: the next resume() carries on
+        _lyricsChecked.add(s.id);
+        if (asked) {
+          n++;
+          await Future.delayed(lyricsPause);
+        }
+      }
+      if (n > 0) debugPrint('Encore: looked up the lyrics of $n downloads');
+    } catch (e) {
+      debugPrint('Encore: lyrics for the downloads stopped ($e), carrying on later');
+    }
   }
 
   /// Songs still to download (for the downloads screen).
@@ -796,6 +869,7 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
       await _alias(twin, path);
     }
     saveCovers();
+    saveLyrics();
   }
 
   /// Gives up on a song (gone from the server, or it sent something that isn't audio).
@@ -1035,6 +1109,9 @@ class DownloadsNotifier extends Notifier<DownloadsState> {
     if (dequeued) _saveQueue();
     state = state.copy(files: files, progress: progress);
     saveCovers(); // their pictures go too (unless other downloads use them)
+    final c = ref.read(clientProvider);
+    if (c != null) await savedLyrics?.remove(c.creds.base, ids.where((id) => !files.containsKey(id)));
+    _lyricsChecked.removeAll(ids);
   }
 
   // ── Collections kept downloaded (like Spotify's download switch) ──

@@ -6,11 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:rxdart/rxdart.dart';
 
 import '../core/settings.dart';
-import '../data/local_files.dart' show isLocalFileId;
+import '../data/local_files.dart' show isLocalFileId, localUriFor;
 import '../data/ai.dart';
 import '../data/library.dart';
-import '../data/online_lyrics.dart';
 import '../data/models.dart';
+import '../data/song_lyrics.dart';
 import '../playback/handler.dart';
 
 // ── Playback, for the UI ──
@@ -163,6 +163,8 @@ final genreAlbumsProvider = FutureProvider.autoDispose.family<List<Album>, Strin
     return ref.watch(repoProvider).albums('byGenre', size: 200, genre: g);
   },
 );
+/// A song's lyrics: the copy kept on this device for downloads and files on this device (offline, and as the
+/// quick answer online), else looked up (song_lyrics.dart). An old saved copy is refreshed in the background.
 final lyricsProvider = FutureProvider.autoDispose.family<Lyrics, String>((ref, id) async {
   ref.cacheFor(_long);
   final repo = ref.watch(repoProvider);
@@ -170,21 +172,24 @@ final lyricsProvider = FutureProvider.autoDispose.family<Lyrics, String>((ref, i
     (s) => s.id == id,
     orElse: () => Song(id: id, title: ''),
   );
-  if (!repo.online) return const Lyrics();
-  if (isLocalFileId(id)) {
-    // a file on this device: the server doesn't know it, so only the online sources (when they're on)
-    final set = ref.read(settingsProvider);
-    return set.onlineLyrics ? onlineLyrics(song, set.lyricsSources) : const Lyrics();
-  }
-  final picked = pickedLyrics(id); // chosen by hand: wins over the server's
-  if (picked != null) {
-    final p = await loadCandidate(picked);
-    if (!p.isEmpty) return p;
-  }
-  final l = await repo.client!.lyrics(song);
   final set = ref.read(settingsProvider);
-  if (l.isEmpty && set.onlineLyrics) return onlineLyrics(song, set.lyricsSources);
-  return l;
+  final local = isLocalFileId(id);
+  var alive = true;
+  ref.onDispose(() => alive = false);
+  return songLyrics(
+    song,
+    LyricsAsk(
+      server: lyricsServer(id, repo.client),
+      client: repo.client,
+      online: repo.online,
+      sources: set.onlineLyrics ? set.lyricsSources : const [],
+      localUri: local ? localUriFor(id) : null,
+      keep: local || ref.read(downloadsProvider).files.containsKey(id),
+    ),
+    changed: () {
+      if (alive) ref.invalidateSelf(); // refreshed in the background: show the new ones
+    },
+  );
 });
 final radiosProvider = FutureProvider.autoDispose<List<InternetRadio>>((ref) async {
   ref.cacheFor(_long);

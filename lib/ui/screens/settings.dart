@@ -17,6 +17,7 @@ import '../../data/lyrics_translation.dart';
 import '../../data/account.dart';
 import '../../data/cover_cache.dart';
 import '../../data/saved_covers.dart';
+import '../../data/saved_lyrics.dart';
 import '../../data/episode_alerts.dart';
 import '../../data/updates.dart';
 import '../../data/library.dart';
@@ -883,7 +884,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   late Future<List<(Song, String, int)>> _future = ref.read(dbProvider).downloads();
   late final Future<(int, int)> _library = _librarySize();
-  late Future<int> _covers = savedCovers?.bytes() ?? Future.value(0); // pictures kept with the downloads
+  late Future<int> _covers = _keptExtras(); // pictures kept with the downloads
+
+  /// The covers and lyrics kept with the downloads, so they show offline.
+  static Future<int> _keptExtras() async =>
+      await (savedCovers?.bytes() ?? Future.value(0)) + await (savedLyrics?.bytes() ?? Future.value(0));
 
   /// Songs in the library, and the space they'd take at the download quality (original sizes for Lossless).
   Future<(int, int)> _librarySize() async {
@@ -896,8 +901,11 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     );
   }
 
-  String _gb(int bytes) =>
-      bytes >= 1073741824 ? '${(bytes / 1073741824).toStringAsFixed(1)} GB' : '${(bytes / 1048576).round()} MB';
+  String _gb(int bytes) => bytes >= 1073741824
+      ? '${(bytes / 1073741824).toStringAsFixed(1)} GB'
+      : bytes > 0 && bytes < 1048576
+      ? '${(bytes / 1024).ceil()} KB'
+      : '${(bytes / 1048576).round()} MB';
 
   Future<void> _toggle(String key, bool on, Future<List<Song>> Function() songs, String what) async {
     final n = ref.read(downloadsProvider.notifier);
@@ -922,7 +930,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
       if (prev != next) {
         setState(() {
           _future = ref.read(dbProvider).downloads();
-          _covers = savedCovers?.bytes() ?? Future.value(0);
+          _covers = _keptExtras();
         });
       }
     });
@@ -953,7 +961,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                       builder: (_, pics) => Text(
                         '${_gb(bytes + (pics.data ?? 0))} used${dl.progress.isNotEmpty ? ' · ${dl.progress.length} downloading' : ''}'
                         '${ref.watch(settingsProvider).downloadWifiOnly ? ' · Wi-Fi only' : ''}'
-                        '${(pics.data ?? 0) > 0 ? '\nIncludes ${_gb(pics.data!)} of covers, so they show offline' : ''}',
+                        '${(pics.data ?? 0) > 0 ? '\nIncludes ${_gb(pics.data!)} of covers and lyrics, so they show offline' : ''}',
                         style: t.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                       ),
                     ),

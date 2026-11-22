@@ -27,6 +27,21 @@ class MediaStoreSource extends LocalSource {
     final rows = await _ch.invokeListMethod<Map>('mediaStoreAudio', {'covers': covers.path}) ?? const [];
     return [for (final r in rows) ?trackFromMediaStore(r)];
   }
+
+  /// The file itself when Encore may read it by its path, else a copy in the cache; and the .lrc beside it
+  /// when Android lets Encore read that (Android 12 and older; newer ones only allow the music files).
+  @override
+  Future<({String path, String? lrc, bool temporary})?> readable(String uri) async {
+    try {
+      final r = await _ch.invokeMapMethod<String, Object?>('audioFile', {'uri': uri});
+      final path = r?['path'];
+      if (path is! String || path.isEmpty) return null;
+      final lrc = r?['lrc'];
+      return (path: path, lrc: lrc is String ? lrc : null, temporary: r?['temporary'] == true);
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 /// One MediaStore row (from MainActivity) as a track.

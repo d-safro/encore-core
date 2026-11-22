@@ -320,7 +320,9 @@ class SubsonicClient {
       call('savePlayQueue', {'id': ids, 'current': current, 'position': positionMs});
 
   // ── Lyrics ──
-  Future<Lyrics> lyrics(Song s) async {
+  /// [strict]: a server that can't be reached throws (instead of answering "no lyrics"), so that isn't
+  /// remembered as the song having none.
+  Future<Lyrics> lyrics(Song s, {bool strict = false}) async {
     try {
       final r = await call('getLyricsBySongId', {'id': s.id});
       final list = _l(_m(r['lyricsList'])['structuredLyrics']);
@@ -328,7 +330,11 @@ class SubsonicClient {
         final synced = list.where((l) => l['synced'] == true);
         return Lyrics.fromStructured(synced.isNotEmpty ? synced.first : list.first);
       }
-    } catch (_) {}
+    } on SubsonicException catch (_) {
+      // an older server without the call: getLyrics below
+    } catch (_) {
+      if (strict) rethrow;
+    }
     try {
       final r = await call('getLyrics', {'artist': s.artist, 'title': s.title});
       final text = (_m(r['lyrics'])['value'] ?? '').toString();
