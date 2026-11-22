@@ -54,4 +54,18 @@ void main() {
     expect(c.read(localLinkProvider), isFalse);
     expect(c.read(clientProvider)!.base, 'https://b.test'); // B's main address, not A's home one or nowhere
   });
+
+  test("signing out of the last server forgets its home address, queue and scrobbles", () async {
+    SharedPreferences.setMockInitialValues({
+      'localAddress': 'http://192.0.2.1:4533',
+      'queue': '{}',
+      'pendingScrobbles': ['s1|1'],
+      'jamUrl': 'x',
+      'shown:hint': true,
+      'settings': '{}',
+    });
+    prefs = await SharedPreferences.getInstance();
+    await forgetServerPrefs();
+    expect(prefs.getKeys(), {'settings'}); // app settings stay; the server's own things go
+  });
 }

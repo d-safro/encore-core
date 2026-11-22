@@ -79,6 +79,14 @@ Future<void> _swapPrefs(String fromId, String toId) async {
   }
 }
 
+/// Signed out of the last server: what belonged to it goes (its queue, home-network address, scrobbles
+/// waiting to be sent, Jam…), so the next server you sign in to doesn't start with them.
+Future<void> forgetServerPrefs() async {
+  for (final k in prefs.getKeys().where(_perServer).toList()) {
+    await prefs.remove(k);
+  }
+}
+
 Future<void> _put(String k, Object? v) async {
   switch (v) {
     case String s:
@@ -183,8 +191,7 @@ class AccountNotifier extends AsyncNotifier<Credentials?> {
     await beforeSwitch?.call();
     await _storage.deleteAll();
     await ref.read(dbProvider).clearLibrary();
-    await prefs.remove('queue');
-    await prefs.remove('downloadQueue');
+    await forgetServerPrefs();
     state = const AsyncData(null);
   }
 }
