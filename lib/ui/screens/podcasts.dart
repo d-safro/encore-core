@@ -446,12 +446,11 @@ class EpisodeTile extends ConsumerWidget {
                             WidgetSpan(
                               alignment: PlaceholderAlignment.baseline,
                               baseline: TextBaseline.alphabetic,
-                              child: Tappable(
-                                onTap: () => context.push(podcasterPath(name: e.author, show: e.channelId)),
-                                child: Text(
-                                  e.show,
-                                  style: t.labelSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
-                                ),
+                              child: NameLink(
+                                e.show,
+                                to: podcasterPath(name: e.author, show: e.channelId),
+                                phoneToo: true,
+                                style: t.labelSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.w600),
                               ),
                             ),
                           ],

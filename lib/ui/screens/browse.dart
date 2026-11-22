@@ -209,10 +209,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> with _PollWhileDownlo
                 artist: a.artist,
                 album: a.name,
                 lines: [
-                  Tappable(
-                    onTap: a.artistId.isEmpty ? null : () => context.push('/artist/${a.artistId}'),
-                    child: Text(a.artist, style: t.titleSmall),
-                  ),
+                  NameLink(a.artist, to: NameLink.artistOf(a.artistId), style: t.titleSmall, phoneToo: true),
                   Text(
                     [
                       if (a.year != null) '${a.year}',

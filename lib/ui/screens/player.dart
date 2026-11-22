@@ -470,7 +470,8 @@ class _Titles extends ConsumerWidget {
                       : t.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.5),
                 ),
                 const SizedBox(height: 2),
-                Tappable(
+                NameLink(
+                  item.artist ?? '',
                   // a song's artist, or for an episode the show and who makes it
                   onTap: s == null
                       ? null
@@ -479,14 +480,10 @@ class _Titles extends ConsumerWidget {
                       : s.artistId.isEmpty
                       ? null
                       : () => context.push('/artist/${s.artistId}'),
-                  child: Text(
-                    item.artist ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: (large ? t.titleLarge : t.titleMedium)?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  phoneToo: true,
+                  style: (large ? t.titleLarge : t.titleMedium)?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
