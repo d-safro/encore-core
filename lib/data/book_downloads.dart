@@ -106,8 +106,9 @@ class BookDownloadsNotifier extends Notifier<BookDownloads> {
     final c = client ?? AbsClient(a);
     final h = http ?? HttpClient();
     try {
-      final (session, tracks, _) = await c.play(b.id);
-      c.close(session, 0, b.duration).catchError((_) {});
+      final (session, tracks, at) = await c.play(b.id);
+      // closed where the session says you are: closing a session saves its time as your place in the book
+      c.close(session, at, b.duration).catchError((_) {});
       final full = await c.book(b.id).catchError((_) => b);
       final d = await dir(b.id);
       final total = tracks.fold<double>(0, (s, t) => s + t.duration);

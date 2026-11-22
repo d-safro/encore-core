@@ -36,11 +36,11 @@ void main() {
     await tmp.delete(recursive: true);
   });
 
-  AbsClient mockAbs() => AbsClient(const AbsAccount('http://abs', 'tok'), client: MockClient((req) async {
+  AbsClient mockAbs({double at = 0}) => AbsClient(const AbsAccount('http://abs', 'tok'), client: MockClient((req) async {
     final body = switch (req.url.path) {
       '/api/items/b1/play' => {
           'id': 's1',
-          'currentTime': 0,
+          'currentTime': at,
           'audioTracks': [
             {'startOffset': 0, 'duration': 600, 'contentUrl': 'x', 'mimeType': 'audio/mpeg'},
             {'startOffset': 600, 'duration': 900, 'contentUrl': 'y', 'mimeType': 'audio/mpeg'},
@@ -95,6 +95,16 @@ void main() {
     expect(c.read(bookDownloadsProvider).kept, isEmpty);
     expect(c.read(bookDownloadsProvider).failed, isEmpty);
   });
+
+  test("downloading a book you're part-way through keeps your place on the server", () async {
+    final c = ProviderContainer();
+    addTearDown(c.dispose);
+    final abs = mockAbs(at: 1234);
+    final rw = _Rewrite(abs, 'http://127.0.0.1:${files.port}', abs.play);
+    await c.read(bookDownloadsProvider.notifier).download(const AbsAccount('http://abs', 'tok'), const Book(id: 'b1', title: 'Dune', duration: 1500), client: rw);
+    expect(c.read(bookDownloadsProvider).kept, contains('b1'));
+    expect(rw.closed, [1234]); // the session the download opened is closed where you were, not at 0
+  });
 }
 
 /// The mocked Audiobookshelf, with its file addresses on the test's file server.
@@ -111,6 +121,7 @@ class _Rewrite extends AbsClient {
 
   @override
   Future<Book> book(String id) => _inner.book(id);
+  final closed = <double>[];
   @override
-  Future<void> close(String session, double at, double duration) async {}
+  Future<void> close(String session, double at, double duration) async => closed.add(at);
 }
