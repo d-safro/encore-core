@@ -40,6 +40,7 @@ class LocalLinkNotifier extends Notifier<bool> {
   Timer? _timer;
   bool _checking = false;
   int _misses = 0;
+  int _gen = 0; // goes up with each build: a check started for another server or network is dropped
 
   @override
   bool build() {
@@ -47,6 +48,9 @@ class LocalLinkNotifier extends Notifier<bool> {
     final address = ref.watch(localAddressProvider);
     final onWifi = ref.watch(onWifiProvider);
     ref.watch(connectivityProvider); // a different network: look again
+    _gen++;
+    _checking = false;
+    _misses = 0;
     _timer?.cancel();
     ref.onDispose(() => _timer?.cancel());
     if (address.isEmpty || !onWifi) return false;
@@ -73,7 +77,9 @@ class LocalLinkNotifier extends Notifier<bool> {
     final address = ref.read(localAddressProvider);
     if (creds == null || address.isEmpty || _checking) return;
     _checking = true;
+    final gen = _gen;
     final ok = ref.read(onWifiProvider) && await answers(creds, address);
+    if (gen != _gen) return; // the server or the network changed meanwhile: this answer is for the old one
     _checking = false;
     _misses = ok ? 0 : _misses + 1;
     final now = ok || (state && _misses < 2);
