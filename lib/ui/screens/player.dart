@@ -213,10 +213,12 @@ class _TopBar extends ConsumerWidget {
           Expanded(
             child: Column(
               children: [
-                Text(
+                // the album's name (when that's what it says) opens the album too
+                NameLink(
                   from,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  to: s != null && from == s.album && from.isNotEmpty ? NameLink.albumOf(s) : null,
+                  phoneToo: true,
+                  textAlign: TextAlign.center,
                   style: t.labelMedium?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 Row(
@@ -462,10 +464,11 @@ class _Titles extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // desktop: the song's name opens its album
+                // the song's name opens its album (with the songs you don't have, ⬇, to play or fetch)
                 NameLink(
                   item.title,
                   to: s == null ? null : NameLink.albumOf(s),
+                  phoneToo: true,
                   maxLines: large ? 2 : 1,
                   style: large
                       ? t.headlineLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -1, height: 1.1)

@@ -1516,8 +1516,11 @@ class NameLink extends StatefulWidget {
   final TextAlign? textAlign;
   final bool phoneToo;
 
-  /// The album page of a song (none for podcast episodes, radio and songs you don't have).
-  static String? albumOf(Song s) => s.albumId.isEmpty || isPodcastId(s.id) || s.isLookup ? null : '/album/${s.albumId}';
+  /// The album page of a song: for a song you don't have (⬇), the catalog's whole album; none for podcast episodes
+  /// and radio.
+  static String? albumOf(Song s) => s.albumId.isEmpty || isPodcastId(s.id) || (s.isLookup && !s.albumId.startsWith('dz-a-'))
+      ? null
+      : '/album/${s.albumId}';
 
   /// The artist page of a song or album.
   static String? artistOf(String artistId) => artistId.isEmpty ? null : '/artist/$artistId';
