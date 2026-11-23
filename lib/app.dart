@@ -37,6 +37,7 @@ import 'data/updates.dart';
 import 'ui/state.dart';
 import 'ui/screens/review.dart';
 import 'ui/screens/concerts.dart';
+import 'ui/screens/getting.dart';
 import 'ui/screens/audiobooks.dart';
 import 'ui/device_playlists_ui.dart';
 import 'ui/screens/local_music.dart';
@@ -174,6 +175,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             pageBuilder: (_, s) => _page(s, DevicePlaylistScreen(id: s.pathParameters['id']!)),
           ),
           GoRoute(path: '/concerts', pageBuilder: (_, s) => _page(s, const ConcertsScreen())),
+          GoRoute(path: '/getting', pageBuilder: (_, s) => _page(s, const GettingScreen())),
           GoRoute(path: '/podcasts/add', pageBuilder: (_, s) => _page(s, const AddPodcastScreen())),
           GoRoute(
             path: '/podcast/:id',

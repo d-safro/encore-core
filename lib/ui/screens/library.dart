@@ -14,6 +14,7 @@ import '../../playback/handler.dart';
 import '../actions.dart';
 import '../state.dart';
 import '../widgets.dart';
+import 'getting.dart' show GettingTile;
 import 'local_music.dart' show LocalMusicTile;
 import 'smart_playlist.dart';
 import 'podcasts.dart';
@@ -445,6 +446,7 @@ class _PlaylistsTab extends ConsumerWidget {
             children: [
               if (online && isDesktop) AddButton('New playlist', onPressed: () => showNewPlaylistSheet(context, ref)),
               const _LikedTile(),
+              const GettingTile(),
               for (final pin in ref.watch(libraryPinsProvider)) _PinnedTile(pin),
               if (lists.isNotEmpty) const SectionTitle('Playlists'),
               for (final p in lists)
