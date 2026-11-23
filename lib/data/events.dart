@@ -114,6 +114,9 @@ class LiveEvents {
 
   /// null: not known yet; false: the server has no event stream (then nothing is tried).
   bool? supported;
+
+  /// The events the server says it may send (its `hello`): what an app can wait for instead of asking on a timer.
+  Set<String> serverEvents = const {};
   String? lastEventId;
 
   /// How many times a stream was asked for (for the tests).
@@ -189,6 +192,8 @@ class LiveEvents {
               if (e.id != null) lastEventId = e.id;
               if (e.type == 'hello') {
                 opened = true;
+                final kinds = e.data['events'];
+                serverEvents = kinds is List ? {for (final k in kinds) '$k'} : const {};
                 failures = 0;
                 _setHealthy(true);
                 // back after a gap that wasn't resumed: what was missed meanwhile is fetched anew
