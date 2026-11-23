@@ -12,6 +12,8 @@ import 'sheets.dart';
 
 /// "Encore 1.7.0 is available": what's new, and Update / Later / Skip this version.
 Future<void> showUpdateDialog(BuildContext context, UpdateInfo u, {bool fromCheck = false}) async {
+  // an update is already running (its sheet is up): never a second one
+  if (updateRunning) return;
   final mb = u.size > 0 ? ' · ${(u.size / 1048576).toStringAsFixed(0)} MB' : '';
   final go = await showDialog<String>(
     context: context,
@@ -41,6 +43,7 @@ Future<void> showUpdateDialog(BuildContext context, UpdateInfo u, {bool fromChec
   );
   if (go == 'skip') await prefs.setString('updateSkipped', u.version);
   if (go == 'update' && context.mounted) {
+    if (updateRunning) return toast(context, 'Encore is already updating');
     await showAppSheet(
       context: context,
       useRootNavigator: true,
@@ -71,16 +74,35 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
   File? _file;
   bool _failed = false, _needsPermission = false;
 
+  /// The update is downloaded or installed right now: it keeps the app's one update (claimUpdate) until it ends,
+  /// also when the sheet closed meanwhile (a cancelled download stops at its next piece).
+  bool _working = false;
+
+  /// The new version is being put in place: the sheet can't be closed (the app restarts on it when it's done).
+  bool _installing = false;
+
+  /// Nothing to download here: the new version is had from the release page or with a terminal command.
+  bool _manual = false;
+
+  /// Another update was already running when this sheet opened.
+  bool _blocked = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _download();
+    if (claimUpdate(this)) {
+      _download();
+    } else {
+      _blocked = true;
+      _status = 'Encore is already updating.';
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (!_working) releaseUpdate(this);
     super.dispose();
   }
 
@@ -99,10 +121,17 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
       _status = 'Downloading…';
       _progress = 0;
     });
+    _working = true;
     try {
-      if (isDesktop && Platform.isLinux && !await canInstallUpdates()) {
-        final kind = linuxPackageKind();
-        if (systemPackageUrl(widget.u, kind) != null && await encoreHost.updates.canInstallPackage(kind)) _package = kind;
+      if (isDesktop && !await canInstallUpdates()) {
+        if (Platform.isLinux) {
+          final kind = linuxPackageKind();
+          if (systemPackageUrl(widget.u, kind) != null && await encoreHost.updates.canInstallPackage(kind)) {
+            _package = kind;
+          }
+        }
+        // this copy can't put the download in place: say how to update it instead (nothing to download)
+        if (_package == null) return _showManual();
       }
       final f = await downloadUpdate(widget.u, (p) {
         if (mounted) setState(() => _progress = p);
@@ -116,7 +145,47 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
           _status = "Couldn't download the update: $e";
         });
       }
+    } finally {
+      _working = false;
+      if (!mounted) releaseUpdate(this);
     }
+  }
+
+  /// A copy that can't update itself: the portable Windows copy, one installed by the system's package manager
+  /// that can't run it here (its terminal command), or one unpacked by hand (the release page).
+  void _showManual() {
+    if (!mounted) return;
+    if (Platform.isWindows) {
+      // the portable .zip: unpacked by hand, so it's updated by hand
+      setState(() {
+        _manual = true;
+        _status =
+            'This is the portable Encore. Get the new .zip from the release page and unpack '
+            'it over this folder, or use the setup program, which keeps Encore up to date itself.';
+      });
+      return;
+    }
+    final kind = linuxPackageKind();
+    if (kind == 'none') {
+      setState(() {
+        _manual = true;
+        _status =
+            'This copy of Encore was unpacked by hand, so no package manager updates it. Get the new version '
+            'from the release page: its install.sh puts it in your home folder, and from then on Encore updates itself.';
+      });
+      return;
+    }
+    // installed by the system (a .deb, the Arch package, the RPM or a Flatpak): its package manager does it,
+    // with your password
+    final command = systemUpdateCommand(widget.u, kind);
+    setState(() {
+      _manual = true;
+      _command = command;
+      _status = command == null
+          ? 'Encore was installed by the system. Get the new version from the release page.'
+          : 'Encore was installed with ${packageManagerName(kind)}. Run this in a terminal to update '
+                '(it asks for your password):';
+    });
   }
 
   Future<void> _install() async {
@@ -149,7 +218,10 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
       // installed by the system: its package manager puts the new version in place (the system asks for your
       // password in its own window), then Encore starts again on it
       // (a Flatpak installed for you alone needs no password)
-      setState(() => _status = kind == 'flatpak' ? 'Installing…' : 'Installing… Your system asks for your password.');
+      setState(() {
+        _installing = true;
+        _status = kind == 'flatpak' ? 'Installing…' : 'Installing… Your system asks for your password.';
+      });
       try {
         await encoreHost.updates.installPackage(f, kind);
         if (mounted) setState(() => _status = 'Done. Encore restarts on the new version.');
@@ -158,6 +230,7 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
       } on PackageInstallCancelled catch (e) {
         if (mounted) {
           setState(() {
+            _installing = false;
             _failed = true;
             _status = '$e.';
           });
@@ -166,6 +239,7 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
         final command = systemUpdateCommand(widget.u, kind);
         if (mounted) {
           setState(() {
+            _installing = false;
             _command = command;
             _status = command == null
                 ? "Couldn't install the update: $e"
@@ -175,27 +249,10 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
       }
       return;
     }
-    if (!await canInstallUpdates()) {
-      if (Platform.isWindows) {
-        // the portable .zip: unpacked by hand, so it's updated by hand
-        setState(() => _status = 'This is the portable Encore. Get the new .zip from the release page and unpack '
-            'it over this folder, or use the setup program, which keeps Encore up to date itself.');
-        return;
-      }
-      // installed by the system (a .deb, the Arch package or the RPM): its package manager does it, with
-      // your password
-      final kind = linuxPackageKind();
-      final command = systemUpdateCommand(widget.u, kind);
-      setState(() {
-        _command = command;
-        _status = command == null
-            ? 'Encore was installed by the system. Get the new version from the release page.'
-            : 'Encore was installed with ${packageManagerName(kind)}. Run this in a terminal to update '
-                  '(it asks for your password):';
-      });
-      return;
-    }
-    setState(() => _status = 'Installing…');
+    setState(() {
+      _installing = true;
+      _status = 'Installing…';
+    });
     try {
       await installUpdate(f);
       if (mounted) setState(() => _status = 'Done. Encore restarts on the new version.');
@@ -204,6 +261,7 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
     } catch (e) {
       if (mounted) {
         setState(() {
+          _installing = false;
           _failed = true;
           _status = "Couldn't install the update: $e";
         });
@@ -214,48 +272,53 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    final downloading = _file == null && !_failed;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Updating to ${widget.u.version}', style: t.titleLarge),
-            const SizedBox(height: 16),
-            if (downloading) LinearProgressIndicator(value: _progress > 0 ? _progress : null),
-            if (downloading) const SizedBox(height: 12),
-            Text(downloading ? '${(_progress * 100).round()}%' : _status),
-            if (_command != null) ...[
-              const SizedBox(height: 12),
-              SelectableText(_command!, style: t.bodyMedium?.copyWith(fontFamily: 'monospace')),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (_command != null)
-                  TextButton(
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: _command!));
-                      toast(context, 'Copied');
-                    },
-                    child: const Text('Copy'),
-                  ),
-                if (_failed || _command != null)
-                  TextButton(
-                    onPressed: () => openUrl(widget.u.pageUrl).catchError((_) {}),
-                    child: const Text('Open the release page'),
-                  ),
-                TextButton(onPressed: () => Navigator.pop(context), child: Text(downloading ? 'Cancel' : 'Close')),
-                if (_failed) FilledButton(onPressed: _download, child: const Text('Try again')),
-                if (_needsPermission) FilledButton(onPressed: allowInstalls, child: const Text('Allow')),
-                if (_file != null && !_needsPermission && !_failed && _command == null && !isDesktop)
-                  FilledButton(onPressed: _install, child: const Text('Install')),
+    final downloading = _file == null && !_failed && !_manual && !_blocked;
+    // while the new version is put in place the sheet stays: closing it would let a second update start
+    return PopScope(
+      canPop: !_installing,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Updating to ${widget.u.version}', style: t.titleLarge),
+              const SizedBox(height: 16),
+              if (downloading) LinearProgressIndicator(value: _progress > 0 ? _progress : null),
+              if (downloading) const SizedBox(height: 12),
+              Text(downloading ? '${(_progress * 100).round()}%' : _status),
+              if (_command != null) ...[
+                const SizedBox(height: 12),
+                SelectableText(_command!, style: t.bodyMedium?.copyWith(fontFamily: 'monospace')),
               ],
-            ),
-          ],
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (_command != null)
+                    TextButton(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: _command!));
+                        toast(context, 'Copied');
+                      },
+                      child: const Text('Copy'),
+                    ),
+                  if (_failed || _manual || _command != null)
+                    TextButton(
+                      onPressed: () => openUrl(widget.u.pageUrl).catchError((_) {}),
+                      child: const Text('Open the release page'),
+                    ),
+                  if (!_installing)
+                    TextButton(onPressed: () => Navigator.pop(context), child: Text(downloading ? 'Cancel' : 'Close')),
+                  if (_failed) FilledButton(onPressed: _download, child: const Text('Try again')),
+                  if (_needsPermission) FilledButton(onPressed: allowInstalls, child: const Text('Allow')),
+                  if (_file != null && !_needsPermission && !_failed && _command == null && !isDesktop)
+                    FilledButton(onPressed: _install, child: const Text('Install')),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -264,6 +327,7 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
 
 /// Settings' "Check for updates now".
 Future<void> checkForUpdatesNow(BuildContext context) async {
+  if (updateRunning) return toast(context, 'Encore is already updating');
   toast(context, 'Checking for updates…');
   try {
     final u = await fetchUpdate();
@@ -275,6 +339,11 @@ Future<void> checkForUpdatesNow(BuildContext context) async {
     } else {
       await showUpdateDialog(context, u, fromCheck: true);
     }
+  } on UpdateNotReady catch (e) {
+    // a new version whose file is still being attached: not "the newest version", and not a check that counts
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    toast(context, '$e.');
   } catch (e) {
     if (context.mounted) toast(context, "Couldn't check for updates: $e");
   }

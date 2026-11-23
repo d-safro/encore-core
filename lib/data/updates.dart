@@ -121,7 +121,18 @@ Future<List<String>> _abis() async {
   }
 }
 
-/// The newest release if it's newer than this app, else null. Throws when GitHub can't be reached.
+/// The newest release is newer than this app, but its file for this device isn't there yet: the release's files
+/// are still being built and attached (they come a few minutes after the release itself).
+class UpdateNotReady implements Exception {
+  const UpdateNotReady(this.version);
+  final String version;
+  @override
+  String toString() =>
+      "Encore $version is on its way: its download for this device isn't there yet. Try again in a few minutes";
+}
+
+/// The newest release if it's newer than this app, else null. Throws [UpdateNotReady] when it's newer but its
+/// file for this device isn't attached yet, and an error when GitHub can't be reached.
 Future<UpdateInfo?> fetchUpdate() async {
   final r = await http
       .get(
@@ -140,7 +151,7 @@ Future<UpdateInfo?> fetchUpdate() async {
       : Platform.isWindows
       ? pickWindowsAsset(names)
       : pickLinuxAsset(names, _arch());
-  if (name == null) return null;
+  if (name == null) throw UpdateNotReady(version);
   final linux = isDesktop && Platform.isLinux;
   String urlOf(String? n) =>
       n == null ? '' : '${assets.firstWhere((a) => a['name'] == n)['browser_download_url']}';
@@ -163,19 +174,48 @@ Future<UpdateInfo?> fetchUpdate() async {
 
 bool autoUpdateChecks(SharedPreferences p) => p.getBool('updateChecks') ?? true;
 
-/// The automatic check: at most twice a day, and quiet about a version you said to skip.
-Future<UpdateInfo?> checkForUpdateQuietly(SharedPreferences p) async {
-  if (!autoUpdateChecks(p)) return null;
-  final last = DateTime.fromMillisecondsSinceEpoch(p.getInt('updateCheckedAt') ?? 0);
-  if (DateTime.now().difference(last) < const Duration(hours: 12)) return null;
-  try {
-    final u = await fetchUpdate();
-    await p.setInt('updateCheckedAt', DateTime.now().millisecondsSinceEpoch);
-    if (u == null || p.getString('updateSkipped') == u.version) return null;
-    return u;
-  } catch (_) {
-    return null; // no network: try another time
+/// The automatic check: at most twice a day, and quiet about a version you said to skip. A new version whose file
+/// isn't attached yet isn't counted as a check: it's looked at again after [retryAfter] (up to [tries] times while
+/// the app runs, then at the next start).
+Future<UpdateInfo?> checkForUpdateQuietly(
+  SharedPreferences p, {
+  Duration retryAfter = const Duration(minutes: 30),
+  int tries = 6,
+}) async {
+  for (var i = 0; ; i++) {
+    if (!autoUpdateChecks(p)) return null;
+    final last = DateTime.fromMillisecondsSinceEpoch(p.getInt('updateCheckedAt') ?? 0);
+    if (DateTime.now().difference(last) < const Duration(hours: 12)) return null;
+    try {
+      final u = await fetchUpdate();
+      await p.setInt('updateCheckedAt', DateTime.now().millisecondsSinceEpoch);
+      if (u == null || p.getString('updateSkipped') == u.version) return null;
+      return u;
+    } on UpdateNotReady {
+      if (i + 1 >= tries) return null; // the next start looks again
+      await Future<void>.delayed(retryAfter);
+    } catch (_) {
+      return null; // no network: try another time
+    }
   }
+}
+
+// One update at a time, app-wide: a second one would download into the folder the first is installing from.
+Object? _updateOwner;
+
+/// Whether an update is being downloaded or installed.
+bool get updateRunning => _updateOwner != null;
+
+/// Takes the update for [owner]; false when another one is already running.
+bool claimUpdate(Object owner) {
+  if (_updateOwner != null && !identical(_updateOwner, owner)) return false;
+  _updateOwner = owner;
+  return true;
+}
+
+/// Gives the update back (only [owner], the one that took it, can).
+void releaseUpdate(Object owner) {
+  if (identical(_updateOwner, owner)) _updateOwner = null;
 }
 
 /// The checksum SHA256SUMS.txt gives for [name] (lower case), or null when it has no line for it.
@@ -280,9 +320,10 @@ Future<void> openUrl(String url) async {
 
 // ── Copies installed by the system's package manager ──
 
-/// How a Linux system package was installed: 'flatpak' (Encore runs in a Flatpak), 'deb' (apt), 'arch' (pacman)
-/// or 'rpm' (dnf).
-String linuxPackageKind({String root = ''}) {
+/// How a Linux system package was installed: 'flatpak' (Encore runs in a Flatpak), 'deb' (apt), 'arch' (pacman),
+/// 'rpm' (dnf: the copy runs from the RPM's /usr/lib64/encore), or 'none': no package manager put this copy in
+/// place (it was unpacked by hand), so there's no command to give, only the release page.
+String linuxPackageKind({String root = '', String? exe}) {
   if (File('$root/.flatpak-info').existsSync()) return 'flatpak';
   if (File('$root/var/lib/dpkg/info/encore.list').existsSync()) return 'deb';
   try {
@@ -291,7 +332,8 @@ String linuxPackageKind({String root = ''}) {
       return 'arch';
     }
   } catch (_) {}
-  return 'rpm';
+  final dir = File(exe ?? Platform.resolvedExecutable).parent.path;
+  return dir == '/usr/lib64/encore' || dir == '/usr/lib/encore' ? 'rpm' : 'none';
 }
 
 /// The terminal command that updates a system-installed copy (it asks for your password), or null when the
@@ -302,7 +344,8 @@ String? systemPackageUrl(UpdateInfo u, String kind) {
     'deb' => u.debUrl,
     'arch' => u.archUrl,
     'flatpak' => u.flatpakUrl,
-    _ => u.rpmUrl,
+    'rpm' => u.rpmUrl,
+    _ => '',
   };
   return url.isEmpty ? null : url;
 }
@@ -336,8 +379,10 @@ String? systemUpdateCommand(UpdateInfo u, String kind, {String? flatpakInstallat
       final file = Uri.parse(u.flatpakUrl).pathSegments.last;
       final inst = flatpakInstallation ?? flatpakInstallationFlag();
       return 'cd "\$(mktemp -d)" && curl -LO ${u.flatpakUrl} && flatpak install $inst -y ./$file';
-    default:
+    case 'rpm':
       return u.rpmUrl.isEmpty ? null : 'sudo dnf install ${u.rpmUrl}';
+    default:
+      return null; // unpacked by hand: no package manager knows this copy
   }
 }
 
