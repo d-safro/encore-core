@@ -174,6 +174,19 @@ class SavedCovers {
     return saved;
   }
 
+  /// The server is now reached at another address ([to]; see AccountNotifier.changeAddress): its pictures
+  /// are kept under that one from now on (one already known there stays as it is).
+  Future<void> moveServer(String from, String to) async {
+    if (from == to) return;
+    final prefix = '$from|';
+    for (final k in _index.keys.where((k) => k.startsWith(prefix)).toList()) {
+      final v = _index.remove(k)!;
+      _index.putIfAbsent('$to|${k.substring(prefix.length)}', () => v);
+    }
+    _restem();
+    await flush();
+  }
+
   /// Forgets [server]'s pictures for covers not in [keep] (their songs were removed) and deletes the files
   /// nothing uses any more. Returns how many files went.
   Future<int> keepOnly(String server, Set<String> keep) async {

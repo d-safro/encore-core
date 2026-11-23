@@ -85,6 +85,30 @@ class SavedLyrics {
     }
   }
 
+  /// The server is now reached at another address ([to]; see AccountNotifier.changeAddress): its lyrics
+  /// move to that address's folder (any already there stay as they are).
+  Future<void> moveServer(String from, String to) async {
+    if (from == to || from == localServer || to == localServer) return;
+    final a = _serverDir(from), b = _serverDir(to);
+    try {
+      if (!await a.exists()) return;
+      if (!await b.exists()) {
+        await a.rename(b.path);
+        return;
+      }
+      await for (final f in a.list()) {
+        if (f is! File) continue;
+        final dest = p.join(b.path, p.basename(f.path));
+        if (await File(dest).exists()) {
+          await f.delete();
+        } else {
+          await f.rename(dest);
+        }
+      }
+      await a.delete(recursive: true);
+    } catch (_) {}
+  }
+
   /// Drops the lyrics of a server's songs that aren't in [ids] any more (downloads removed meanwhile).
   Future<int> keepOnly(String server, Set<String> ids) async {
     final d = _serverDir(server);
