@@ -302,9 +302,10 @@ Future<void> openUrl(String url) async {
 
 // ── Copies installed by the system's package manager ──
 
-/// How a Linux system package was installed: 'flatpak' (Encore runs in a Flatpak), 'deb' (apt), 'arch' (pacman)
-/// or 'rpm' (dnf).
-String linuxPackageKind({String root = ''}) {
+/// How a Linux system package was installed: 'flatpak' (Encore runs in a Flatpak), 'deb' (apt), 'arch' (pacman),
+/// 'rpm' (dnf: the copy runs from the RPM's /usr/lib64/encore), or 'none': no package manager put this copy in
+/// place (it was unpacked by hand), so there's no command to give, only the release page.
+String linuxPackageKind({String root = '', String? exe}) {
   if (File('$root/.flatpak-info').existsSync()) return 'flatpak';
   if (File('$root/var/lib/dpkg/info/encore.list').existsSync()) return 'deb';
   try {
@@ -313,7 +314,8 @@ String linuxPackageKind({String root = ''}) {
       return 'arch';
     }
   } catch (_) {}
-  return 'rpm';
+  final dir = File(exe ?? Platform.resolvedExecutable).parent.path;
+  return dir == '/usr/lib64/encore' || dir == '/usr/lib/encore' ? 'rpm' : 'none';
 }
 
 /// The terminal command that updates a system-installed copy (it asks for your password), or null when the
@@ -324,7 +326,8 @@ String? systemPackageUrl(UpdateInfo u, String kind) {
     'deb' => u.debUrl,
     'arch' => u.archUrl,
     'flatpak' => u.flatpakUrl,
-    _ => u.rpmUrl,
+    'rpm' => u.rpmUrl,
+    _ => '',
   };
   return url.isEmpty ? null : url;
 }
@@ -358,8 +361,10 @@ String? systemUpdateCommand(UpdateInfo u, String kind, {String? flatpakInstallat
       final file = Uri.parse(u.flatpakUrl).pathSegments.last;
       final inst = flatpakInstallation ?? flatpakInstallationFlag();
       return 'cd "\$(mktemp -d)" && curl -LO ${u.flatpakUrl} && flatpak install $inst -y ./$file';
-    default:
+    case 'rpm':
       return u.rpmUrl.isEmpty ? null : 'sudo dnf install ${u.rpmUrl}';
+    default:
+      return null; // unpacked by hand: no package manager knows this copy
   }
 }
 

@@ -71,6 +71,9 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
   File? _file;
   bool _failed = false, _needsPermission = false;
 
+  /// Nothing to download here: the new version is had from the release page or with a terminal command.
+  bool _manual = false;
+
   @override
   void initState() {
     super.initState();
@@ -100,9 +103,15 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
       _progress = 0;
     });
     try {
-      if (isDesktop && Platform.isLinux && !await canInstallUpdates()) {
-        final kind = linuxPackageKind();
-        if (systemPackageUrl(widget.u, kind) != null && await encoreHost.updates.canInstallPackage(kind)) _package = kind;
+      if (isDesktop && !await canInstallUpdates()) {
+        if (Platform.isLinux) {
+          final kind = linuxPackageKind();
+          if (systemPackageUrl(widget.u, kind) != null && await encoreHost.updates.canInstallPackage(kind)) {
+            _package = kind;
+          }
+        }
+        // this copy can't put the download in place: say how to update it instead (nothing to download)
+        if (_package == null) return _showManual();
       }
       final f = await downloadUpdate(widget.u, (p) {
         if (mounted) setState(() => _progress = p);
@@ -117,6 +126,43 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
         });
       }
     }
+  }
+
+  /// A copy that can't update itself: the portable Windows copy, one installed by the system's package manager
+  /// that can't run it here (its terminal command), or one unpacked by hand (the release page).
+  void _showManual() {
+    if (!mounted) return;
+    if (Platform.isWindows) {
+      // the portable .zip: unpacked by hand, so it's updated by hand
+      setState(() {
+        _manual = true;
+        _status =
+            'This is the portable Encore. Get the new .zip from the release page and unpack '
+            'it over this folder, or use the setup program, which keeps Encore up to date itself.';
+      });
+      return;
+    }
+    final kind = linuxPackageKind();
+    if (kind == 'none') {
+      setState(() {
+        _manual = true;
+        _status =
+            'This copy of Encore was unpacked by hand, so no package manager updates it. Get the new version '
+            'from the release page: its install.sh puts it in your home folder, and from then on Encore updates itself.';
+      });
+      return;
+    }
+    // installed by the system (a .deb, the Arch package, the RPM or a Flatpak): its package manager does it,
+    // with your password
+    final command = systemUpdateCommand(widget.u, kind);
+    setState(() {
+      _manual = true;
+      _command = command;
+      _status = command == null
+          ? 'Encore was installed by the system. Get the new version from the release page.'
+          : 'Encore was installed with ${packageManagerName(kind)}. Run this in a terminal to update '
+                '(it asks for your password):';
+    });
   }
 
   Future<void> _install() async {
@@ -175,26 +221,6 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
       }
       return;
     }
-    if (!await canInstallUpdates()) {
-      if (Platform.isWindows) {
-        // the portable .zip: unpacked by hand, so it's updated by hand
-        setState(() => _status = 'This is the portable Encore. Get the new .zip from the release page and unpack '
-            'it over this folder, or use the setup program, which keeps Encore up to date itself.');
-        return;
-      }
-      // installed by the system (a .deb, the Arch package or the RPM): its package manager does it, with
-      // your password
-      final kind = linuxPackageKind();
-      final command = systemUpdateCommand(widget.u, kind);
-      setState(() {
-        _command = command;
-        _status = command == null
-            ? 'Encore was installed by the system. Get the new version from the release page.'
-            : 'Encore was installed with ${packageManagerName(kind)}. Run this in a terminal to update '
-                  '(it asks for your password):';
-      });
-      return;
-    }
     setState(() => _status = 'Installing…');
     try {
       await installUpdate(f);
@@ -214,7 +240,7 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    final downloading = _file == null && !_failed;
+    final downloading = _file == null && !_failed && !_manual;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
@@ -243,7 +269,7 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
                     },
                     child: const Text('Copy'),
                   ),
-                if (_failed || _command != null)
+                if (_failed || _manual || _command != null)
                   TextButton(
                     onPressed: () => openUrl(widget.u.pageUrl).catchError((_) {}),
                     child: const Text('Open the release page'),

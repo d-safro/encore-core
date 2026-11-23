@@ -64,4 +64,16 @@ void main() {
       expect(q.getInt('updateCheckedAt'), isNull);
     }, skip: !Platform.isLinux);
   });
+
+  test('a copy unpacked by hand has no package manager to name', () {
+    final root = Directory.systemTemp.createTempSync('encore-kind');
+    addTearDown(() => root.deleteSync(recursive: true));
+    expect(linuxPackageKind(root: root.path, exe: '/home/me/Downloads/encore-9.0.0-linux-x86_64/app/encore'), 'none');
+    expect(linuxPackageKind(root: root.path, exe: '/usr/lib64/encore/encore'), 'rpm');
+    const u = UpdateInfo(version: '9.0.0', notes: '', apkUrl: '', apkName: '', size: 0, sumsUrl: '', pageUrl: '',
+        rpmUrl: 'https://x/encore-9.0.0-1.x86_64.rpm');
+    expect(systemUpdateCommand(u, 'none'), isNull); // never `sudo dnf install` on Ubuntu
+    expect(systemPackageUrl(u, 'none'), isNull);
+    expect(systemUpdateCommand(u, 'rpm'), 'sudo dnf install https://x/encore-9.0.0-1.x86_64.rpm');
+  });
 }
