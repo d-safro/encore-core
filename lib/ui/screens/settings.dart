@@ -382,6 +382,41 @@ class SettingsScreen extends ConsumerWidget {
             value: s.skipSilence,
             onChanged: (v) => set('skipSilence', v),
           ),
+          // the skip back / forward buttons (player, notification, car, watch, desktop keys)
+          ListTile(
+            leading: SkipIcon(seconds: s.skipBack, forward: false),
+            title: const Text('Skip back'),
+            subtitle: Text('${s.skipBack} seconds'),
+            onTap: () => _skipSeconds(context, 'Skip back', s.skipBack, (v) => set('skipBack', v)),
+          ),
+          ListTile(
+            leading: SkipIcon(seconds: s.skipForward, forward: true),
+            title: const Text('Skip forward'),
+            subtitle: Text('${s.skipForward} seconds'),
+            onTap: () => _skipSeconds(context, 'Skip forward', s.skipForward, (v) => set('skipForward', v)),
+          ),
+          ListTile(
+            leading: const SizedBox(width: 24),
+            title: const Text('Show skip buttons for'),
+            subtitle: Text(skipButtonsNames[s.skipButtons]!),
+            onTap: () async {
+              final v = await showDialog<SkipButtons>(
+                context: context,
+                builder: (ctx) => SimpleDialog(
+                  title: const Text('Show skip buttons for'),
+                  children: [
+                    for (final e in skipButtonsNames.entries)
+                      ListTile(
+                        title: Text(e.value),
+                        trailing: e.key == s.skipButtons ? const Icon(Icons.check_rounded) : null,
+                        onTap: () => Navigator.pop(ctx, e.key),
+                      ),
+                  ],
+                ),
+              );
+              if (v != null) set('skipButtons', v.name);
+            },
+          ),
           SwitchListTile(
             secondary: const Icon(Icons.all_inclusive),
             title: const Text('Autoplay'),
@@ -1723,4 +1758,29 @@ class _NotForMeDialogState extends State<_NotForMeDialog> {
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
     );
   }
+}
+
+/// The choices of Settings › Playback › Show skip buttons for.
+const skipButtonsNames = {
+  SkipButtons.everything: 'Everything',
+  SkipButtons.spoken: 'Podcasts and audiobooks only',
+};
+
+/// Picks how many seconds a skip button jumps.
+Future<void> _skipSeconds(BuildContext context, String title, int now, void Function(int) set) async {
+  final v = await showDialog<int>(
+    context: context,
+    builder: (ctx) => SimpleDialog(
+      title: Text(title),
+      children: [
+        for (final n in skipChoices)
+          ListTile(
+            title: Text('$n seconds'),
+            trailing: n == now ? const Icon(Icons.check_rounded) : null,
+            onTap: () => Navigator.pop(ctx, n),
+          ),
+      ],
+    ),
+  );
+  if (v != null) set(v);
 }

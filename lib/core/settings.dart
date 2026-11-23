@@ -34,6 +34,13 @@ enum MiniPlayerStyle { floating, flat, slim }
 /// Names under the bottom tabs.
 enum NavLabels { always, selected, never }
 
+/// Which songs get the skip back / forward buttons (Settings › Playback): everything, or only podcast episodes
+/// and audiobooks.
+enum SkipButtons { everything, spoken }
+
+/// How far the skip buttons jump, in seconds (Settings › Playback).
+const skipChoices = [5, 10, 15, 30, 60];
+
 /// Every user setting, stored as one JSON blob in shared preferences.
 class Settings {
   final ThemeSource themeSource;
@@ -51,6 +58,8 @@ class Settings {
   final ReplayGainMode replayGain;
   final double replayGainPreamp; // dB
   final bool skipSilence;
+  final int skipBack, skipForward; // seconds the skip buttons jump (one of skipChoices)
+  final SkipButtons skipButtons; // which songs show them
   final int crossfade; // seconds the end of a song overlaps the next (0 = off)
   final bool crossfadeAlbums; // also between songs of an album played in order (else those stay gapless)
   final bool automix; // smart transitions from the server's analysis (see playback/automix.dart)
@@ -108,6 +117,9 @@ class Settings {
     this.replayGain = ReplayGainMode.auto,
     this.replayGainPreamp = 0,
     this.skipSilence = false,
+    this.skipBack = 15,
+    this.skipForward = 30,
+    this.skipButtons = SkipButtons.everything,
     this.crossfade = 0,
     this.crossfadeAlbums = false,
     this.automix = false,
@@ -168,6 +180,9 @@ class Settings {
     'replayGain': replayGain.name,
     'replayGainPreamp': replayGainPreamp,
     'skipSilence': skipSilence,
+    'skipBack': skipBack,
+    'skipForward': skipForward,
+    'skipButtons': skipButtons.name,
     'crossfade': crossfade,
     'crossfadeAlbums': crossfadeAlbums,
     'automix': automix,
@@ -230,6 +245,9 @@ class Settings {
       replayGain: pick(ReplayGainMode.values, j['replayGain'], d.replayGain),
       replayGainPreamp: (j['replayGainPreamp'] as num?)?.toDouble() ?? d.replayGainPreamp,
       skipSilence: j['skipSilence'] ?? d.skipSilence,
+      skipBack: _skip(j['skipBack'], d.skipBack),
+      skipForward: _skip(j['skipForward'], d.skipForward),
+      skipButtons: pick(SkipButtons.values, j['skipButtons'], d.skipButtons),
       crossfade: (j['crossfade'] as num?)?.toInt() ?? d.crossfade,
       crossfadeAlbums: j['crossfadeAlbums'] ?? d.crossfadeAlbums,
       automix: j['automix'] ?? d.automix,
@@ -275,6 +293,25 @@ class Settings {
   }
 
   Settings copyWith(Map<String, dynamic> changes) => Settings.fromJson({...toJson(), ...changes});
+
+  /// The skip buttons' settings as they're kept the same on all your devices (data/sync.dart).
+  Map<String, Object> get skipSynced => {'back': skipBack, 'forward': skipForward, 'for': skipButtons.name};
+
+  /// The changes for [skipSynced] from another device (what it doesn't say stays as it is).
+  static Map<String, dynamic> skipFromSynced(Object? v) {
+    if (v is! Map) return const {};
+    return {
+      if (v['back'] != null) 'skipBack': v['back'],
+      if (v['forward'] != null) 'skipForward': v['forward'],
+      if (v['for'] != null) 'skipButtons': v['for'],
+    };
+  }
+
+  /// One of the skip amounts on offer, else [fallback].
+  static int _skip(dynamic v, int fallback) {
+    final n = v is num ? v.toInt() : null;
+    return skipChoices.contains(n) ? n! : fallback;
+  }
 
   /// Known tabs only, no repeats, Home always there, at least two.
   static List<String> _cleanTabs(dynamic raw) {
