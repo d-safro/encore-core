@@ -137,12 +137,19 @@ final forYouOfferedProvider = FutureProvider.autoDispose<bool>((ref) async {
   return names.contains('encore.forYou');
 });
 
-/// "Made for you" from whichever the server has: AudioMuse-AI's sound-alikes, else Conductor's own mix. Empty when
-/// it has neither (or is out of reach).
+/// "Made for you" from whichever the server has: AudioMuse-AI's sound-alikes, else Conductor's own mix (also when
+/// AudioMuse-AI has nothing yet or can't be reached). Empty when it has neither (or is out of reach).
 Future<List<Song>> madeForYou(WidgetRef ref, {int n = 60}) async {
   final ai = ref.read(aiProvider);
   if (ai == null) return const [];
-  if (await ref.read(aiOfferedProvider.future)) return ai.forYou(n: n);
+  if (await ref.read(aiOfferedProvider.future)) {
+    try {
+      final songs = await ai.forYou(n: n);
+      if (songs.isNotEmpty) return songs;
+    } catch (_) {
+      if (!await ref.read(forYouOfferedProvider.future)) rethrow;
+    }
+  }
   if (await ref.read(forYouOfferedProvider.future)) return ai.forYouFromServer(n: n);
   return const [];
 }

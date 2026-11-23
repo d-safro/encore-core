@@ -130,6 +130,26 @@ void main() {
     expect(await box.read(forYouOfferedProvider.future), isTrue, reason: 'asked again');
   });
 
+  for (final audiomuse in [200, 502]) {
+    testWidgets("Made for you: AudioMuse-AI with nothing yet (answer $audiomuse) gives the server's own mix", (tester) async {
+      final c = _conductor(audiomuse: audiomuse);
+      late WidgetRef ref;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [aiProvider.overrideWithValue(Ai(c, Repo(c, db, false, const Settings())))],
+          child: Consumer(
+            builder: (_, r, _) {
+              ref = r;
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+      final songs = await tester.runAsync(() => madeForYou(ref));
+      expect(songs!.map((s) => s.title), ['A made-up tune']);
+    });
+  }
+
   testWidgets('no AudioMuse-AI on the server: one card says why, no mixes that only fail', (tester) async {
     await tester.pumpWidget(app(_server(404)));
     await tester.pumpAndSettle();
