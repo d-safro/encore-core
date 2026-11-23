@@ -10,9 +10,11 @@
 ## What's in it
 
 - **The server client:** Subsonic / OpenSubsonic, plus Conductor's extras.
-- **The player:** queue, gapless, ReplayGain, crossfade and Automix, scrobbling, casting.
+- **The player:** queue, gapless, sound levelling (ReplayGain), crossfade and Automix, scrobbling, casting.
 - **Downloads and offline mode,** lyrics included.
 - **Settings,** and sync between your devices.
+- **Updates:** finding a new release on GitHub, downloading it with its checksum checked, and the update sheet
+  (each app puts the new version in place with its own hook).
 - **The screens and widgets both apps show.**
 
 It's a Flutter package, not an app. The apps take it from git at a tag:
@@ -36,7 +38,7 @@ its own `EncoreHost` (`lib/core/host.dart`), and the shared code asks that for w
 | `desktopShell`, `desktopSettings`, `songDragSource` | - | the window layout (sidebar, player bar, Now Playing), Settings › Desktop, drag and drop |
 | `usbCard`, `downloading` | the USB cable card, Android's download notification | - |
 | `sound` (`DesktopSound`) | - | mpv's equalizer, volume and output devices |
-| `updates` (`UpdateInstaller`) | Android's installer | the archive swap, the Windows setup program |
+| `updates` (`UpdateInstaller`) | Android's installer | the archive swap; a .deb, .rpm or Arch package through the system's password window; the Flatpak through the computer's flatpak; the Windows setup program |
 | `quitApp` | - | saves the queue and ends the app |
 
 Every hook has a harmless default, so the shared code and its tests run without either app.
