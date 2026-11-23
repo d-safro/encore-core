@@ -11,6 +11,11 @@ import 'db.dart';
 import 'jam.dart';
 import 'library_pins.dart';
 import 'library.dart';
+import 'local_files.dart' show isLocalFileId;
+import 'models.dart' show isPodcastId;
+import 'saved_covers.dart';
+import 'saved_lyrics.dart';
+import 'server_address.dart';
 import 'subsonic.dart';
 import 'local_link.dart';
 import 'usb_link.dart';
@@ -159,9 +164,7 @@ class AccountNotifier extends AsyncNotifier<Credentials?> {
   /// Checks the login with the server first; throws a readable error if it fails. Signing in while
   /// already signed in adds the server and switches to it (the other one stays saved).
   Future<void> signIn(String server, String user, String pass, {Future<void> Function()? beforeSwitch}) async {
-    var s = server.trim();
-    if (!s.startsWith('http://') && !s.startsWith('https://')) s = 'https://$s';
-    final creds = Credentials(s, user.trim(), pass);
+    final creds = Credentials(normalizeServerAddress(server), user.trim(), pass);
     final c = SubsonicClient(creds);
     try {
       await c.ping();
@@ -203,10 +206,85 @@ class AccountNotifier extends AsyncNotifier<Credentials?> {
   static Future<String> _newDbFile(String id, List<SavedAccount> all) async {
     final owner = prefs.getString(_mainDbOwner);
     if (owner == id) return _mainDb;
+    // its own from before it moved to this address (see changeAddress), named after the address it had
+    final kept = prefs.getString('$_libraryFileOf$id');
+    if (kept != null && !all.any((a) => a.db == kept)) return kept;
     // nobody has it yet: a new install, or (signed out before Encore noted whose it is) one that may hold
     // another server's downloads, which this server then doesn't get
     if (owner == null && !all.any((a) => a.db == _mainDb) && !await LibraryDb.hasDownloads(_mainDb)) return _mainDb;
-    return 'encore-$id.db';
+    // the file named after this address may be one an account took along to another address
+    bool taken(String name) =>
+        all.any((a) => a.db == name) ||
+        prefs.getKeys().any((k) => k.startsWith(_libraryFileOf) && k != '$_libraryFileOf$id' && prefs.getString(k) == name);
+    var name = 'encore-$id.db';
+    for (var n = 2; taken(name); n++) {
+      name = 'encore-$id-$n.db';
+    }
+    return name;
+  }
+
+  /// Moves the signed-in account to another address of the same server, e.g. a public one besides the one
+  /// only reachable on a VPN. The new address is checked first (see [checkNewAddress]: the same server, the
+  /// same login); then everything this device keeps for the account carries on there as it was: its library
+  /// file and downloads, queue, pins, settings, scrobbles waiting to be sent, sync state, saved covers and
+  /// lyrics. The password stays where it's kept. Throws [AddressRefused] (or [KeyringUnavailable]) with
+  /// nothing changed when it can't.
+  /// [reachedAt]: where the address in use is reached now (the client's base: its home-network address, a USB
+  /// cable...), for asking it too. [connect]: how the check reaches the server (tests).
+  Future<void> changeAddress(String address, {String? reachedAt, ConnectTo? connect}) async {
+    final cur = state.value;
+    if (cur == null) throw const AddressRefused(AddressProblem.notAnAddress, 'Not signed in');
+    final to = normalizeServerAddress(address);
+    final all = await savedAccounts();
+    final old = all.where((a) => a.server == cur.base && a.user == cur.username).firstOrNull ??
+        SavedAccount(cur.base, cur.username, cur.password, await currentDbFile());
+    final moved = SavedAccount(to, old.user, old.pass, old.db);
+    if (to != cur.base && all.any((a) => a != old && a.id == moved.id)) {
+      throw const AddressRefused(
+        AddressProblem.alreadySaved,
+        'Encore has that address as another server already: switch to it and sign out of it first',
+      );
+    }
+    final db = ref.read(dbProvider);
+    final known = <String>{};
+    try {
+      known.addAll([for (final (s, _, _) in await db.downloads()) s.id].take(3));
+      known.addAll([for (final s in await db.allSongs(limit: 3)) s.id]);
+    } catch (_) {}
+    await checkNewAddress(
+      cur,
+      to,
+      reachedAt: reachedAt,
+      knownSongs: known.where((id) => !isLocalFileId(id) && !isPodcastId(id)).toList(),
+      connect: connect ?? (c, at) => SubsonicClient(c, via: at),
+    );
+
+    // the password store first: when it can't be used, nothing has changed
+    await _remember(moved);
+    try {
+      await _saveAccounts([for (final a in all) a == old ? moved : a, if (!all.contains(old)) moved]);
+    } catch (_) {
+      await _remember(old).catchError((_) {});
+      rethrow;
+    }
+    await _moveLocal(old, moved);
+    state = AsyncData(moved.creds);
+  }
+
+  /// What this device keeps under the account's id or its address, moved to [to]'s.
+  static Future<void> _moveLocal(SavedAccount from, SavedAccount to) async {
+    final (a, b) = (from.id, to.id);
+    if (prefs.getString(_mainDbOwner) == a) await prefs.setString(_mainDbOwner, b);
+    // the library file keeps its name (so do its downloads' folder): noted, for signing in here again later
+    await prefs.remove('$_libraryFileOf$a');
+    if (to.db != _mainDb) await prefs.setString('$_libraryFileOf$b', to.db);
+    // settings put aside under its id (normally none: those of the account in use have no suffix)
+    for (final k in prefs.getKeys().where((k) => k.endsWith('@$a')).toList()) {
+      await _put('${k.substring(0, k.length - a.length)}$b', prefs.get(k));
+      await prefs.remove(k);
+    }
+    await savedCovers?.moveServer(from.server, to.server);
+    await savedLyrics?.moveServer(from.server, to.server);
   }
 
   /// Saves [a] as the server in use (throws [KeyringUnavailable] when the password store can't be used).
@@ -282,6 +360,10 @@ const _mainDb = 'encore.db';
 /// Which server the original library file (encore.db) belongs to: the file and its downloads stay its own,
 /// also after it signs out, and another server gets a library file of its own (see _newDbFile).
 const _mainDbOwner = 'mainLibraryOwner';
+
+/// `libraryFile:<account id>`: the library file of an account that moved to another address (its file is
+/// named after the first one): for signing in there again after signing out (see _newDbFile).
+const _libraryFileOf = 'libraryFile:';
 
 final accountProvider = AsyncNotifierProvider<AccountNotifier, Credentials?>(AccountNotifier.new);
 

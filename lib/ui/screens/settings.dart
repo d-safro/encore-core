@@ -41,6 +41,7 @@ import '../widgets.dart';
 import 'login.dart';
 import '../../data/devices.dart';
 import '../../data/pairing.dart';
+import '../../data/server_address.dart';
 import '../../data/subsonic.dart';
 import '../sheets.dart';
 
@@ -84,6 +85,7 @@ class SettingsScreen extends ConsumerWidget {
               child: const Text('Sign out'),
             ),
           ),
+          const _ServerAddress(),
           const _HomeAddress(),
           const _OtherServers(),
           SwitchListTile(
@@ -1190,6 +1192,112 @@ class _LyricsSourcesDialogState extends ConsumerState<_LyricsSourcesDialog> {
 }
 
 /// The server's address on your home network: on the same Wi-Fi, Encore goes there directly (no VPN).
+/// The server's main address: changed in place (a public one besides the VPN's, say), the account and
+/// everything on this device for it carrying on there (see AccountNotifier.changeAddress).
+class _ServerAddress extends ConsumerWidget {
+  const _ServerAddress();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final creds = ref.watch(accountProvider).value;
+    if (creds == null) return const SizedBox.shrink();
+    return ListTile(
+      leading: const Icon(Icons.link_rounded),
+      title: const Text('Server address'),
+      subtitle: const Text('Your server has another address now, e.g. a public one? Change it here and keep '
+          'your downloads'),
+      onTap: () async {
+        final done = await showDialog<String>(
+          context: context,
+          useRootNavigator: true,
+          builder: (_) => _ServerAddressDialog(current: creds.base),
+        );
+        if (done != null && context.mounted) toast(context, 'Encore now uses $done');
+      },
+    );
+  }
+}
+
+class _ServerAddressDialog extends ConsumerStatefulWidget {
+  const _ServerAddressDialog({required this.current});
+  final String current;
+
+  @override
+  ConsumerState<_ServerAddressDialog> createState() => _ServerAddressDialogState();
+}
+
+class _ServerAddressDialogState extends ConsumerState<_ServerAddressDialog> {
+  late final _text = TextEditingController(text: widget.current);
+  var _checking = false;
+  String? _problem;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_checking) return;
+    setState(() {
+      _checking = true;
+      _problem = null;
+    });
+    try {
+      await ref
+          .read(accountProvider.notifier)
+          .changeAddress(_text.text, reachedAt: ref.read(clientProvider)?.base);
+      if (mounted) Navigator.pop(context, ref.read(accountProvider).value?.base ?? _text.text.trim());
+    } catch (e) {
+      if (mounted) setState(() => _problem = e is AddressRefused || e is KeyringUnavailable ? '$e' : friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Server address'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Another address of the same server, e.g. a public one besides the one on your VPN. Encore checks '
+            'that your server answers there with your login, then uses it: your downloads, queue and settings '
+            'stay as they are. The address on your home network stays as it is.',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _text,
+            autofocus: true,
+            enabled: !_checking,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            onSubmitted: (_) => _save(),
+            decoration: InputDecoration(
+              hintText: 'https://…',
+              border: const OutlineInputBorder(),
+              errorText: _problem,
+              errorMaxLines: 4,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: _checking ? null : () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _checking ? null : _save,
+          child: _checking
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('Check and use'),
+        ),
+      ],
+    );
+  }
+}
+
 class _HomeAddress extends ConsumerWidget {
   const _HomeAddress();
 
