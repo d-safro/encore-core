@@ -143,13 +143,13 @@ class _QuickPills extends ConsumerWidget {
       (Icons.favorite_rounded, 'Liked songs', 'Liked songs', () async => context.push('/liked')),
       if (online)
         (Icons.auto_awesome, 'Made for you', 'Made for you', () async {
-          final ai = ref.read(aiProvider);
-          if (ai == null) {
-            toast(context, 'Made for you needs AudioMuse-AI on the server');
+          if (!await ref.read(aiOfferedProvider.future) && !await ref.read(forYouOfferedProvider.future)) {
+            if (context.mounted) toast(context, 'Made for you needs AudioMuse-AI, or Conductor 0.6 or newer, on the server');
             return;
           }
+          if (!context.mounted) return;
           toast(context, 'Making your mix…');
-          final songs = await ai.forYou();
+          final songs = await madeForYou(ref);
           if (songs.isEmpty) {
             if (context.mounted) toast(context, 'Not enough listening history yet');
             return;

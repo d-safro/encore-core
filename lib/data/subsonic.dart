@@ -269,6 +269,11 @@ class SubsonicClient {
     )['song'],
   ).map(Song.fromJson).toList();
 
+  /// Conductor's own "Made for you" (encore.forYou): from the artists you play most and those that go with them,
+  /// without AudioMuse-AI.
+  Future<List<Song>> forYouMix({int count = 60}) async =>
+      _l(_m((await call('getForYou', {'count': count}))['forYou'])['song']).map(Song.fromJson).toList();
+
   Future<SearchResult> starred() async => SearchResult.fromJson(_m((await call('getStarred2'))['starred2']));
 
   Future<SearchResult> search(

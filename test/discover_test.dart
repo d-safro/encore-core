@@ -17,9 +17,22 @@ import 'package:material_ui/material_ui.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// A server whose AudioMuse-AI passthrough answers [status] (404: it has none, like Navidrome).
-SubsonicClient _server(int status) => SubsonicClient(
+SubsonicClient _server(int status, {bool forYou = false}) => SubsonicClient(
   const Credentials('https://music.test', 'me', 'pw'),
   httpClient: MockClient((req) async {
+    if (req.url.path.endsWith('getOpenSubsonicExtensions')) {
+      return http.Response(
+        jsonEncode({
+          'subsonic-response': {
+            'status': 'ok',
+            'openSubsonicExtensions': [
+              if (forYou) {'name': 'encore.forYou', 'versions': [1]},
+            ],
+          },
+        }),
+        200,
+      );
+    }
     if (!req.url.path.contains('/rest/audiomuse/')) return http.Response('', 404);
     if (status != 200) return http.Response(jsonEncode({'error': "AudioMuse-AI isn't set up on this server"}), status);
     return http.Response(req.url.path.endsWith('top_queries') ? '{"queries": []}' : '[]', 200);
@@ -81,6 +94,17 @@ void main() {
     expect(find.text('Moods'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Describe a sound'), 300, scrollable: find.byType(Scrollable).first);
     expect(find.text('Describe a sound'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('no AudioMuse-AI, but the server makes its own Made for you: that card, and why the rest is missing', (tester) async {
+    await tester.pumpWidget(app(_server(404, forYou: true)));
+    await tester.pumpAndSettle();
+    expect(find.text('Made for you'), findsOneWidget);
+    expect(find.textContaining('Today\'s mix from what you play most'), findsOneWidget);
+    expect(find.text('Sound-based mixes need AudioMuse-AI on your server'), findsOneWidget);
+    expect(find.textContaining('Moods, Describe a sound'), findsOneWidget, reason: 'the card no longer lists Made for you');
+    expect(find.text('Moods'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

@@ -113,16 +113,69 @@ class DiscoverScreen extends ConsumerWidget {
           child: CustomScrollView(
             slivers: [
               title,
-              const SliverToBoxAdapter(
+              if (ref.watch(forYouOfferedProvider).value == true)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Card(
+                      color: cs.primaryContainer,
+                      clipBehavior: Clip.antiAlias,
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.auto_awesome, color: cs.onPrimaryContainer),
+                                const SizedBox(width: 8),
+                                Text('Made for you', style: t.titleLarge?.copyWith(color: cs.onPrimaryContainer)),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Today\'s mix from what you play most: your favourite artists and the ones that go with them.',
+                              style: t.bodyMedium?.copyWith(color: cs.onPrimaryContainer),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                FilledButton.icon(
+                                  onPressed: () => _play(context, ref, (ai) => ai.forYouFromServer()),
+                                  icon: const Icon(Icons.play_arrow),
+                                  label: const Text('Play'),
+                                ),
+                                const SizedBox(width: 8),
+                                TextButton(
+                                  onPressed: () => _open(
+                                    context,
+                                    'Made for you',
+                                    'From what you play most',
+                                    (ai) => ai.forYouFromServer(),
+                                  ),
+                                  child: Text('See songs', style: TextStyle(color: cs.onPrimaryContainer)),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Card(
                     child: ListTile(
-                      leading: Icon(Icons.auto_awesome_outlined),
-                      title: Text('Sound-based mixes need AudioMuse-AI on your server'),
+                      leading: const Icon(Icons.auto_awesome_outlined),
+                      title: const Text('Sound-based mixes need AudioMuse-AI on your server'),
                       subtitle: Text(
-                        'Made for you, Moods, Describe a sound, Songs about… and Song alchemy come from AudioMuse-AI, '
-                        'which listens to your music. Your server doesn\'t have it.',
+                        ref.watch(forYouOfferedProvider).value == true
+                            ? 'Moods, Describe a sound, Songs about… and Song alchemy come from AudioMuse-AI, which listens '
+                                  'to your music. Your server doesn\'t have it.'
+                            : 'Made for you, Moods, Describe a sound, Songs about… and Song alchemy come from AudioMuse-AI, '
+                                  'which listens to your music. Your server doesn\'t have it.',
                       ),
                     ),
                   ),

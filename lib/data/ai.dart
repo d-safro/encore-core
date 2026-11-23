@@ -53,6 +53,9 @@ class Ai {
   Future<List<Song>> forYou({int n = 60}) async =>
       _songs(await c.audiomuse('sonic_fingerprint/generate', query: {'n': n}));
 
+  /// "Made for you" from the server itself (Conductor's encore.forYou), for a server without AudioMuse-AI.
+  Future<List<Song>> forYouFromServer({int n = 60}) async => c.forYouMix(count: n);
+
   /// Describe a sound in words ("calm piano at night").
   Future<List<Song>> describe(String text, {int n = 60}) async =>
       _songs(await c.audiomuse('clap/search', body: {'query': text, 'limit': n}));
@@ -118,6 +121,23 @@ final aiProvider = Provider<Ai?>((ref) {
 
 /// Whether the server offers AudioMuse-AI at all (found out once, see [SubsonicClient.offersAudiomuse]):
 /// without it, Discover says so instead of showing mixes that can't be made. False offline.
+/// Whether the server makes "Made for you" itself, without AudioMuse-AI (Conductor 0.6 and later: encore.forYou).
+final forYouOfferedProvider = FutureProvider.autoDispose<bool>((ref) async {
+  ref.cacheFor(const Duration(minutes: 30));
+  final ai = ref.watch(aiProvider);
+  return ai != null && (await ai.c.openSubsonicExtensions()).contains('encore.forYou');
+});
+
+/// "Made for you" from whichever the server has: AudioMuse-AI's sound-alikes, else Conductor's own mix. Empty when
+/// it has neither (or is out of reach).
+Future<List<Song>> madeForYou(WidgetRef ref, {int n = 60}) async {
+  final ai = ref.read(aiProvider);
+  if (ai == null) return const [];
+  if (await ref.read(aiOfferedProvider.future)) return ai.forYou(n: n);
+  if (await ref.read(forYouOfferedProvider.future)) return ai.forYouFromServer(n: n);
+  return const [];
+}
+
 final aiOfferedProvider = FutureProvider.autoDispose<bool>((ref) async {
   ref.cacheFor(const Duration(minutes: 30));
   final ai = ref.watch(aiProvider);
