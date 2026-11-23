@@ -200,6 +200,24 @@ Future<UpdateInfo?> checkForUpdateQuietly(
   }
 }
 
+// One update at a time, app-wide: a second one would download into the folder the first is installing from.
+Object? _updateOwner;
+
+/// Whether an update is being downloaded or installed.
+bool get updateRunning => _updateOwner != null;
+
+/// Takes the update for [owner]; false when another one is already running.
+bool claimUpdate(Object owner) {
+  if (_updateOwner != null && !identical(_updateOwner, owner)) return false;
+  _updateOwner = owner;
+  return true;
+}
+
+/// Gives the update back (only [owner], the one that took it, can).
+void releaseUpdate(Object owner) {
+  if (identical(_updateOwner, owner)) _updateOwner = null;
+}
+
 /// The checksum SHA256SUMS.txt gives for [name] (lower case), or null when it has no line for it.
 String? checksumFor(String sums, String name) {
   for (final l in const LineSplitter().convert(sums)) {
