@@ -307,7 +307,19 @@ String? systemPackageUrl(UpdateInfo u, String kind) {
   return url.isEmpty ? null : url;
 }
 
-String? systemUpdateCommand(UpdateInfo u, String kind) {
+/// Which installation a Flatpak copy is in, as `flatpak install` takes it: --user when Encore's files are in your
+/// home folder (~/.local/share/flatpak, no password), else --system (for everyone).
+String flatpakInstallationFlag({String root = ''}) {
+  try {
+    final home = Platform.environment['HOME'] ?? '';
+    final path = File('$root/.flatpak-info').readAsLinesSync().where((l) => l.startsWith('app-path=')).firstOrNull ?? '';
+    return home.isNotEmpty && path.substring('app-path='.length).startsWith('$home/') ? '--user' : '--system';
+  } catch (_) {
+    return '--user';
+  }
+}
+
+String? systemUpdateCommand(UpdateInfo u, String kind, {String? flatpakInstallation}) {
   switch (kind) {
     case 'deb':
       if (u.debUrl.isEmpty) return null;
@@ -322,7 +334,8 @@ String? systemUpdateCommand(UpdateInfo u, String kind) {
       // run on the computer, outside Encore: no password for a copy installed for you alone
       if (u.flatpakUrl.isEmpty) return null;
       final file = Uri.parse(u.flatpakUrl).pathSegments.last;
-      return 'cd "\$(mktemp -d)" && curl -LO ${u.flatpakUrl} && flatpak install -y ./$file';
+      final inst = flatpakInstallation ?? flatpakInstallationFlag();
+      return 'cd "\$(mktemp -d)" && curl -LO ${u.flatpakUrl} && flatpak install $inst -y ./$file';
     default:
       return u.rpmUrl.isEmpty ? null : 'sudo dnf install ${u.rpmUrl}';
   }
