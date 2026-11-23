@@ -275,6 +275,11 @@ Future<void> checkForUpdatesNow(BuildContext context) async {
     } else {
       await showUpdateDialog(context, u, fromCheck: true);
     }
+  } on UpdateNotReady catch (e) {
+    // a new version whose file is still being attached: not "the newest version", and not a check that counts
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    toast(context, '$e.');
   } catch (e) {
     if (context.mounted) toast(context, "Couldn't check for updates: $e");
   }

@@ -121,7 +121,18 @@ Future<List<String>> _abis() async {
   }
 }
 
-/// The newest release if it's newer than this app, else null. Throws when GitHub can't be reached.
+/// The newest release is newer than this app, but its file for this device isn't there yet: the release's files
+/// are still being built and attached (they come a few minutes after the release itself).
+class UpdateNotReady implements Exception {
+  const UpdateNotReady(this.version);
+  final String version;
+  @override
+  String toString() =>
+      "Encore $version is on its way: its download for this device isn't there yet. Try again in a few minutes";
+}
+
+/// The newest release if it's newer than this app, else null. Throws [UpdateNotReady] when it's newer but its
+/// file for this device isn't attached yet, and an error when GitHub can't be reached.
 Future<UpdateInfo?> fetchUpdate() async {
   final r = await http
       .get(
@@ -140,7 +151,7 @@ Future<UpdateInfo?> fetchUpdate() async {
       : Platform.isWindows
       ? pickWindowsAsset(names)
       : pickLinuxAsset(names, _arch());
-  if (name == null) return null;
+  if (name == null) throw UpdateNotReady(version);
   final linux = isDesktop && Platform.isLinux;
   String urlOf(String? n) =>
       n == null ? '' : '${assets.firstWhere((a) => a['name'] == n)['browser_download_url']}';
@@ -163,18 +174,29 @@ Future<UpdateInfo?> fetchUpdate() async {
 
 bool autoUpdateChecks(SharedPreferences p) => p.getBool('updateChecks') ?? true;
 
-/// The automatic check: at most twice a day, and quiet about a version you said to skip.
-Future<UpdateInfo?> checkForUpdateQuietly(SharedPreferences p) async {
-  if (!autoUpdateChecks(p)) return null;
-  final last = DateTime.fromMillisecondsSinceEpoch(p.getInt('updateCheckedAt') ?? 0);
-  if (DateTime.now().difference(last) < const Duration(hours: 12)) return null;
-  try {
-    final u = await fetchUpdate();
-    await p.setInt('updateCheckedAt', DateTime.now().millisecondsSinceEpoch);
-    if (u == null || p.getString('updateSkipped') == u.version) return null;
-    return u;
-  } catch (_) {
-    return null; // no network: try another time
+/// The automatic check: at most twice a day, and quiet about a version you said to skip. A new version whose file
+/// isn't attached yet isn't counted as a check: it's looked at again after [retryAfter] (up to [tries] times while
+/// the app runs, then at the next start).
+Future<UpdateInfo?> checkForUpdateQuietly(
+  SharedPreferences p, {
+  Duration retryAfter = const Duration(minutes: 30),
+  int tries = 6,
+}) async {
+  for (var i = 0; ; i++) {
+    if (!autoUpdateChecks(p)) return null;
+    final last = DateTime.fromMillisecondsSinceEpoch(p.getInt('updateCheckedAt') ?? 0);
+    if (DateTime.now().difference(last) < const Duration(hours: 12)) return null;
+    try {
+      final u = await fetchUpdate();
+      await p.setInt('updateCheckedAt', DateTime.now().millisecondsSinceEpoch);
+      if (u == null || p.getString('updateSkipped') == u.version) return null;
+      return u;
+    } on UpdateNotReady {
+      if (i + 1 >= tries) return null; // the next start looks again
+      await Future<void>.delayed(retryAfter);
+    } catch (_) {
+      return null; // no network: try another time
+    }
   }
 }
 
