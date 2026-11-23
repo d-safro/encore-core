@@ -21,6 +21,7 @@ import '../../playback/audio_device.dart';
 import '../../playback/sound.dart';
 import '../../playback/handler.dart';
 import '../../playback/private_session.dart';
+import '../../playback/skip.dart' show skipShownFor;
 import '../actions.dart';
 import '../state.dart';
 import '../lyric_card.dart';
@@ -529,6 +530,7 @@ class _SeekBarState extends ConsumerState<_SeekBar> {
     final value = (_drag ?? p.position.inMilliseconds.toDouble()).clamp(0.0, max > 0 ? max : 1.0);
     final t = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
+    final skip = skipShownFor(ref.watch(settingsProvider), ref.watch(mediaItemProvider).value?.id);
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
       child: Column(
@@ -551,23 +553,33 @@ class _SeekBarState extends ConsumerState<_SeekBar> {
               },
             ),
           ),
-          ExcludeSemantics( // the slider says it already
-            child: Padding(
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start, // the times stay just under the slider
               children: [
-                Text(
-                  _fmt(Duration(milliseconds: value.round())),
-                  style: t.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                ExcludeSemantics( // the slider says it already
+                  child: Text(
+                    _fmt(Duration(milliseconds: value.round())),
+                    style: t.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
                 ),
                 const Spacer(),
-                Text(
-                  '-${_fmt(p.duration - Duration(milliseconds: value.round()))}',
-                  style: t.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                // skip back / forward by seconds, between the times (the row of big buttons is full)
+                if (skip) ...[
+                  const SkipButton(key: ValueKey('skip-back'), forward: false, size: 30),
+                  const SizedBox(width: 28),
+                  const SkipButton(key: ValueKey('skip-forward'), forward: true, size: 30),
+                  const Spacer(),
+                ],
+                ExcludeSemantics(
+                  child: Text(
+                    '-${_fmt(p.duration - Duration(milliseconds: value.round()))}',
+                    style: t.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
                 ),
               ],
             ),
-          ),
           ),
         ],
       ),

@@ -23,6 +23,7 @@ import '../data/library_pins.dart';
 import '../data/models.dart';
 import '../data/online_art.dart';
 import '../playback/handler.dart';
+import '../playback/skip.dart' show skipLabel;
 import 'actions.dart';
 import 'state.dart';
 
@@ -1555,6 +1556,63 @@ class _NameLinkState extends State<NameLink> {
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: go, child: text),
+    );
+  }
+}
+
+/// The skip back / forward icon: a circling arrow with the seconds inside, like Material's replay_10 (which
+/// has only 5, 10 and 30).
+class SkipIcon extends StatelessWidget {
+  const SkipIcon({super.key, required this.seconds, required this.forward, this.size = 24, this.color});
+  final int seconds;
+  final bool forward;
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? IconTheme.of(context).color;
+    return ExcludeSemantics(
+      child: SizedBox.square(
+        dimension: size,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Transform.flip(flipX: forward, child: Icon(Icons.replay_rounded, size: size, color: c)),
+            Padding(
+              padding: EdgeInsets.only(top: size * 0.1),
+              child: Text(
+                '$seconds',
+                textScaler: TextScaler.noScaling, // sized to the icon, not the text
+                style: TextStyle(fontSize: size * 0.3, height: 1, fontWeight: FontWeight.w700, color: c),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Skip back or forward by the seconds in Settings › Playback. [shortcut]: a key that does it too, shown in the
+/// tooltip (desktop).
+class SkipButton extends ConsumerWidget {
+  const SkipButton({super.key, required this.forward, this.size = 24, this.shortcut, this.color});
+  final bool forward;
+  final double size;
+  final String? shortcut;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(settingsProvider);
+    final n = forward ? s.skipForward : s.skipBack;
+    final label = skipLabel(n, forward: forward);
+    return IconButton(
+      tooltip: shortcut == null ? label : '$label ($shortcut)',
+      iconSize: size,
+      icon: SkipIcon(seconds: n, forward: forward, size: size, color: color),
+      onPressed: () => audioHandler.skipBy(Duration(seconds: forward ? n : -n)),
     );
   }
 }

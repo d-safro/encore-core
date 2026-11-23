@@ -6,7 +6,9 @@ import 'package:material_ui/material_ui.dart';
 import '../core/platform.dart';
 import '../data/devices.dart';
 import '../data/models.dart' show formatDuration;
+import '../core/settings.dart';
 import '../playback/private_session.dart';
+import '../playback/skip.dart';
 import 'actions.dart';
 import 'cast_sheet.dart';
 import 'widgets.dart';
@@ -223,6 +225,29 @@ class _RemoteState extends ConsumerState<_Remote> {
     final dur = s.durationMs.toDouble();
     final pos = (_seek ?? s.positionAt(st.now).toDouble()).clamp(0.0, dur > 0 ? dur : 1.0);
     void send(String type, [Map<String, dynamic> args = const {}]) => n.send(d.id, type, args);
+    // skip back / forward by your seconds: a seek on that device (any Encore understands it), or its next song
+    final settings = ref.watch(settingsProvider);
+    final skip = dur > 0 && skipShownFor(settings, s.songId);
+    Widget skipButton(bool forward) {
+      final secs = forward ? settings.skipForward : settings.skipBack;
+      return IconButton(
+        iconSize: 28,
+        tooltip: skipLabel(secs, forward: forward),
+        icon: SkipIcon(seconds: secs, forward: forward, size: 28),
+        onPressed: () {
+          final by = Duration(seconds: forward ? secs : -secs);
+          final i = s.index;
+          final step = skipStep(Duration(milliseconds: s.positionAt(st.now)), by, Duration(milliseconds: s.durationMs),
+              hasNext: i + 1 < s.queue.length);
+          switch (step) {
+            case SkipSeek(:final to):
+              send(DeviceCommand.seek, {'position': to.inMilliseconds});
+            case SkipNext():
+              send(DeviceCommand.next);
+          }
+        },
+      );
+    }
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
@@ -260,6 +285,7 @@ class _RemoteState extends ConsumerState<_Remote> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                if (skip) skipButton(false),
                 IconButton(
                   iconSize: 36,
                   tooltip: 'Previous',
@@ -280,6 +306,7 @@ class _RemoteState extends ConsumerState<_Remote> {
                   icon: const Icon(Icons.skip_next_rounded),
                   onPressed: () => send(DeviceCommand.next),
                 ),
+                if (skip) skipButton(true),
               ],
             ),
             Row(
