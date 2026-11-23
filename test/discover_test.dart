@@ -39,6 +39,49 @@ SubsonicClient _server(int status, {bool forYou = false}) => SubsonicClient(
   }),
 );
 
+/// Conductor without AudioMuse-AI's analysis ready: [audiomuse] is what its passthrough answers, [extensionsDown]
+/// how many times the extension list doesn't come before it does. Its own mix has one song.
+SubsonicClient _conductor({required int audiomuse, int extensionsDown = 0}) => SubsonicClient(
+  const Credentials('https://music.test', 'me', 'pw'),
+  httpClient: MockClient((req) async {
+    Map<String, dynamic> ok(Map<String, dynamic> body) => {
+      'subsonic-response': {'status': 'ok', ...body},
+    };
+    if (req.url.path.endsWith('getOpenSubsonicExtensions')) {
+      if (extensionsDown-- > 0) throw http.ClientException('no route to host');
+      return http.Response(
+        jsonEncode(
+          ok({
+            'openSubsonicExtensions': [
+              {'name': 'formPost', 'versions': [1]},
+              {'name': 'encore.forYou', 'versions': [1]},
+            ],
+          }),
+        ),
+        200,
+      );
+    }
+    if (req.url.path.endsWith('getForYou')) {
+      return http.Response(
+        jsonEncode(
+          ok({
+            'forYou': {
+              'song': [
+                {'id': 's1', 'title': 'A made-up tune'},
+              ],
+            },
+          }),
+        ),
+        200,
+      );
+    }
+    if (req.url.path.contains('/rest/audiomuse/')) {
+      return audiomuse == 200 ? http.Response('[]', 200) : http.Response('{"error": "AudioMuse is down"}', audiomuse);
+    }
+    return http.Response('', 404);
+  }),
+);
+
 void main() {
   late Directory tmp;
   late LibraryDb db;
@@ -75,6 +118,17 @@ void main() {
       home: const DiscoverScreen(),
     ),
   );
+
+  testWidgets("the server's own Made for you: a moment without an answer isn't kept as \"it has none\"", (tester) async {
+    final c = _conductor(audiomuse: 404, extensionsDown: 1);
+    final box = ProviderContainer(overrides: [aiProvider.overrideWithValue(Ai(c, Repo(c, db, false, const Settings())))]);
+    addTearDown(box.dispose);
+    final sub = box.listen(forYouOfferedProvider, (_, _) {});
+    addTearDown(sub.close);
+    expect(await box.read(forYouOfferedProvider.future), isFalse, reason: 'no answer yet');
+    await tester.pump(const Duration(seconds: 31));
+    expect(await box.read(forYouOfferedProvider.future), isTrue, reason: 'asked again');
+  });
 
   testWidgets('no AudioMuse-AI on the server: one card says why, no mixes that only fail', (tester) async {
     await tester.pumpWidget(app(_server(404)));
