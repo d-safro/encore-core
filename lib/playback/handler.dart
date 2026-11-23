@@ -17,6 +17,7 @@ import 'dj.dart';
 import 'upnp.dart';
 import 'sound.dart';
 import 'fetching.dart';
+import 'levelling.dart';
 import 'not_for_me.dart';
 import 'transitions.dart';
 import 'private_session.dart';
@@ -279,37 +280,17 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     }
   }
 
-  /// Volume from ReplayGain tags. Quieter-than-reference songs use the player volume; louder needs the
-  /// loudness enhancer (Android can't amplify through volume alone).
+  /// Volume from ReplayGain (the file's tags, or what the server measured: levelling.dart). Quieter-than-reference
+  /// songs use the player volume; louder needs the loudness enhancer (Android can't amplify through volume alone).
   void _applyReplayGain() {
     final i = player.currentIndex;
-    final s = _settings;
-    if (i == null || i >= _songs.length || s.replayGain == ReplayGainMode.off) {
+    final db = i == null ? null : replayGainDb(_songs, i, _settings.replayGain, _settings.replayGainPreamp);
+    if (db == null) {
       _setMainVolume(1);
       _boost(0);
-      return;
-    }
-    final song = _songs[i];
-    final rg = song.replayGain;
-    var albumMode = s.replayGain == ReplayGainMode.album;
-    if (s.replayGain == ReplayGainMode.auto) {
-      // album gain when the neighbours are from the same album (playing an album), else track gain
-      final prevSame = i > 0 && _songs[i - 1].albumId == song.albumId;
-      final nextSame = i + 1 < _songs.length && _songs[i + 1].albumId == song.albumId;
-      albumMode = prevSame || nextSame;
-    }
-    final gain = (albumMode ? rg.albumGain ?? rg.trackGain : rg.trackGain ?? rg.albumGain);
-    if (gain == null) {
-      _setMainVolume(1);
+    } else if (db <= 0) {
       _boost(0);
-      return;
-    }
-    final peak = (albumMode ? rg.albumPeak ?? rg.trackPeak : rg.trackPeak ?? rg.albumPeak) ?? 1.0;
-    var db = gain + s.replayGainPreamp;
-    if (peak > 0) db = min(db, -20 * log(peak) / ln10); // never push past full scale
-    if (db <= 0) {
-      _boost(0);
-      _setMainVolume(pow(10, db / 20).toDouble());
+      _setMainVolume(dbToVolume(db));
     } else {
       _setMainVolume(1);
       _boost(db);
@@ -385,21 +366,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
 
   /// The ReplayGain volume for a song (only the quieter-than-reference part; for the crossfade player).
   double _rgVolume(int i) {
-    final s = _settings;
-    if (i >= _songs.length || s.replayGain == ReplayGainMode.off) return 1;
-    final song = _songs[i];
-    final rg = song.replayGain;
-    var albumMode = s.replayGain == ReplayGainMode.album;
-    if (s.replayGain == ReplayGainMode.auto) {
-      albumMode = (i > 0 && _songs[i - 1].albumId == song.albumId) ||
-          (i + 1 < _songs.length && _songs[i + 1].albumId == song.albumId);
-    }
-    final gain = albumMode ? rg.albumGain ?? rg.trackGain : rg.trackGain ?? rg.albumGain;
-    if (gain == null) return 1;
-    final peak = (albumMode ? rg.albumPeak ?? rg.trackPeak : rg.trackPeak ?? rg.albumPeak) ?? 1.0;
-    var db = gain + s.replayGainPreamp;
-    if (peak > 0) db = min(db, -20 * log(peak) / ln10);
-    return db <= 0 ? pow(10, db / 20).toDouble() : 1;
+    final db = replayGainDb(_songs, i, _settings.replayGain, _settings.replayGainPreamp);
+    return db == null || db > 0 ? 1 : dbToVolume(db);
   }
 
   // ── Crossfade ──

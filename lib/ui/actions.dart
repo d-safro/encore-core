@@ -628,6 +628,7 @@ void showSongInfo(BuildContext context, Song s) {
     if (s.size != null) ('Size', '${(s.size! / 1048576).toStringAsFixed(1)} MB'),
     if (s.playCount != null) ('Plays', '${s.playCount}'),
     if (s.replayGain.trackGain != null) ('ReplayGain', '${s.replayGain.trackGain!.toStringAsFixed(1)} dB (track)'),
+    if (s.replayGain.albumGain != null) ('ReplayGain album', '${s.replayGain.albumGain!.toStringAsFixed(1)} dB'),
     if (s.path.isNotEmpty) ('File', s.path),
   ];
   showDialog(
