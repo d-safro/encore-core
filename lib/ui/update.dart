@@ -106,7 +106,7 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
       }
       final f = await downloadUpdate(widget.u, (p) {
         if (mounted) setState(() => _progress = p);
-      }, url: _package == null ? null : systemPackageUrl(widget.u, _package!));
+      }, url: _package == null ? null : systemPackageUrl(widget.u, _package!), cancelled: () => !mounted);
       _file = f;
       await _install();
     } catch (e) {

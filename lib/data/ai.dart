@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account.dart';
@@ -125,15 +127,29 @@ final aiProvider = Provider<Ai?>((ref) {
 final forYouOfferedProvider = FutureProvider.autoDispose<bool>((ref) async {
   ref.cacheFor(const Duration(minutes: 30));
   final ai = ref.watch(aiProvider);
-  return ai != null && (await ai.c.openSubsonicExtensions()).contains('encore.forYou');
+  if (ai == null) return false;
+  final names = await ai.c.openSubsonicExtensions();
+  if (names.isEmpty) {
+    // no answer (Navidrome and Conductor always list some): ask again soon rather than keep "no" for half an hour
+    final again = Timer(const Duration(seconds: 30), ref.invalidateSelf);
+    ref.onDispose(again.cancel);
+  }
+  return names.contains('encore.forYou');
 });
 
-/// "Made for you" from whichever the server has: AudioMuse-AI's sound-alikes, else Conductor's own mix. Empty when
-/// it has neither (or is out of reach).
+/// "Made for you" from whichever the server has: AudioMuse-AI's sound-alikes, else Conductor's own mix (also when
+/// AudioMuse-AI has nothing yet or can't be reached). Empty when it has neither (or is out of reach).
 Future<List<Song>> madeForYou(WidgetRef ref, {int n = 60}) async {
   final ai = ref.read(aiProvider);
   if (ai == null) return const [];
-  if (await ref.read(aiOfferedProvider.future)) return ai.forYou(n: n);
+  if (await ref.read(aiOfferedProvider.future)) {
+    try {
+      final songs = await ai.forYou(n: n);
+      if (songs.isNotEmpty) return songs;
+    } catch (_) {
+      if (!await ref.read(forYouOfferedProvider.future)) rethrow;
+    }
+  }
   if (await ref.read(forYouOfferedProvider.future)) return ai.forYouFromServer(n: n);
   return const [];
 }
