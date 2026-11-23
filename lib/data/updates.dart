@@ -199,9 +199,23 @@ Future<Directory> _updatesDir() async {
   return dir;
 }
 
+/// The update screen was closed while downloading: the download stopped and its part was deleted.
+class UpdateDownloadCancelled implements Exception {
+  const UpdateDownloadCancelled();
+  @override
+  String toString() => 'The download was cancelled';
+}
+
 /// Downloads the APK (progress 0..1), checks it against the release's SHA256SUMS.txt, and returns the file.
-/// A release with no checksum for the file is refused: an unchecked download is never installed.
-Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress, {String? url}) async {
+/// A release with no checksum for the file is refused: an unchecked download is never installed. [cancelled]:
+/// asked as the download goes; when it says yes the download stops (throwing [UpdateDownloadCancelled]). A
+/// download that stops or fails leaves no part of the file behind.
+Future<File> downloadUpdate(
+  UpdateInfo u,
+  void Function(double) onProgress, {
+  String? url,
+  bool Function()? cancelled,
+}) async {
   if (u.sumsUrl.isEmpty) throw const FormatException("This release has no checksum, so the download can't be checked");
   final dir = await _updatesDir();
   // (another of the release's files: a .deb, .rpm or Arch package for a copy the system installed)
@@ -219,10 +233,17 @@ Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress, {Str
     final total = res.contentLength ?? u.size;
     final sink = file.openWrite();
     var got = 0;
-    await for (final chunk in res.stream) {
-      sink.add(chunk);
-      got += chunk.length;
-      if (total > 0) onProgress(got / total);
+    try {
+      await for (final chunk in res.stream) {
+        if (cancelled?.call() ?? false) throw const UpdateDownloadCancelled();
+        sink.add(chunk);
+        got += chunk.length;
+        if (total > 0) onProgress(got / total);
+      }
+    } catch (_) {
+      await sink.close().catchError((_) {});
+      if (await file.exists()) await file.delete();
+      rethrow;
     }
     await sink.close();
     final have = (await sha256.bind(file.openRead()).first).toString();
