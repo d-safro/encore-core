@@ -12,6 +12,7 @@ import '../core/settings.dart';
 import '../playback/audio_device.dart';
 import '../playback/handler.dart';
 import 'account.dart';
+import 'events.dart';
 import 'library.dart';
 import 'local_files.dart' show isLocalFileId, serverQueue, serverQueueAround, shareableCover;
 import 'subsonic.dart';
@@ -20,6 +21,17 @@ import 'subsonic.dart';
 /// devices.py): each says hello, tells the others what it's playing, and waits for commands. So one can pause,
 /// skip or turn down the other, and playback can move from one to the other ("Play here" / "Play on …").
 /// Servers without the extras don't have this; then the list just stays empty.
+///
+/// With Conductor's live updates (events.dart) the device doesn't long-poll: an event says when a command or
+/// another device's news is waiting, and it asks then (and once a minute anyway). Without them, or while the
+/// stream is down, it long-polls as before.
+
+/// How long devicePoll waits on the server: not at all when an event said there's something (the stream is up),
+/// else a long-poll.
+int devicePollWait({required bool live}) => live ? 0 : 20;
+
+/// With the stream up, devicePoll is asked at least this often anyway (also the device's sign of life).
+const devicesSafetyNet = Duration(seconds: 60);
 
 /// This install's own id (the same for every server) and name.
 String deviceId() {
@@ -160,16 +172,27 @@ class DevicesNotifier extends Notifier<DevicesState> {
   int _run = 0; // bumps when the server changes, so an old loop stops
   int _ack = 0, _since = 0;
   Timer? _publishSoon, _watch;
-  final _subs = <StreamSubscription>[];
+  final _subs = <StreamSubscription>[], _liveSubs = <StreamSubscription>[];
   String _lastPublished = '';
   int _expectPos = 0;
   DateTime _expectAt = DateTime.now();
+  LiveEvents? _live;
+  final _wake = LiveWake();
 
   @override
   DevicesState build() {
     final c = ref.watch(clientProvider);
+    _live = ref.watch(liveEventsProvider);
     ref.onDispose(_stop);
     _client = c;
+    final live = _live;
+    if (live != null) {
+      _liveSubs.add(live.events.listen((e) {
+        final mine = e.data['device'] == deviceId();
+        if ((e.type == 'command' && mine) || (e.type == 'devices' && !mine) || e.type == 'resync') _wake.wake();
+      }));
+      _liveSubs.add(live.healthChanges.listen((_) => _wake.wake()));
+    }
     if (c != null && (prefs.getBool('connectDevices') ?? true)) {
       final run = ++_run;
       Future.microtask(() => _loop(run));
@@ -181,10 +204,11 @@ class DevicesNotifier extends Notifier<DevicesState> {
     _run++;
     _publishSoon?.cancel();
     _watch?.cancel();
-    for (final s in _subs) {
+    for (final s in [..._subs, ..._liveSubs]) {
       s.cancel();
     }
     _subs.clear();
+    _liveSubs.clear();
   }
 
   Map<String, dynamic> _me() => {'id': deviceId(), 'name': deviceName(), 'kind': deviceKind()};
@@ -201,10 +225,15 @@ class DevicesNotifier extends Notifier<DevicesState> {
         state = DevicesState(supported: true, devices: state.devices, serverNow: state.serverNow, clockSkew: state.clockSkew);
         _startPublishing();
         wait = const Duration(seconds: 5);
+        _wake.wake(); // the first look at once (commands sent while this device was away)
         while (run == _run) {
+          if (_live?.healthy == true) {
+            await _wake.wait(devicesSafetyNet); // an event: a command or another device's news
+            if (run != _run) return;
+          }
           final p = await c.call(
             'devicePoll',
-            {'id': deviceId(), 'ack': _ack, 'since': _since, 'wait': 20},
+            {'id': deviceId(), 'ack': _ack, 'since': _since, 'wait': devicePollWait(live: _live?.healthy == true)},
             null,
             const Duration(seconds: 35),
           );

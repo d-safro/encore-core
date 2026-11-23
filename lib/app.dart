@@ -13,6 +13,7 @@ import 'data/follows.dart';
 import 'data/episode_alerts.dart';
 import 'data/account.dart';
 import 'data/devices.dart';
+import 'data/events.dart' show liveEventsProvider;
 import 'core/host.dart';
 import 'data/sync.dart';
 import 'data/library.dart';
@@ -366,6 +367,7 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(serverReachableProvider.notifier).check();
+      ref.read(liveEventsProvider)?.retryNow(); // live updates: back at once, not after the pause between tries
       ref.read(syncServiceProvider.notifier).syncNow();
       _checkEpisodes();
       _syncIfStale();

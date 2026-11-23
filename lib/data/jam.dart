@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import '../playback/handler.dart';
 import 'account.dart';
+import 'events.dart';
 import 'library.dart';
 import 'local_files.dart' show shareableCover;
 import 'models.dart';
@@ -15,6 +16,16 @@ import 'subsonic.dart';
 /// Jam (like Spotify Jam): friends open a link, search your library and change what's playing.
 /// Your server (music-lookup) hosts the guest page; this keeps it up to date with the queue and applies what
 /// guests do: add (after earlier guest adds, in order), reorder, remove, skip.
+///
+/// With Conductor's live updates (events.dart) it doesn't long-poll for guests: an event says when one did
+/// something, and the queue is sent less often while nothing changes (the guest page moves the position on
+/// itself). Without them it long-polls and sends every 15 s, as before.
+
+/// With the stream up: jamPoll at least this often anyway (it also keeps the Jam "online", 60 s on the server),
+/// and the queue sent again after this long with no change.
+const jamSafetyNet = Duration(seconds: 45);
+const jamHeartbeatLive = Duration(seconds: 40);
+
 class JamState {
   const JamState({this.active = false, this.busy = false, this.url, this.guests = 0, this.error});
   final bool active, busy;
@@ -28,6 +39,24 @@ class JamNotifier extends Notifier<JamState> {
   int _run = 0; // bumps when a Jam starts or ends, so old loops stop
   Timer? _pushTimer, _heartbeat;
   final _subs = <StreamSubscription>[];
+  final _wake = LiveWake();
+  final _liveSubs = <StreamSubscription>[];
+  DateTime _pushedAt = DateTime(2000);
+
+  /// Hear the live updates of the server as it is now (a new one when the way there changes: home, USB).
+  void _bindLive(LiveEvents? live) {
+    for (final s in _liveSubs) {
+      s.cancel();
+    }
+    _liveSubs.clear();
+    if (live == null) return;
+    _liveSubs
+      ..add(live.events.where((e) => e.type == 'jam' || e.type == 'resync').listen((_) => _wake.wake()))
+      ..add(live.healthChanges.listen((_) => _wake.wake()));
+    _wake.wake();
+  }
+
+  bool get _live => ref.read(liveEventsProvider)?.healthy == true;
   final addedBy = <String, String>{}; // song id -> guest name
   final _guestAdds = <String>[]; // songs guests added, in order (they play after each other)
 
@@ -35,8 +64,10 @@ class JamNotifier extends Notifier<JamState> {
   JamState build() {
     // another server now (or signed out): this Jam's loops stop and its token isn't used with that server
     // (its token stays saved with the server it belongs to)
+    ref.listen(liveEventsProvider, (_, live) => _bindLive(live), fireImmediately: true);
     ref.onDispose(() {
       _run++;
+      _bindLive(null);
       _stopLoops();
       _token = null;
       _ack = 0;
@@ -96,8 +127,11 @@ class JamNotifier extends Notifier<JamState> {
       ..add(audioHandler.queue.listen((_) => _pushSoon()))
       ..add(audioHandler.mediaItem.listen((_) => _pushSoon()))
       ..add(audioHandler.playbackState.map((s) => s.playing).distinct().listen((_) => _pushSoon()));
-    _heartbeat = Timer.periodic(const Duration(seconds: 15), (_) => _pushSoon());
+    _heartbeat = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!_live || DateTime.now().difference(_pushedAt) >= jamHeartbeatLive) _pushSoon();
+    });
     _pushSoon();
+    _wake.wake(); // the first look at once
     _poll(run);
   }
 
@@ -155,6 +189,7 @@ class JamNotifier extends Notifier<JamState> {
       'total': songs.length,
       'queue': [for (var i = cur + 1; i < songs.length && i <= cur + 60; i++) _item(songs[i], i)],
     };
+    _pushedAt = DateTime.now();
     try {
       await c.call('jamState', {'token': token, 'state': jsonEncode(state_)});
     } on SubsonicException catch (e) {
@@ -171,10 +206,14 @@ class JamNotifier extends Notifier<JamState> {
         await Future.delayed(const Duration(seconds: 5));
         continue;
       }
+      if (_live) {
+        await _wake.wait(jamSafetyNet); // an event: a guest did something
+        if (run != _run) return;
+      }
       try {
         final r = await c.call(
           'jamPoll',
-          {'token': _token, 'ack': '$_ack', 'wait': '20'},
+          {'token': _token, 'ack': '$_ack', 'wait': _live ? '0' : '20'},
           null,
           const Duration(seconds: 35),
         );
