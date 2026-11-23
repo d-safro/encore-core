@@ -293,8 +293,9 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.volume_up_outlined),
             title: const Text('ReplayGain'),
+            isThreeLine: true,
             subtitle: Text(
-              '${switch (s.replayGain) {
+              'Sound levelling: songs play at the same loudness\n${switch (s.replayGain) {
                 ReplayGainMode.off => 'Off',
                 ReplayGainMode.track => 'Track',
                 ReplayGainMode.album => 'Album',
@@ -475,7 +476,8 @@ class SettingsScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('ReplayGain', style: Theme.of(ctx).textTheme.titleMedium),
-                const Text('Evens out loudness between songs using the volume tags in your files.'),
+                const Text('Sound levelling: evens out loudness between songs, with the ReplayGain tags in your files. '
+                    'Conductor measures the songs that have none.'),
                 const SizedBox(height: 12),
                 SegmentedButton<ReplayGainMode>(
                   segments: const [
