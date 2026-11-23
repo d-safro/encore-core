@@ -53,6 +53,7 @@ final noNetworkProvider = Provider<bool>((ref) {
 class ServerReachNotifier extends Notifier<bool> {
   Timer? _timer;
   bool _checking = false;
+  int _misses = 0; // pings in a row with no answer
   int _gen = 0; // goes up with each build: a ping through the old way to the server (closed) is dropped
 
   @override
@@ -82,9 +83,17 @@ class ServerReachNotifier extends Notifier<bool> {
     }
     if (gen != _gen) return; // the client changed meanwhile (its requests were cut off): not an answer
     _checking = false;
-    if (state != ok) state = ok;
+    _misses = ok ? 0 : _misses + 1;
     _timer?.cancel();
-    _timer = Timer(ok ? const Duration(minutes: 2) : const Duration(seconds: 20), check);
+    // One ping with no answer is often just a slow first connection (Wi-Fi or a VPN waking up, a TLS handshake
+    // when the app starts): look again in 3 s before saying "offline", so the app doesn't open offline for
+    // nothing. Two in a row: offline, and look again every 20 s.
+    if (ok || _misses >= 2) {
+      if (state != ok) state = ok;
+      _timer = Timer(ok ? const Duration(minutes: 2) : const Duration(seconds: 20), check);
+    } else {
+      _timer = Timer(const Duration(seconds: 3), check);
+    }
   }
 
   /// A request just failed with a network error: check now.
