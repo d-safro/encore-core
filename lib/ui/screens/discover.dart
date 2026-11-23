@@ -28,10 +28,16 @@ final _examplesProvider = FutureProvider.autoDispose<List<String>>((ref) async {
 class DiscoverScreen extends ConsumerWidget {
   const DiscoverScreen({super.key});
 
-  void _open(BuildContext context, String title, String subtitle, Future<List<Song>> Function(Ai ai) load) {
+  void _open(
+    BuildContext context,
+    String title,
+    String subtitle,
+    Future<List<Song>> Function(Ai ai) load, {
+    String? empty,
+  }) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => AiResultsScreen(title: title, subtitle: subtitle, load: load),
+        builder: (_) => AiResultsScreen(title: title, subtitle: subtitle, load: load, empty: empty),
       ),
     );
   }
@@ -41,6 +47,8 @@ class DiscoverScreen extends ConsumerWidget {
     WidgetRef ref,
     Future<List<Song>> Function(Ai ai) load, {
     bool shuffle = false,
+    String empty = 'Nothing came back. AudioMuse may still be analysing your music.',
+    String? source,
   }) async {
     final ai = ref.read(aiProvider);
     if (ai == null) return;
@@ -48,10 +56,10 @@ class DiscoverScreen extends ConsumerWidget {
     try {
       final songs = await load(ai);
       if (songs.isEmpty) {
-        if (context.mounted) toast(context, 'Nothing came back. AudioMuse may still be analysing your music.');
+        if (context.mounted) toast(context, empty);
         return;
       }
-      await audioHandler.playSongs(songs, shuffle: shuffle);
+      await audioHandler.playSongs(songs, shuffle: shuffle, source: source);
     } catch (e) {
       if (context.mounted) toast(context, '$e');
     }
@@ -141,7 +149,14 @@ class DiscoverScreen extends ConsumerWidget {
                             Row(
                               children: [
                                 FilledButton.icon(
-                                  onPressed: () => _play(context, ref, (ai) => ai.forYouFromServer()),
+                                  onPressed: () => _play(
+                                    context,
+                                    ref,
+                                    (ai) => ai.forYouFromServer(),
+                                    // the server's own mix: no AudioMuse-AI involved
+                                    empty: 'Not enough listening history yet',
+                                    source: 'ai:Made for you',
+                                  ),
                                   icon: const Icon(Icons.play_arrow),
                                   label: const Text('Play'),
                                 ),
@@ -152,6 +167,7 @@ class DiscoverScreen extends ConsumerWidget {
                                     'Made for you',
                                     'From what you play most',
                                     (ai) => ai.forYouFromServer(),
+                                    empty: 'Not enough listening history yet. Play some music and come back.',
                                   ),
                                   child: Text('See songs', style: TextStyle(color: cs.onPrimaryContainer)),
                                 ),
@@ -477,8 +493,11 @@ class _PromptCardState extends State<_PromptCard> {
 
 /// A list of AI-picked songs with play / shuffle / save as playlist.
 class AiResultsScreen extends ConsumerStatefulWidget {
-  const AiResultsScreen({super.key, required this.title, required this.subtitle, required this.load});
+  const AiResultsScreen({super.key, required this.title, required this.subtitle, required this.load, this.empty});
   final String title, subtitle;
+
+  /// What an empty list says (default: AudioMuse-AI may still be analysing)
+  final String? empty;
   final Future<List<Song>> Function(Ai ai) load;
   @override
   ConsumerState<AiResultsScreen> createState() => _AiResultsScreenState();
@@ -531,11 +550,12 @@ class _AiResultsScreenState extends ConsumerState<AiResultsScreen> {
           }
           final songs = snap.data!;
           if (songs.isEmpty) {
-            return const Center(
+            return Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
+                padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Nothing matched. Try other words, or wait until AudioMuse has analysed more of your music.',
+                  widget.empty ??
+                      'Nothing matched. Try other words, or wait until AudioMuse has analysed more of your music.',
                   textAlign: TextAlign.center,
                 ),
               ),
