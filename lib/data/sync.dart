@@ -62,6 +62,12 @@ final syncedValues = <SyncedValue>[
       if (v is List) ref.read(settingsProvider.notifier).update({'homeSections': v.map((e) => '$e').toList()});
     },
   ),
+  // the skip buttons' seconds and which songs get them (Settings › Playback)
+  SyncedValue(
+    'playerSkip',
+    (ref) => ref.read(settingsProvider).skipSynced,
+    (ref, v) => ref.read(settingsProvider.notifier).update(Settings.skipFromSynced(v)),
+  ),
 ];
 
 /// The value as last agreed with the server, to tell a change made here from one made elsewhere.
