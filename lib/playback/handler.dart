@@ -15,6 +15,7 @@ import 'autoplay.dart';
 import 'cast.dart';
 import 'dj.dart';
 import 'upnp.dart';
+import 'skip.dart';
 import 'sound.dart';
 import 'fetching.dart';
 import 'levelling.dart';
@@ -215,6 +216,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
       if (s == ProcessingState.completed || s == ProcessingState.idle) _reportSoon();
     });
     container.listen(settingsProvider, (prev, next) => _applySettings(prev, next), fireImmediately: true);
+    // the skip buttons' amounts (their labels) or which songs get them: the notification's buttons change
+    container.listen(settingsProvider.select((s) => (s.skipBack, s.skipForward, s.skipButtons)), (_, _) => _rebroadcast());
     // going offline, or a song finishing its download: queued copies switch to the phone's file
     container.listen(privateSessionProvider, (_, _) => _reportSoon()); // clears "now playing" when it starts
     container.listen(offlineProvider, (prev, next) {
@@ -2298,6 +2301,27 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
     _reportSoon();
   }
 
+  // skip back / forward by the seconds in Settings › Playback: the player's buttons, the notification, the car,
+  // headphones and a watch (see skip.dart)
+  @override
+  Future<void> rewind() => skipBy(Duration(seconds: -_settings.skipBack));
+  @override
+  Future<void> fastForward() => skipBy(Duration(seconds: _settings.skipForward));
+
+  Future<void> skipBy(Duration by) async {
+    final i = playbackState.value.queueIndex;
+    final step = skipStep(
+      playbackState.value.position,
+      by,
+      mediaItem.value?.duration,
+      hasNext: i != null && i + 1 < queue.value.length,
+    );
+    return switch (step) {
+      SkipSeek(:final to) => seek(to),
+      SkipNext() => skipToNext(),
+    };
+  }
+
   @override
   Future<void> skipToNext() {
     _userMoved(true);
@@ -2377,9 +2401,8 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
   void _broadcast(PlaybackEvent event) {
     final playing = player.playing;
     final starred = currentSong?.starred ?? false;
-    playbackState.add(
-      playbackState.value.copyWith(
-        controls: [
+    final buttons = withSkipControls(
+      [
           MediaControl.skipToPrevious,
           if (playing) MediaControl.pause else MediaControl.play,
           MediaControl.skipToNext,
@@ -2401,14 +2424,20 @@ class EncoreAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler
             },
             name: 'cycleShuffle',
           ),
-        ],
+      ],
+      settings: _settings,
+      id: mediaItem.value?.id,
+    );
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: buttons.controls,
         systemActions: const {
           MediaAction.seek,
           MediaAction.seekForward,
           MediaAction.seekBackward,
           MediaAction.setRating,
         },
-        androidCompactActionIndices: const [0, 1, 2],
+        androidCompactActionIndices: buttons.compact,
         processingState: const {
           ProcessingState.idle: AudioProcessingState.idle,
           ProcessingState.loading: AudioProcessingState.loading,
