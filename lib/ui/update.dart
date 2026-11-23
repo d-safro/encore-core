@@ -148,7 +148,8 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
     if (kind != null) {
       // installed by the system: its package manager puts the new version in place (the system asks for your
       // password in its own window), then Encore starts again on it
-      setState(() => _status = 'Installing… Your system asks for your password.');
+      // (a Flatpak installed for you alone needs no password)
+      setState(() => _status = kind == 'flatpak' ? 'Installing…' : 'Installing… Your system asks for your password.');
       try {
         await encoreHost.updates.installPackage(f, kind);
         if (mounted) setState(() => _status = 'Done. Encore restarts on the new version.');

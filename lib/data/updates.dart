@@ -28,10 +28,12 @@ class UpdateInfo {
     this.rpmUrl = '',
     this.debUrl = '',
     this.archUrl = '',
+    this.flatpakUrl = '',
   });
   // apkUrl / apkName: the file this device installs (the APK; on Linux the .tar.gz; on Windows the setup
-  // program). rpmUrl / debUrl / archUrl: the system packages, for the command a packaged copy shows.
-  final String version, notes, apkUrl, apkName, sumsUrl, pageUrl, rpmUrl, debUrl, archUrl;
+  // program). rpmUrl / debUrl / archUrl / flatpakUrl: the system packages and the Flatpak, for a copy installed
+  // that way.
+  final String version, notes, apkUrl, apkName, sumsUrl, pageUrl, rpmUrl, debUrl, archUrl, flatpakUrl;
   final int size;
 }
 
@@ -92,6 +94,11 @@ String? pickArchPackage(List<String> names, String arch) => names
     .where((n) => RegExp('^encore-bin-[0-9][^/]*-${RegExp.escape(arch)}\\.pkg\\.tar\\.zst\$').hasMatch(n))
     .firstOrNull;
 
+/// The Flatpak (encore-1.12.0-x86_64.flatpak), for a copy installed from one.
+String? pickFlatpak(List<String> names, String arch) => names
+    .where((n) => RegExp('^encore-[0-9][^/]*-${RegExp.escape(arch)}\\.flatpak\$').hasMatch(n))
+    .firstOrNull;
+
 /// Windows: the setup program (encore-1.8.0-windows-x64-setup.exe). The portable .zip is never picked: a
 /// portable copy is updated by hand.
 String? pickWindowsAsset(List<String> names) =>
@@ -150,6 +157,7 @@ Future<UpdateInfo?> fetchUpdate() async {
     rpmUrl: linux ? urlOf(pickRpm(names, _arch())) : '',
     debUrl: linux ? urlOf(pickDeb(names, _arch())) : '',
     archUrl: linux ? urlOf(pickArchPackage(names, _arch())) : '',
+    flatpakUrl: linux ? urlOf(pickFlatpak(names, _arch())) : '',
   );
 }
 
@@ -251,8 +259,10 @@ Future<void> openUrl(String url) async {
 
 // ── Copies installed by the system's package manager ──
 
-/// How a Linux system package was installed: 'deb' (apt), 'arch' (pacman) or 'rpm' (dnf).
+/// How a Linux system package was installed: 'flatpak' (Encore runs in a Flatpak), 'deb' (apt), 'arch' (pacman)
+/// or 'rpm' (dnf).
 String linuxPackageKind({String root = ''}) {
+  if (File('$root/.flatpak-info').existsSync()) return 'flatpak';
   if (File('$root/var/lib/dpkg/info/encore.list').existsSync()) return 'deb';
   try {
     final local = Directory('$root/var/lib/pacman/local');
@@ -270,6 +280,7 @@ String? systemPackageUrl(UpdateInfo u, String kind) {
   final url = switch (kind) {
     'deb' => u.debUrl,
     'arch' => u.archUrl,
+    'flatpak' => u.flatpakUrl,
     _ => u.rpmUrl,
   };
   return url.isEmpty ? null : url;
@@ -286,6 +297,11 @@ String? systemUpdateCommand(UpdateInfo u, String kind) {
       if (u.archUrl.isEmpty) return null;
       final file = Uri.parse(u.archUrl).pathSegments.last;
       return 'cd "\$(mktemp -d)" && curl -LO ${u.archUrl} && sudo pacman -U ./$file';
+    case 'flatpak':
+      // run on the computer, outside Encore: no password for a copy installed for you alone
+      if (u.flatpakUrl.isEmpty) return null;
+      final file = Uri.parse(u.flatpakUrl).pathSegments.last;
+      return 'cd "\$(mktemp -d)" && curl -LO ${u.flatpakUrl} && flatpak install -y ./$file';
     default:
       return u.rpmUrl.isEmpty ? null : 'sudo dnf install ${u.rpmUrl}';
   }
@@ -295,5 +311,6 @@ String? systemUpdateCommand(UpdateInfo u, String kind) {
 String packageManagerName(String kind) => switch (kind) {
   'deb' => 'apt',
   'arch' => 'pacman',
+  'flatpak' => 'Flatpak',
   _ => 'dnf',
 };
