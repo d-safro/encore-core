@@ -85,6 +85,23 @@ abstract class UpdateInstaller {
 
   /// Installs [file]: Android's installer, or the desktop's own swap (then the app quits and restarts).
   Future<void> install(File file);
+
+  /// Installed by the system's package manager (a .deb, an .rpm, the Arch package): whether this copy can update
+  /// itself through it, the system asking for your password in its own window (pkexec). [kind]: deb, rpm, arch.
+  Future<bool> canInstallPackage(String kind) async => false;
+
+  /// Installs the downloaded package [file] of that [kind] with the system's package manager (it asks for your
+  /// password), then gets this app restarted on it (the caller quits). Throws [PackageInstallCancelled] when the
+  /// password window was closed.
+  Future<void> installPackage(File file, String kind) async =>
+      throw const FileSystemException('This copy of Encore cannot install packages');
+}
+
+/// The system's password window was closed: nothing was installed.
+class PackageInstallCancelled implements Exception {
+  const PackageInstallCancelled();
+  @override
+  String toString() => 'The password window was closed: nothing changed';
 }
 
 class NoUpdateInstaller extends UpdateInstaller {

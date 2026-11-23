@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/settings.dart';
-import '../core/host.dart' show quitApp;
+import '../core/host.dart' show PackageInstallCancelled, encoreHost, quitApp;
 import '../data/updates.dart';
 import 'actions.dart';
 import 'sheets.dart';
@@ -90,6 +90,9 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
     if (state == AppLifecycleState.resumed && _needsPermission) _install();
   }
 
+  /// A copy the system installed, which can update itself through the package manager: its kind (deb, rpm, arch).
+  String? _package;
+
   Future<void> _download() async {
     setState(() {
       _failed = false;
@@ -97,9 +100,13 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
       _progress = 0;
     });
     try {
+      if (isDesktop && Platform.isLinux && !await canInstallUpdates()) {
+        final kind = linuxPackageKind();
+        if (systemPackageUrl(widget.u, kind) != null && await encoreHost.updates.canInstallPackage(kind)) _package = kind;
+      }
       final f = await downloadUpdate(widget.u, (p) {
         if (mounted) setState(() => _progress = p);
-      });
+      }, url: _package == null ? null : systemPackageUrl(widget.u, _package!));
       _file = f;
       await _install();
     } catch (e) {
@@ -137,6 +144,36 @@ class _UpdateSheetState extends State<_UpdateSheet> with WidgetsBindingObserver 
   String? _command; // an RPM install: the dnf command to run
 
   Future<void> _installDesktop(File f) async {
+    final kind = _package;
+    if (kind != null) {
+      // installed by the system: its package manager puts the new version in place (the system asks for your
+      // password in its own window), then Encore starts again on it
+      setState(() => _status = 'Installing… Your system asks for your password.');
+      try {
+        await encoreHost.updates.installPackage(f, kind);
+        if (mounted) setState(() => _status = 'Done. Encore restarts on the new version.');
+        await Future.delayed(const Duration(milliseconds: 800));
+        await quitApp();
+      } on PackageInstallCancelled catch (e) {
+        if (mounted) {
+          setState(() {
+            _failed = true;
+            _status = '$e.';
+          });
+        }
+      } catch (e) {
+        final command = systemUpdateCommand(widget.u, kind);
+        if (mounted) {
+          setState(() {
+            _command = command;
+            _status = command == null
+                ? "Couldn't install the update: $e"
+                : "Couldn't install the update ($e). You can run this in a terminal instead:";
+          });
+        }
+      }
+      return;
+    }
     if (!await canInstallUpdates()) {
       if (Platform.isWindows) {
         // the portable .zip: unpacked by hand, so it's updated by hand

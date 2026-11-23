@@ -193,17 +193,20 @@ Future<Directory> _updatesDir() async {
 
 /// Downloads the APK (progress 0..1), checks it against the release's SHA256SUMS.txt, and returns the file.
 /// A release with no checksum for the file is refused: an unchecked download is never installed.
-Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress) async {
+Future<File> downloadUpdate(UpdateInfo u, void Function(double) onProgress, {String? url}) async {
   if (u.sumsUrl.isEmpty) throw const FormatException("This release has no checksum, so the download can't be checked");
   final dir = await _updatesDir();
-  final file = File('${dir.path}/${u.apkName}');
+  // (another of the release's files: a .deb, .rpm or Arch package for a copy the system installed)
+  final name = url == null ? u.apkName : Uri.parse(url).pathSegments.last;
+  final fileUrl = url ?? u.apkUrl;
+  final file = File('${dir.path}/$name');
   final client = http.Client();
   try {
     final sums = await client.get(Uri.parse(u.sumsUrl));
     if (sums.statusCode != 200) throw HttpException("Couldn't get the release's checksums (${sums.statusCode})");
-    final want = checksumFor(utf8.decode(sums.bodyBytes, allowMalformed: true), u.apkName);
+    final want = checksumFor(utf8.decode(sums.bodyBytes, allowMalformed: true), name);
     if (want == null) throw const FormatException("The release's checksums don't list this file");
-    final res = await client.send(http.Request('GET', Uri.parse(u.apkUrl)));
+    final res = await client.send(http.Request('GET', Uri.parse(fileUrl)));
     if (res.statusCode != 200) throw HttpException('Download failed (${res.statusCode})');
     final total = res.contentLength ?? u.size;
     final sink = file.openWrite();
@@ -262,6 +265,16 @@ String linuxPackageKind({String root = ''}) {
 
 /// The terminal command that updates a system-installed copy (it asks for your password), or null when the
 /// release has no package of that kind.
+/// The release's package for a copy the system installed: its download address, or null when it has none.
+String? systemPackageUrl(UpdateInfo u, String kind) {
+  final url = switch (kind) {
+    'deb' => u.debUrl,
+    'arch' => u.archUrl,
+    _ => u.rpmUrl,
+  };
+  return url.isEmpty ? null : url;
+}
+
 String? systemUpdateCommand(UpdateInfo u, String kind) {
   switch (kind) {
     case 'deb':
