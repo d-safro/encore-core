@@ -8,6 +8,7 @@ import 'package:rxdart/rxdart.dart';
 import '../core/settings.dart';
 import '../data/local_files.dart' show isLocalFileId, localUriFor;
 import '../data/ai.dart';
+import '../data/events.dart' show playlistChangesProvider;
 import '../data/library.dart';
 import '../data/models.dart';
 import '../data/song_lyrics.dart';
@@ -83,6 +84,7 @@ final soundAlikeArtistsProvider = FutureProvider.autoDispose.family<List<Artist>
 final playlistProvider = FutureProvider.autoDispose.family<Playlist, String>(
   (ref, id) {
     ref.cacheFor(_short);
+    ref.watch(playlistChangesProvider.select((c) => c.of(id))); // changed on the server (live updates): again
     return ref.watch(repoProvider).playlist(id);
   },
 );
@@ -131,9 +133,10 @@ final playlistRulesProvider = FutureProvider.autoDispose.family<Map<String, dyna
   }
 });
 
-final playlistsProvider = StreamProvider.autoDispose<List<Playlist>>(
-  (ref) => _remembered(ref, 'playlists', (r) => r.playlists(), (p) => p.toJson(), Playlist.fromJson),
-);
+final playlistsProvider = StreamProvider.autoDispose<List<Playlist>>((ref) {
+  ref.watch(playlistChangesProvider.select((c) => c.all)); // one changed on the server (live updates): again
+  return _remembered(ref, 'playlists', (r) => r.playlists(), (p) => p.toJson(), Playlist.fromJson);
+});
 final artistsProvider = FutureProvider.autoDispose<List<Artist>>((ref) {
   ref.cacheFor(_long);
   return ref.watch(repoProvider).artists();

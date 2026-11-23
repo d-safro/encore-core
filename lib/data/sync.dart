@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/settings.dart';
 import 'account.dart';
 import 'devices.dart';
+import 'events.dart';
 import 'follows.dart';
 import 'library_pins.dart';
 import 'shows.dart';
@@ -142,22 +143,55 @@ Object? mergeSynced(Object? base, Object? local, Object? server, {bool preferLoc
   return preferLocal ? local : server;
 }
 
+/// With Conductor's live updates up, the server is asked only when something changed: here (seen at the
+/// half-minute look, which then stays on this device), elsewhere (an event says so), or this long since the last
+/// time anyway. Without them it's asked every half minute, as before.
+const syncSafetyNet = Duration(minutes: 10);
+
+bool syncShouldAsk({required bool live, required bool changedHere, required DateTime? lastAsked, DateTime? now}) {
+  if (!live || changedHere || lastAsked == null) return true;
+  return (now ?? DateTime.now()).difference(lastAsked) >= syncSafetyNet;
+}
+
 class SyncNotifierService extends Notifier<DateTime?> {
   Timer? _timer;
-  bool _busy = false;
+  StreamSubscription? _events;
+  bool _busy = false, _again = false;
+  DateTime? _askedAt;
 
   @override
   DateTime? build() {
     final c = ref.watch(clientProvider);
     final supported = ref.watch(devicesProvider.select((d) => d.supported));
+    final live = ref.watch(liveEventsProvider);
     _timer?.cancel();
-    ref.onDispose(() => _timer?.cancel());
+    _events?.cancel();
+    ref.onDispose(() {
+      _timer?.cancel();
+      _events?.cancel();
+    });
     if (c != null && supported == true) {
       Future.microtask(() => syncNow());
-      _timer = Timer.periodic(const Duration(seconds: 30), (_) => syncNow());
+      _timer = Timer.periodic(const Duration(seconds: 30), (_) => _look());
+      // changed on another device (not this one's own change coming back), or a gap in the stream: ask now
+      _events = live?.events
+          .where((e) => (e.type == 'sync' && e.data['by'] != deviceId()) || e.type == 'resync')
+          .listen((_) => syncNow());
     }
     return null;
   }
+
+  void _look() {
+    final live = ref.read(liveEventsProvider)?.healthy == true;
+    if (live) _noteLocalChanges();
+    if (syncShouldAsk(live: live, changedHere: _changedHere(), lastAsked: _askedAt)) syncNow();
+  }
+
+  /// Something here isn't what was last agreed with the server.
+  bool _changedHere() => syncedValues.any((v) {
+    final local = v.read(ref);
+    return (prefs.getString(_lastKey(v.key)) ?? '') != (local == null ? '' : jsonEncode(local));
+  });
 
   /// When each value last changed here: noticed at each look (every half minute, offline too), so a change
   /// made offline isn't taken for newer than one made elsewhere meanwhile.
@@ -183,7 +217,11 @@ class SyncNotifierService extends Notifier<DateTime?> {
 
   Future<void> syncNow() async {
     final c = ref.read(clientProvider);
-    if (c == null || _busy) return;
+    if (c == null) return;
+    if (_busy) {
+      _again = true; // asked again meanwhile (an event): once more when this one's done
+      return;
+    }
     _busy = true;
     try {
       _noteLocalChanges();
@@ -231,13 +269,17 @@ class SyncNotifierService extends Notifier<DateTime?> {
             if (localText != null && localText == serverText) await _agreed(v.key, localText, serverAt);
         }
       }
-      state = DateTime.now();
+      state = _askedAt = DateTime.now();
     } on SubsonicException catch (_) {
       // no extras on this server
     } catch (_) {
       // offline: next time
     } finally {
       _busy = false;
+      if (_again) {
+        _again = false;
+        unawaited(syncNow());
+      }
     }
   }
 }

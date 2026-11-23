@@ -174,6 +174,36 @@ class SubsonicClient {
     }
   }
 
+  /// Conductor's live updates (`encore.events`): the event stream, as it comes. The login goes in a form POST,
+  /// not in an address that proxies log, and the stream stays open until it's cancelled. [device]: this
+  /// device's id (its commands come here); [lastEventId]: resume after it. Throws when the server won't open one.
+  Future<Stream<List<int>>> openEvents({String? device, String? lastEventId}) async {
+    final u = url('eventStream', {'id': device});
+    final req = http.Request('POST', u.replace(query: ''))
+      ..headers['Content-Type'] = 'application/x-www-form-urlencoded'
+      ..headers['Accept'] = 'text/event-stream'
+      ..body = u.query;
+    if (lastEventId != null) req.headers['Last-Event-ID'] = lastEventId;
+    final http.StreamedResponse res;
+    try {
+      res = await _http.send(req).timeout(const Duration(seconds: 20));
+    } on http.ClientException catch (e) {
+      throw http.ClientException(e.message, u.replace(query: '')); // (without the login)
+    }
+    if (res.statusCode == 200 && (res.headers['content-type'] ?? '').startsWith('text/event-stream')) return res.stream;
+    // a Subsonic error (a wrong login, too many streams), or something else answering
+    final body = await res.stream.bytesToString().timeout(const Duration(seconds: 10), onTimeout: () => '');
+    try {
+      final r = (jsonDecode(body) as Map)['subsonic-response'] as Map;
+      final e = (r['error'] as Map?) ?? const {};
+      throw SubsonicException((e['code'] as num?)?.toInt() ?? 0, '${e['message'] ?? 'No event stream'}');
+    } on SubsonicException {
+      rethrow;
+    } catch (_) {
+      throw SubsonicException(0, 'No event stream (the server answered ${res.statusCode})');
+    }
+  }
+
   Map<String, dynamic> _m(dynamic v) => v is Map ? v.cast<String, dynamic>() : <String, dynamic>{};
   List<Map<String, dynamic>> _l(dynamic v) =>
       v is List ? v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList() : const [];
