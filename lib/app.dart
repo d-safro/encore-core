@@ -16,6 +16,7 @@ import 'data/devices.dart';
 import 'data/events.dart' show liveEventsProvider;
 import 'core/host.dart';
 import 'data/sync.dart';
+import 'data/song_removal.dart';
 import 'data/library.dart';
 import 'data/local_link.dart';
 import 'data/usb_link.dart';
@@ -579,6 +580,8 @@ class _EncoreAppState extends ConsumerState<EncoreApp> with WidgetsBindingObserv
     final s = ref.watch(settingsProvider);
     final router = ref.watch(routerProvider);
     final song = ref.watch(currentSongProvider);
+    ref.watch(songsRemovedProvider); // songs removed for good (here or elsewhere): their downloads go
+    ref.listen(songRemovalOfferedProvider, (_, _) {}); // known before the first song menu opens
     final art = s.themeSource == ThemeSource.albumArt ? ref.watch(artSchemeProvider(song?.coverArt ?? '')).value : null;
     return DynamicColorBuilder(
       builder: (light, dark) {
