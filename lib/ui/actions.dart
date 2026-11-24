@@ -11,6 +11,8 @@ import '../data/library_pins.dart';
 import '../data/models.dart';
 import '../data/playlist_add.dart';
 import '../data/share_links.dart';
+import '../data/song_removal.dart';
+import '../data/subsonic.dart' show SubsonicException;
 import '../data/device_playlists.dart';
 import '../data/local_files.dart' show isLocalFileId;
 import 'device_playlists_ui.dart';
@@ -351,6 +353,7 @@ Future<void> showSongMenu(
   final downloads = ref.read(downloadsProvider);
   final have = downloads.files.containsKey(song.id);
   final online = ref.read(repoProvider).online;
+  final removable = ref.read(songRemovalOfferedProvider).value ?? false;
   await showAppSheet(
     context: context,
     menu: true, // the desktop: a menu where the mouse is
@@ -607,12 +610,122 @@ Future<void> showSongMenu(
                   showSongInfo(context, song);
                 },
               ),
+              if (online && removable && !song.isLookup && !isPodcastId(song.id))
+                ListTile(
+                  leading: Icon(Icons.delete_forever_outlined, color: Theme.of(ctx).colorScheme.error),
+                  title: Text('Remove from library…', style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+                  subtitle: const Text('Deletes it from your server, every library and device'),
+                  onTap: () {
+                    close();
+                    removeSongForGood(context, ref, song);
+                  },
+                ),
             ],
           ),
         ),
       );
     },
   );
+}
+
+String _mb(int bytes) => bytes >= 1048576 ? '${(bytes / 1048576).toStringAsFixed(1)} MB' : '${(bytes / 1024).ceil()} KB';
+
+/// Remove a song from every library on the server for good, after showing what goes (it and its other copies,
+/// file by file) and asking twice: tick "I understand", then "Remove permanently".
+Future<void> removeSongForGood(BuildContext context, WidgetRef ref, Song song) async {
+  final c = ref.read(clientProvider);
+  if (c == null) return;
+  SongRemoval what;
+  try {
+    what = await c.songRemoval([song.id]);
+  } on SubsonicException catch (e) {
+    if (context.mounted) toast(context, e.code == 50 ? 'Only an admin of your server can remove songs' : e.message);
+    return;
+  } catch (_) {
+    if (context.mounted) toast(context, 'Couldn\'t reach your server');
+    return;
+  }
+  if (!context.mounted || what.files.isEmpty) return;
+  final copies = what.files.length;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) {
+      var sure = false;
+      final scheme = Theme.of(ctx).colorScheme;
+      return StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          icon: Icon(Icons.delete_forever_outlined, color: scheme.error),
+          title: Text('Remove "${song.title}" for good?'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  copies == 1
+                      ? 'This deletes the song\'s file from your server (${_mb(what.size)}):'
+                      : 'This deletes all $copies copies of the song from your server (${_mb(what.size)}):',
+                ),
+                const SizedBox(height: 8),
+                for (final f in what.files)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Text(
+                      '${f.library.isEmpty ? '' : '${f.library}: '}${f.path}',
+                      style: Theme.of(ctx).textTheme.bodySmall,
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                const Text(
+                  'It goes from every playlist, every queue and every device\'s downloads, for everyone on the '
+                  'server, and isn\'t downloaded again. This can\'t be undone.',
+                ),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: sure,
+                  onChanged: (v) => set(() => sure = v ?? false),
+                  title: const Text('I understand it\'s deleted for good'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(autofocus: true, onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: scheme.error, foregroundColor: scheme.onError),
+              onPressed: sure ? () => Navigator.pop(ctx, true) : null,
+              child: const Text('Remove permanently'),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+  if (ok != true) return;
+  final List<String> removed;
+  try {
+    removed = await c.removeSongs([for (final f in what.files) f.id]);
+  } on SubsonicException catch (e) {
+    if (context.mounted) toast(context, e.message);
+    return;
+  } catch (_) {
+    if (context.mounted) toast(context, 'Couldn\'t reach your server');
+    return;
+  }
+  try {
+    // (the songsRemoved event does this too; here it's at once)
+    await forgetRemovedSongs(ref.read(downloadsProvider.notifier), removed);
+  } catch (_) {}
+  if (context.mounted) {
+    toast(
+      context,
+      removed.length == copies
+          ? 'Removed "${song.title}"'
+          : 'Removed ${removed.length} of $copies copies of "${song.title}"',
+    );
+  }
 }
 
 void showSongInfo(BuildContext context, Song s) {
